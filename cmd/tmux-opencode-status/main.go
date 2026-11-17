@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/DachiChang/tmux-opencode-status/internal/ocsrc"
 	"github.com/DachiChang/tmux-opencode-status/internal/sidebar"
 	"github.com/DachiChang/tmux-opencode-status/internal/tabsrc"
 	"github.com/DachiChang/tmux-opencode-status/internal/tmuxsrc"
@@ -21,6 +22,7 @@ func main() {
 	socketPath := flag.String("S", "", "tmux socket 路徑（-S）")
 	config := flag.String("f", "", "tmux 設定檔（-f，僅供隔離測試，例如 /dev/null）")
 	tabsPath := flag.String("tabs", tabsrc.DefaultPath(), "OpenCode tabs.json 路徑")
+	servicePath := flag.String("service", ocsrc.DefaultPath(), "OpenCode 服務探索檔 service.json 路徑（唯讀；不啟動或重啟服務）")
 	width := flag.Int("width", 36, "side-status-width")
 	backstop := flag.Duration("backstop", sidebar.DefaultBackstop, "低頻補漏同步週期")
 	show := flag.Bool("show", false, "啟動時把 side-status 設為 left")
@@ -61,7 +63,7 @@ func main() {
 	}
 	tick := time.NewTicker(*backstop)
 	defer tick.Stop()
-	d := sidebar.New(sidebar.Config{Width: *width}, sidebar.Deps{Panes: tm, Tabs: tabs, Out: tm, Mode: tm, Wake: wake, Ticks: tick.C})
+	d := sidebar.New(sidebar.Config{Width: *width}, sidebar.Deps{Panes: tm, Tabs: tabs, Out: tm, Mode: tm, Wake: wake, Ticks: tick.C, Service: ocsrc.Source{Path: *servicePath}})
 	_ = d.Run(ctx)
 	stop()
 	<-events // 等 hook 清理完成再退出

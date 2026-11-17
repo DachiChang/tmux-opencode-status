@@ -7,9 +7,9 @@ import (
 
 func sample() []Group {
 	return []Group{
-		{Name: "aicova/api", Tabs: []Tab{{"a1", Running}, {"a2", Attention}, {"a3", Idle}}},
-		{Name: "infra", Tabs: []Tab{{"b1", Failed}, {"b2", Unread}}},
-		{Name: "profcoo/api", Tabs: []Tab{{"c1", Unknown}, {"c2", Running}}},
+		{Name: "aicova/api", Tabs: []Tab{{Title: "a1", State: Running}, {Title: "a2", State: Attention}, {Title: "a3", State: Idle}}},
+		{Name: "infra", Tabs: []Tab{{Title: "b1", State: Failed}, {Title: "b2", State: Unread}}},
+		{Name: "profcoo/api", Tabs: []Tab{{Title: "c1", State: Unknown}, {Title: "c2", State: Running}}},
 	}
 }
 
@@ -92,7 +92,7 @@ func TestTitleSummaryCountsHiddenTabsAndIgnoresHeight(t *testing.T) {
 }
 
 func TestAllIdleHasNoSummary(t *testing.T) {
-	rows, _ := Fit([]Group{{Name: "x", Tabs: []Tab{{"t", Idle}}}}, 10)
+	rows, _ := Fit([]Group{{Name: "x", Tabs: []Tab{{Title: "t", State: Idle}}}}, 10)
 	if rows[0].Summary != "" {
 		t.Fatalf("summary = %q", rows[0].Summary)
 	}

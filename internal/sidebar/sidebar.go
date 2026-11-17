@@ -13,6 +13,7 @@ import (
 
 	"github.com/DachiChang/tmux-opencode-status/internal/contract"
 	"github.com/DachiChang/tmux-opencode-status/internal/heightfit"
+	"github.com/DachiChang/tmux-opencode-status/internal/ocsrc"
 )
 
 // PaneFact 是一個 tmux pane 的辨識事實（PaneID 用於去除 linked window 的重複列出）。
@@ -48,11 +49,15 @@ type Deps struct {
 	// 時間由呼叫端注入，測試因此不需等待真實時間。
 	Wake  <-chan struct{}
 	Ticks <-chan time.Time
+
+	// Service 是 OpenCode 本機共用服務的唯讀連線來源；nil 表示不接服務，所有 tab 維持未知。
+	Service ocsrc.Dialer
 }
 
 type Config struct {
 	Width    int           // side-status-width，內容寬度為 Width-1（一格是分隔線）
 	Debounce time.Duration // 收到通知後等多久合併同時發生的變動
+	Retry    time.Duration // 服務連線失敗後的重試間隔（預設 DefaultRetry）
 }
 
 // 時間預算（spec 驗收目標：一般變動 1 秒、漏通知／強制關閉 10 秒內修正）。
@@ -72,6 +77,11 @@ type Daemon struct {
 	havePanes bool
 	last      string // 上次寫出內容的指紋
 	havePub   bool
+	notice    string // 最近一次 Sync 的來源讀取提示
+
+	live     *live
+	liveWake chan struct{} // 服務事件／狀態變化通知（只需重新排版，不必重讀 tmux）
+	ctx      context.Context
 }
 
 func New(cfg Config, deps Deps) *Daemon {
@@ -84,7 +94,16 @@ func New(cfg Config, deps Deps) *Daemon {
 	if deps.Mode == nil {
 		deps.Mode = unsetMode{}
 	}
-	return &Daemon{cfg: cfg, deps: deps}
+	d := &Daemon{cfg: cfg, deps: deps, liveWake: make(chan struct{}, 1)}
+	if deps.Service != nil {
+		d.live = newLive(deps.Service, cfg.Retry, func() {
+			select {
+			case d.liveWake <- struct{}{}:
+			default:
+			}
+		})
+	}
+	return d
 }
 
 // Sync 讀取一次外部資料並更新側欄；內容與上次寫出的相同時不寫入。
@@ -92,7 +111,7 @@ func New(cfg Config, deps Deps) *Daemon {
 func (d *Daemon) Sync() error {
 	var errs []error
 	notice := ""
-	mode, tracking, modeNotice, modeErr := d.resolveMode()
+	_, tracking, modeNotice, modeErr := d.resolveMode()
 	if modeErr != nil {
 		errs = append(errs, modeErr)
 	}
@@ -117,15 +136,44 @@ func (d *Daemon) Sync() error {
 	} else {
 		d.tabs = tabs
 	}
-	view := d.view(mode)
-	view.Notice = notice
+	d.notice = notice
 	if modeNotice != "" {
-		view.Notice = modeNotice // 設定錯誤比資料讀取提示更需要使用者處理
+		d.notice = modeNotice // 設定錯誤比資料讀取提示更需要使用者處理
 	}
-	if err := d.publish(view); err != nil {
+	if err := d.render(); err != nil {
 		errs = append(errs, err)
 	}
 	return errors.Join(errs...)
+}
+
+// render 以最後可用資料與服務狀態重新排版並寫出（內容沒變就不寫）。
+func (d *Daemon) render() error {
+	if !d.haveMode {
+		return nil // 尚未開始追蹤（模式無效）：不連線服務、不顯示狀態
+	}
+	view := d.view(d.mode)
+	view.Notice = d.notice
+	if d.live != nil && d.ctx != nil {
+		var ids []string
+		for _, g := range view.Groups {
+			for _, t := range g.Tabs {
+				ids = append(ids, t.Session)
+			}
+		}
+		d.live.Track(d.ctx, ids)
+		if view.Notice == "" && len(ids) > 0 && d.live.Down() {
+			view.Notice = "無法連線 OpenCode 服務"
+		}
+	}
+	return d.publish(view)
+}
+
+// stateOf 是 tab 目前的狀態；未接服務或基準資料不完整時為未知，不猜測閒置。
+func (d *Daemon) stateOf(session string) heightfit.State {
+	if d.live == nil {
+		return heightfit.Unknown
+	}
+	return d.live.State(session)
 }
 
 // view 由最後可用資料組出側欄內容。從未讀到成功資料的來源沒有任何內容可顯示，
@@ -149,7 +197,7 @@ func (d *Daemon) view(mode contract.Mode) heightfit.View {
 	for _, tg := range d.groupsFor(mode, names) {
 		g := heightfit.Group{Name: tg.name}
 		for _, t := range tg.tabs {
-			g.Tabs = append(g.Tabs, heightfit.Tab{Title: t.Title, State: heightfit.Unknown})
+			g.Tabs = append(g.Tabs, heightfit.Tab{Title: t.Title, Session: t.SessionID, State: d.stateOf(t.SessionID)})
 		}
 		view.Groups = append(view.Groups, g)
 	}
@@ -185,11 +233,20 @@ func fingerprint(p heightfit.Published) string {
 // Run 先同步一次，之後每次事件通知（合併 Debounce 內的連續通知）或補漏 tick 同步一次，
 // 直到 ctx 結束。同步失敗不會中止：已經顯示提示，下一次通知或 tick 會重試。
 func (d *Daemon) Run(ctx context.Context) error {
+	d.ctx = ctx
 	_ = d.Sync()
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
+		case <-d.liveWake:
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-time.After(d.cfg.Debounce):
+			}
+			_ = d.render()
+			continue
 		case <-d.deps.Ticks:
 		case <-d.deps.Wake:
 			select {

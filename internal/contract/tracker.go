@@ -39,6 +39,10 @@ func (t *Tracker) get(id string) *tracked {
 // Synced 表示目前狀態是否已由 snapshot 對齊；未同步時呼叫端應呈現「狀態未知」。
 func (t *Tracker) Synced() bool { return t.synced }
 
+// Invalidate 讓事件推導的狀態失效（連線中斷等；效果同收到 server.connected），
+// 直到下一次 ApplySnapshot 前不得當成最新事實。
+func (t *Tracker) Invalidate() { t.Apply(Event{Type: EventServerConnected}) }
+
 // Missing 表示該 session 已收到 session.deleted（tab 應保留並標資料異常，而非閒置）。
 func (t *Tracker) Missing(id string) bool { s := t.sessions[id]; return s != nil && s.deleted }
 
@@ -86,6 +90,18 @@ func (t *Tracker) Apply(e Event) {
 func (t *Tracker) ApplySnapshot(s Snapshot) {
 	for _, x := range s.Sessions {
 		if t.touched[x.ID] {
+			// 事件較新，不覆蓋；但父子關係與單調資料（已讀時間、較新的結束時間）仍要補上，
+			// 否則建立事件早於連線的後代會脫離家族、其他 client 的已讀會被遺漏。
+			cur := t.get(x.ID)
+			if cur.parent == "" {
+				cur.parent = x.ParentID
+			}
+			if x.Time.Viewed > cur.viewed {
+				cur.viewed = x.Time.Viewed
+			}
+			if x.Time.Idle > cur.idle {
+				cur.idle, cur.outcome = x.Time.Idle, x.Outcome
+			}
 			continue
 		}
 		cur := t.get(x.ID)

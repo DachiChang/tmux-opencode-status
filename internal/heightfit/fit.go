@@ -16,6 +16,9 @@ const (
 type Tab struct {
 	Title string
 	State State
+	// Session 是 tab 對應的 session；非空時摘要按 session 去重（同一 session
+	// 出現在多個 tab 清單也只計一次）。
+	Session string
 }
 
 type Group struct {
@@ -144,8 +147,15 @@ func layout(groups []Group, n int) []Row {
 // ● ? ◆ ✗ !, omitting zero counts and idle.
 func Summary(groups []Group) string {
 	var c [6]int
+	seen := map[string]bool{}
 	for _, g := range groups {
 		for _, t := range g.Tabs {
+			if t.Session != "" {
+				if seen[t.Session] {
+					continue
+				}
+				seen[t.Session] = true
+			}
 			c[t.State]++
 		}
 	}
