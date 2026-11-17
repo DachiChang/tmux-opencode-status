@@ -1,0 +1,816 @@
+{
+ "directory": "/work/demo",
+ "roots": {
+  "R": "ses_R",
+  "C": "ses_C",
+  "G": "ses_G",
+  "BAD": "ses_BAD",
+  "OK": "ses_OK",
+  "I": "ses_I"
+ },
+ "snapshots": [
+  {
+   "name": "01-created",
+   "sessions": [
+    {
+     "id": "ses_R",
+     "projectID": "proj_demo",
+     "cost": 0,
+     "tokens": {
+      "input": 0,
+      "output": 0,
+      "reasoning": 0,
+      "cache": {
+       "read": 0,
+       "write": 0
+      }
+     },
+     "time": {
+      "created": 1000000,
+      "updated": 1000000
+     },
+     "title": "tab-R",
+     "permissions": [
+      {
+       "action": "*",
+       "resource": "*",
+       "effect": "ask"
+      }
+     ],
+     "location": {
+      "directory": "/work/demo"
+     }
+    },
+    {
+     "id": "ses_C",
+     "parentID": "ses_R",
+     "projectID": "proj_demo",
+     "cost": 0,
+     "tokens": {
+      "input": 0,
+      "output": 0,
+      "reasoning": 0,
+      "cache": {
+       "read": 0,
+       "write": 0
+      }
+     },
+     "time": {
+      "created": 1000018,
+      "updated": 1000018
+     },
+     "title": "tab-C",
+     "permissions": [
+      {
+       "action": "*",
+       "resource": "*",
+       "effect": "ask"
+      }
+     ],
+     "location": {
+      "directory": "/work/demo"
+     }
+    },
+    {
+     "id": "ses_G",
+     "parentID": "ses_C",
+     "projectID": "proj_demo",
+     "cost": 0,
+     "tokens": {
+      "input": 0,
+      "output": 0,
+      "reasoning": 0,
+      "cache": {
+       "read": 0,
+       "write": 0
+      }
+     },
+     "time": {
+      "created": 1000053,
+      "updated": 1000053
+     },
+     "title": "tab-G",
+     "permissions": [
+      {
+       "action": "*",
+       "resource": "*",
+       "effect": "ask"
+      }
+     ],
+     "location": {
+      "directory": "/work/demo"
+     }
+    }
+   ],
+   "active": {},
+   "permissions": [],
+   "forms": []
+  },
+  {
+   "name": "02-permission-in-grandchild",
+   "sessions": [
+    {
+     "id": "ses_R",
+     "projectID": "proj_demo",
+     "cost": 0,
+     "tokens": {
+      "input": 0,
+      "output": 0,
+      "reasoning": 0,
+      "cache": {
+       "read": 0,
+       "write": 0
+      }
+     },
+     "time": {
+      "created": 1000000,
+      "updated": 1000000
+     },
+     "title": "tab-R",
+     "permissions": [
+      {
+       "action": "*",
+       "resource": "*",
+       "effect": "ask"
+      }
+     ],
+     "location": {
+      "directory": "/work/demo"
+     }
+    },
+    {
+     "id": "ses_C",
+     "parentID": "ses_R",
+     "projectID": "proj_demo",
+     "cost": 0,
+     "tokens": {
+      "input": 0,
+      "output": 0,
+      "reasoning": 0,
+      "cache": {
+       "read": 0,
+       "write": 0
+      }
+     },
+     "time": {
+      "created": 1000018,
+      "updated": 1000018
+     },
+     "title": "tab-C",
+     "permissions": [
+      {
+       "action": "*",
+       "resource": "*",
+       "effect": "ask"
+      }
+     ],
+     "location": {
+      "directory": "/work/demo"
+     }
+    },
+    {
+     "id": "ses_G",
+     "parentID": "ses_C",
+     "projectID": "proj_demo",
+     "cost": 0,
+     "tokens": {
+      "input": 0,
+      "output": 0,
+      "reasoning": 0,
+      "cache": {
+       "read": 0,
+       "write": 0
+      }
+     },
+     "time": {
+      "created": 1000053,
+      "updated": 1000053
+     },
+     "title": "tab-G",
+     "permissions": [
+      {
+       "action": "*",
+       "resource": "*",
+       "effect": "ask"
+      }
+     ],
+     "location": {
+      "directory": "/work/demo"
+     }
+    }
+   ],
+   "active": {},
+   "permissions": [
+    {
+     "id": "per_1",
+     "sessionID": "ses_G",
+     "action": "bash",
+     "resources": [
+      "<redacted>"
+     ],
+     "save": []
+    }
+   ],
+   "forms": []
+  },
+  {
+   "name": "03-permission-and-form",
+   "sessions": [
+    {
+     "id": "ses_R",
+     "projectID": "proj_demo",
+     "cost": 0,
+     "tokens": {
+      "input": 0,
+      "output": 0,
+      "reasoning": 0,
+      "cache": {
+       "read": 0,
+       "write": 0
+      }
+     },
+     "time": {
+      "created": 1000000,
+      "updated": 1000000
+     },
+     "title": "tab-R",
+     "permissions": [
+      {
+       "action": "*",
+       "resource": "*",
+       "effect": "ask"
+      }
+     ],
+     "location": {
+      "directory": "/work/demo"
+     }
+    },
+    {
+     "id": "ses_C",
+     "parentID": "ses_R",
+     "projectID": "proj_demo",
+     "cost": 0,
+     "tokens": {
+      "input": 0,
+      "output": 0,
+      "reasoning": 0,
+      "cache": {
+       "read": 0,
+       "write": 0
+      }
+     },
+     "time": {
+      "created": 1000018,
+      "updated": 1000018
+     },
+     "title": "tab-C",
+     "permissions": [
+      {
+       "action": "*",
+       "resource": "*",
+       "effect": "ask"
+      }
+     ],
+     "location": {
+      "directory": "/work/demo"
+     }
+    },
+    {
+     "id": "ses_G",
+     "parentID": "ses_C",
+     "projectID": "proj_demo",
+     "cost": 0,
+     "tokens": {
+      "input": 0,
+      "output": 0,
+      "reasoning": 0,
+      "cache": {
+       "read": 0,
+       "write": 0
+      }
+     },
+     "time": {
+      "created": 1000053,
+      "updated": 1000053
+     },
+     "title": "tab-G",
+     "permissions": [
+      {
+       "action": "*",
+       "resource": "*",
+       "effect": "ask"
+      }
+     ],
+     "location": {
+      "directory": "/work/demo"
+     }
+    }
+   ],
+   "active": {},
+   "permissions": [
+    {
+     "id": "per_1",
+     "sessionID": "ses_G",
+     "action": "bash",
+     "resources": [
+      "<redacted>"
+     ],
+     "save": []
+    }
+   ],
+   "forms": [
+    {
+     "id": "frm_1",
+     "sessionID": "ses_C",
+     "title": "form-title",
+     "fields": [
+      {
+       "key": "a",
+       "title": "field",
+       "type": "string"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "04-permission-replied-form-open",
+   "sessions": [
+    {
+     "id": "ses_R",
+     "projectID": "proj_demo",
+     "cost": 0,
+     "tokens": {
+      "input": 0,
+      "output": 0,
+      "reasoning": 0,
+      "cache": {
+       "read": 0,
+       "write": 0
+      }
+     },
+     "time": {
+      "created": 1000000,
+      "updated": 1000000
+     },
+     "title": "tab-R",
+     "permissions": [
+      {
+       "action": "*",
+       "resource": "*",
+       "effect": "ask"
+      }
+     ],
+     "location": {
+      "directory": "/work/demo"
+     }
+    },
+    {
+     "id": "ses_C",
+     "parentID": "ses_R",
+     "projectID": "proj_demo",
+     "cost": 0,
+     "tokens": {
+      "input": 0,
+      "output": 0,
+      "reasoning": 0,
+      "cache": {
+       "read": 0,
+       "write": 0
+      }
+     },
+     "time": {
+      "created": 1000018,
+      "updated": 1000018
+     },
+     "title": "tab-C",
+     "permissions": [
+      {
+       "action": "*",
+       "resource": "*",
+       "effect": "ask"
+      }
+     ],
+     "location": {
+      "directory": "/work/demo"
+     }
+    },
+    {
+     "id": "ses_G",
+     "parentID": "ses_C",
+     "projectID": "proj_demo",
+     "cost": 0,
+     "tokens": {
+      "input": 0,
+      "output": 0,
+      "reasoning": 0,
+      "cache": {
+       "read": 0,
+       "write": 0
+      }
+     },
+     "time": {
+      "created": 1000053,
+      "updated": 1000053
+     },
+     "title": "tab-G",
+     "permissions": [
+      {
+       "action": "*",
+       "resource": "*",
+       "effect": "ask"
+      }
+     ],
+     "location": {
+      "directory": "/work/demo"
+     }
+    }
+   ],
+   "active": {},
+   "permissions": [],
+   "forms": [
+    {
+     "id": "frm_1",
+     "sessionID": "ses_C",
+     "title": "form-title",
+     "fields": [
+      {
+       "key": "a",
+       "title": "field",
+       "type": "string"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "05-all-resolved",
+   "sessions": [
+    {
+     "id": "ses_R",
+     "projectID": "proj_demo",
+     "cost": 0,
+     "tokens": {
+      "input": 0,
+      "output": 0,
+      "reasoning": 0,
+      "cache": {
+       "read": 0,
+       "write": 0
+      }
+     },
+     "time": {
+      "created": 1000000,
+      "updated": 1000000
+     },
+     "title": "tab-R",
+     "permissions": [
+      {
+       "action": "*",
+       "resource": "*",
+       "effect": "ask"
+      }
+     ],
+     "location": {
+      "directory": "/work/demo"
+     }
+    },
+    {
+     "id": "ses_C",
+     "parentID": "ses_R",
+     "projectID": "proj_demo",
+     "cost": 0,
+     "tokens": {
+      "input": 0,
+      "output": 0,
+      "reasoning": 0,
+      "cache": {
+       "read": 0,
+       "write": 0
+      }
+     },
+     "time": {
+      "created": 1000018,
+      "updated": 1000018
+     },
+     "title": "tab-C",
+     "permissions": [
+      {
+       "action": "*",
+       "resource": "*",
+       "effect": "ask"
+      }
+     ],
+     "location": {
+      "directory": "/work/demo"
+     }
+    },
+    {
+     "id": "ses_G",
+     "parentID": "ses_C",
+     "projectID": "proj_demo",
+     "cost": 0,
+     "tokens": {
+      "input": 0,
+      "output": 0,
+      "reasoning": 0,
+      "cache": {
+       "read": 0,
+       "write": 0
+      }
+     },
+     "time": {
+      "created": 1000053,
+      "updated": 1000053
+     },
+     "title": "tab-G",
+     "permissions": [
+      {
+       "action": "*",
+       "resource": "*",
+       "effect": "ask"
+      }
+     ],
+     "location": {
+      "directory": "/work/demo"
+     }
+    }
+   ],
+   "active": {},
+   "permissions": [],
+   "forms": []
+  },
+  {
+   "name": "06-ok-running",
+   "sessions": [
+    {
+     "id": "ses_OK",
+     "projectID": "proj_demo",
+     "cost": 0,
+     "tokens": {
+      "input": 0,
+      "output": 0,
+      "reasoning": 0,
+      "cache": {
+       "read": 0,
+       "write": 0
+      }
+     },
+     "time": {
+      "created": 1003433,
+      "updated": 1003443,
+      "busy": 1003445
+     },
+     "title": "tab-OK",
+     "permissions": [
+      {
+       "action": "*",
+       "resource": "*",
+       "effect": "ask"
+      }
+     ],
+     "location": {
+      "directory": "/work/demo"
+     }
+    }
+   ],
+   "active": {
+    "ses_OK": {
+     "type": "running"
+    }
+   },
+   "permissions": [],
+   "forms": []
+  },
+  {
+   "name": "07-failed-and-succeeded-unread",
+   "sessions": [
+    {
+     "id": "ses_R",
+     "projectID": "proj_demo",
+     "cost": 0,
+     "tokens": {
+      "input": 0,
+      "output": 0,
+      "reasoning": 0,
+      "cache": {
+       "read": 0,
+       "write": 0
+      }
+     },
+     "time": {
+      "created": 1000000,
+      "updated": 1000000
+     },
+     "title": "tab-R",
+     "permissions": [
+      {
+       "action": "*",
+       "resource": "*",
+       "effect": "ask"
+      }
+     ],
+     "location": {
+      "directory": "/work/demo"
+     }
+    },
+    {
+     "id": "ses_BAD",
+     "projectID": "proj_demo",
+     "model": {
+      "id": "nope",
+      "providerID": "nope",
+      "variant": "default"
+     },
+     "cost": 0,
+     "tokens": {
+      "input": 0,
+      "output": 0,
+      "reasoning": 0,
+      "cache": {
+       "read": 0,
+       "write": 0
+      }
+     },
+     "outcome": "failed",
+     "time": {
+      "created": 1001903,
+      "updated": 1001912,
+      "busy": 1001918,
+      "idle": 1001937
+     },
+     "title": "tab-BAD",
+     "location": {
+      "directory": "/work/demo"
+     }
+    },
+    {
+     "id": "ses_OK",
+     "projectID": "proj_demo",
+     "cost": 0,
+     "tokens": {
+      "input": 6418,
+      "output": 12,
+      "reasoning": 0,
+      "cache": {
+       "read": 3840,
+       "write": 0
+      }
+     },
+     "outcome": "succeeded",
+     "time": {
+      "created": 1003433,
+      "updated": 1007716,
+      "busy": 1003445,
+      "idle": 1007721
+     },
+     "title": "tab-OK",
+     "permissions": [
+      {
+       "action": "*",
+       "resource": "*",
+       "effect": "ask"
+      }
+     ],
+     "location": {
+      "directory": "/work/demo"
+     }
+    }
+   ],
+   "active": {},
+   "permissions": [],
+   "forms": []
+  },
+  {
+   "name": "08-succeeded-viewed",
+   "sessions": [
+    {
+     "id": "ses_OK",
+     "projectID": "proj_demo",
+     "cost": 0,
+     "tokens": {
+      "input": 6418,
+      "output": 12,
+      "reasoning": 0,
+      "cache": {
+       "read": 3840,
+       "write": 0
+      }
+     },
+     "outcome": "succeeded",
+     "time": {
+      "created": 1003433,
+      "updated": 1007716,
+      "busy": 1003445,
+      "idle": 1007721,
+      "viewed": 1007721
+     },
+     "title": "tab-OK",
+     "permissions": [
+      {
+       "action": "*",
+       "resource": "*",
+       "effect": "ask"
+      }
+     ],
+     "location": {
+      "directory": "/work/demo"
+     }
+    }
+   ],
+   "active": {},
+   "permissions": [],
+   "forms": []
+  },
+  {
+   "name": "09-running",
+   "sessions": [
+    {
+     "id": "ses_I",
+     "projectID": "proj_demo",
+     "cost": 0,
+     "tokens": {
+      "input": 0,
+      "output": 0,
+      "reasoning": 0,
+      "cache": {
+       "read": 0,
+       "write": 0
+      }
+     },
+     "time": {
+      "created": 1010008,
+      "updated": 1010014,
+      "busy": 1010017
+     },
+     "title": "tab-I",
+     "permissions": [
+      {
+       "action": "*",
+       "resource": "*",
+       "effect": "ask"
+      }
+     ],
+     "location": {
+      "directory": "/work/demo"
+     }
+    }
+   ],
+   "active": {
+    "ses_I": {
+     "type": "running"
+    }
+   },
+   "permissions": [],
+   "forms": []
+  },
+  {
+   "name": "10-interrupted-unread",
+   "sessions": [
+    {
+     "id": "ses_I",
+     "projectID": "proj_demo",
+     "cost": 0,
+     "tokens": {
+      "input": 0,
+      "output": 0,
+      "reasoning": 0,
+      "cache": {
+       "read": 0,
+       "write": 0
+      }
+     },
+     "outcome": "interrupted",
+     "time": {
+      "created": 1010008,
+      "updated": 1011234,
+      "busy": 1010017,
+      "idle": 1011240
+     },
+     "title": "tab-I",
+     "permissions": [
+      {
+       "action": "*",
+       "resource": "*",
+       "effect": "ask"
+      }
+     ],
+     "location": {
+      "directory": "/work/demo"
+     }
+    }
+   ],
+   "active": {},
+   "permissions": [],
+   "forms": []
+  }
+ ],
+ "deleted_get": {
+  "status": 404,
+  "body": {
+   "_tag": "SessionNotFoundError",
+   "sessionID": "ses_BAD",
+   "message": "Session not found: ses_BAD"
+  }
+ }
+}

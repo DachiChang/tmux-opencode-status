@@ -1,0 +1,142 @@
+[
+ {
+  "name": "zsh",
+  "paneCurrentCommand": "zsh",
+  "alternateOn": false,
+  "paneCurrentPath": "/work/sbdir",
+  "foregroundArgv": [
+   "zsh",
+   "-f"
+  ],
+  "foregroundCwd": "/work/sbdir"
+ },
+ {
+  "name": "tui",
+  "paneCurrentCommand": "opencode",
+  "alternateOn": true,
+  "paneCurrentPath": "/work/sbdir",
+  "foregroundArgv": [
+   "opencode",
+   "--server",
+   "http://127.0.0.1:49555"
+  ],
+  "foregroundCwd": "/work/sbdir"
+ },
+ {
+  "name": "tuidir",
+  "paneCurrentCommand": "opencode",
+  "alternateOn": true,
+  "paneCurrentPath": "/work/sbdir2",
+  "foregroundArgv": [
+   "opencode",
+   "--server",
+   "http://127.0.0.1:49555",
+   "/work/sbdir2"
+  ],
+  "foregroundCwd": "/work/sbdir2"
+ },
+ {
+  "name": "tuisess",
+  "paneCurrentCommand": "opencode",
+  "alternateOn": true,
+  "paneCurrentPath": "/work/sbdir",
+  "foregroundArgv": [
+   "opencode",
+   "--server",
+   "http://127.0.0.1:49555",
+   "-c"
+  ],
+  "foregroundCwd": "/work/sbdir"
+ },
+ {
+  "name": "tuispace",
+  "paneCurrentCommand": "opencode",
+  "alternateOn": true,
+  "paneCurrentPath": "/work/dir with space",
+  "foregroundArgv": [
+   "opencode",
+   "--server",
+   "http://127.0.0.1:49555",
+   "."
+  ],
+  "foregroundCwd": "/work/dir with space"
+ },
+ {
+  "name": "standalone",
+  "paneCurrentCommand": "opencode",
+  "alternateOn": true,
+  "paneCurrentPath": "/work/sbdir",
+  "foregroundArgv": [
+   "opencode",
+   "--standalone"
+  ],
+  "foregroundCwd": "/work/sbdir"
+ },
+ {
+  "name": "mini",
+  "paneCurrentCommand": "opencode",
+  "alternateOn": false,
+  "paneCurrentPath": "/work/sbdir",
+  "foregroundArgv": [
+   "opencode",
+   "--server",
+   "http://127.0.0.1:49555",
+   "mini"
+  ],
+  "foregroundCwd": "/work/sbdir"
+ },
+ {
+  "name": "run",
+  "paneCurrentCommand": "opencode",
+  "alternateOn": false,
+  "paneCurrentPath": "/work/sbdir",
+  "foregroundArgv": [
+   "opencode",
+   "--server",
+   "http://127.0.0.1:49555",
+   "run",
+   "<redacted-prompt>"
+  ],
+  "foregroundCwd": "/work/sbdir"
+ },
+ {
+  "name": "serve",
+  "paneCurrentCommand": "opencode",
+  "alternateOn": false,
+  "paneCurrentPath": "/work/sbdir",
+  "foregroundArgv": [
+   "opencode",
+   "serve",
+   "--hostname",
+   "127.0.0.1",
+   "--port",
+   "49559"
+  ],
+  "foregroundCwd": "/work/sbdir"
+ },
+ {
+  "name": "sessls",
+  "paneCurrentCommand": "opencode",
+  "alternateOn": true,
+  "paneCurrentPath": "/work/sbdir",
+  "foregroundArgv": [
+   "opencode",
+   "--server",
+   "http://127.0.0.1:49555",
+   "session",
+   "list"
+  ],
+  "foregroundCwd": "/work/sbdir"
+ },
+ {
+  "name": "idle",
+  "paneCurrentCommand": "zsh",
+  "alternateOn": false,
+  "paneCurrentPath": "/work/sbdir",
+  "foregroundArgv": [
+   "zsh",
+   "-f"
+  ],
+  "foregroundCwd": "/work/sbdir"
+ }
+]

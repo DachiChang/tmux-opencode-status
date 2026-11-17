@@ -1,0 +1,490 @@
+{
+ "get": {
+  "ses_R": {
+   "data": {
+    "id": "ses_R",
+    "projectID": "proj_demo",
+    "cost": 0,
+    "tokens": {
+     "input": 0,
+     "output": 0,
+     "reasoning": 0,
+     "cache": {
+      "read": 0,
+      "write": 0
+     }
+    },
+    "time": {
+     "created": 1481175,
+     "updated": 1481175
+    },
+    "title": "tab-R",
+    "permissions": [
+     {
+      "action": "*",
+      "resource": "*",
+      "effect": "ask"
+     }
+    ],
+    "location": {
+     "directory": "/work/demo"
+    }
+   }
+  },
+  "ses_C": {
+   "data": {
+    "id": "ses_C",
+    "parentID": "ses_R",
+    "projectID": "proj_demo",
+    "cost": 0,
+    "tokens": {
+     "input": 0,
+     "output": 0,
+     "reasoning": 0,
+     "cache": {
+      "read": 0,
+      "write": 0
+     }
+    },
+    "time": {
+     "created": 1481185,
+     "updated": 1481185
+    },
+    "title": "tab-C",
+    "permissions": [
+     {
+      "action": "*",
+      "resource": "*",
+      "effect": "ask"
+     }
+    ],
+    "location": {
+     "directory": "/work/demo"
+    }
+   }
+  },
+  "ses_G": {
+   "data": {
+    "id": "ses_G",
+    "parentID": "ses_C",
+    "projectID": "proj_demo",
+    "cost": 0,
+    "tokens": {
+     "input": 0,
+     "output": 0,
+     "reasoning": 0,
+     "cache": {
+      "read": 0,
+      "write": 0
+     }
+    },
+    "time": {
+     "created": 1481189,
+     "updated": 1481189
+    },
+    "title": "tab-G",
+    "permissions": [
+     {
+      "action": "*",
+      "resource": "*",
+      "effect": "ask"
+     }
+    ],
+    "location": {
+     "directory": "/work/demo"
+    }
+   }
+  },
+  "ses_C2": {
+   "data": {
+    "id": "ses_C2",
+    "parentID": "ses_R",
+    "projectID": "proj_demo",
+    "cost": 0,
+    "tokens": {
+     "input": 0,
+     "output": 0,
+     "reasoning": 0,
+     "cache": {
+      "read": 0,
+      "write": 0
+     }
+    },
+    "time": {
+     "created": 1481194,
+     "updated": 1481194
+    },
+    "title": "tab-C2",
+    "permissions": [
+     {
+      "action": "*",
+      "resource": "*",
+      "effect": "ask"
+     }
+    ],
+    "location": {
+     "directory": "/work/demo"
+    }
+   }
+  },
+  "ses_X": {
+   "data": {
+    "id": "ses_X",
+    "projectID": "proj_demo",
+    "cost": 0,
+    "tokens": {
+     "input": 0,
+     "output": 0,
+     "reasoning": 0,
+     "cache": {
+      "read": 0,
+      "write": 0
+     }
+    },
+    "time": {
+     "created": 1481204,
+     "updated": 1481204
+    },
+    "title": "tab-X",
+    "permissions": [
+     {
+      "action": "*",
+      "resource": "*",
+      "effect": "ask"
+     }
+    ],
+    "location": {
+     "directory": "/work/demo"
+    }
+   }
+  }
+ },
+ "children": {
+  "ses_R": {
+   "data": [
+    {
+     "id": "ses_C2",
+     "parentID": "ses_R",
+     "projectID": "proj_demo",
+     "cost": 0,
+     "tokens": {
+      "input": 0,
+      "output": 0,
+      "reasoning": 0,
+      "cache": {
+       "read": 0,
+       "write": 0
+      }
+     },
+     "time": {
+      "created": 1481194,
+      "updated": 1481194
+     },
+     "title": "tab-C2",
+     "permissions": [
+      {
+       "action": "*",
+       "resource": "*",
+       "effect": "ask"
+      }
+     ],
+     "location": {
+      "directory": "/work/demo"
+     }
+    },
+    {
+     "id": "ses_C",
+     "parentID": "ses_R",
+     "projectID": "proj_demo",
+     "cost": 0,
+     "tokens": {
+      "input": 0,
+      "output": 0,
+      "reasoning": 0,
+      "cache": {
+       "read": 0,
+       "write": 0
+      }
+     },
+     "time": {
+      "created": 1481185,
+      "updated": 1481185
+     },
+     "title": "tab-C",
+     "permissions": [
+      {
+       "action": "*",
+       "resource": "*",
+       "effect": "ask"
+      }
+     ],
+     "location": {
+      "directory": "/work/demo"
+     }
+    }
+   ],
+   "cursor": {
+    "previous": "<cursor>",
+    "next": "<cursor>"
+   }
+  },
+  "ses_C": {
+   "data": [
+    {
+     "id": "ses_G",
+     "parentID": "ses_C",
+     "projectID": "proj_demo",
+     "cost": 0,
+     "tokens": {
+      "input": 0,
+      "output": 0,
+      "reasoning": 0,
+      "cache": {
+       "read": 0,
+       "write": 0
+      }
+     },
+     "time": {
+      "created": 1481189,
+      "updated": 1481189
+     },
+     "title": "tab-G",
+     "permissions": [
+      {
+       "action": "*",
+       "resource": "*",
+       "effect": "ask"
+      }
+     ],
+     "location": {
+      "directory": "/work/demo"
+     }
+    }
+   ],
+   "cursor": {
+    "previous": "<cursor>",
+    "next": "<cursor>"
+   }
+  },
+  "ses_G": {
+   "data": [],
+   "cursor": {
+    "previous": null,
+    "next": null
+   }
+  },
+  "ses_C2": {
+   "data": [],
+   "cursor": {
+    "previous": null,
+    "next": null
+   }
+  },
+  "ses_X": {
+   "data": [],
+   "cursor": {
+    "previous": null,
+    "next": null
+   }
+  }
+ },
+ "permission": {
+  "ses_R": {
+   "data": []
+  },
+  "ses_C": {
+   "data": []
+  },
+  "ses_G": {
+   "data": [
+    {
+     "id": "per_2",
+     "sessionID": "ses_G",
+     "action": "bash",
+     "resources": [
+      "<redacted>"
+     ],
+     "save": []
+    }
+   ]
+  },
+  "ses_C2": {
+   "data": []
+  },
+  "ses_X": {
+   "data": []
+  }
+ },
+ "form": {
+  "ses_R": {
+   "data": []
+  },
+  "ses_C": {
+   "data": []
+  },
+  "ses_G": {
+   "data": []
+  },
+  "ses_C2": {
+   "data": [
+    {
+     "id": "frm_2",
+     "sessionID": "ses_C2",
+     "title": "form-title",
+     "fields": [
+      {
+       "key": "a",
+       "title": "field",
+       "type": "string"
+      }
+     ]
+    }
+   ]
+  },
+  "ses_X": {
+   "data": []
+  }
+ },
+ "permission_by_location": {
+  "location": {
+   "directory": "/work/demo"
+  },
+  "data": [
+   {
+    "id": "per_2",
+    "sessionID": "ses_G",
+    "action": "bash",
+    "resources": [
+     "<redacted>"
+    ],
+    "save": []
+   }
+  ]
+ },
+ "permission_default_location": {
+  "location": {
+   "directory": "/work/demo"
+  },
+  "data": []
+ },
+ "form_by_location": {
+  "location": {
+   "directory": "/work/demo"
+  },
+  "data": [
+   {
+    "id": "frm_2",
+    "sessionID": "ses_C2",
+    "title": "form-title",
+    "fields": [
+     {
+      "key": "a",
+      "title": "field",
+      "type": "string"
+     }
+    ]
+   }
+  ]
+ },
+ "missing": {
+  "status": 404,
+  "body": {
+   "_tag": "SessionNotFoundError",
+   "sessionID": "ses_X1",
+   "message": "Session not found: ses_X1"
+  }
+ },
+ "children_paged": [
+  {
+   "data": [
+    {
+     "id": "ses_C",
+     "parentID": "ses_R",
+     "projectID": "proj_demo",
+     "cost": 0,
+     "tokens": {
+      "input": 0,
+      "output": 0,
+      "reasoning": 0,
+      "cache": {
+       "read": 0,
+       "write": 0
+      }
+     },
+     "time": {
+      "created": 1481185,
+      "updated": 1481185
+     },
+     "title": "tab-C",
+     "permissions": [
+      {
+       "action": "*",
+       "resource": "*",
+       "effect": "ask"
+      }
+     ],
+     "location": {
+      "directory": "/work/demo"
+     }
+    }
+   ],
+   "cursor": {
+    "previous": "<cursor>",
+    "next": "<cursor>"
+   }
+  },
+  {
+   "data": [
+    {
+     "id": "ses_C2",
+     "parentID": "ses_R",
+     "projectID": "proj_demo",
+     "cost": 0,
+     "tokens": {
+      "input": 0,
+      "output": 0,
+      "reasoning": 0,
+      "cache": {
+       "read": 0,
+       "write": 0
+      }
+     },
+     "time": {
+      "created": 1481194,
+      "updated": 1481194
+     },
+     "title": "tab-C2",
+     "permissions": [
+      {
+       "action": "*",
+       "resource": "*",
+       "effect": "ask"
+      }
+     ],
+     "location": {
+      "directory": "/work/demo"
+     }
+    }
+   ],
+   "cursor": {
+    "previous": "<cursor>",
+    "next": "<cursor>"
+   }
+  },
+  {
+   "data": [],
+   "cursor": {
+    "previous": null,
+    "next": null
+   }
+  }
+ ],
+ "directory": "/work/demo",
+ "roots": {
+  "R": "ses_R",
+  "C": "ses_C",
+  "G": "ses_G",
+  "C2": "ses_C2",
+  "X": "ses_X"
+ }
+}

@@ -1,0 +1,64 @@
+data: {"id":"evt_1","type":"server.connected","data":{}}
+
+: heartbeat
+
+data: {"id":"evt_2","created":1000000,"type":"session.created","location":{"directory":"/work/demo"},"data":{"sessionID":"ses_R","slug":"slug","version":"2.3.0","projectID":"proj_demo","location":{"directory":"/work/demo"},"subpath":"","title":"tab-R","permissions":[{"action":"*","resource":"*","effect":"ask"}]},"durable":{"aggregateID":"ses_R","seq":0,"version":1}}
+
+data: {"id":"evt_3","created":1000018,"type":"session.created","location":{"directory":"/work/demo"},"data":{"sessionID":"ses_C","slug":"slug","version":"2.3.0","projectID":"proj_demo","parentID":"ses_R","location":{"directory":"/work/demo"},"subpath":"","title":"tab-C","permissions":[{"action":"*","resource":"*","effect":"ask"}]},"durable":{"aggregateID":"ses_C","seq":0,"version":1}}
+
+data: {"id":"evt_4","created":1000053,"type":"session.created","location":{"directory":"/work/demo"},"data":{"sessionID":"ses_G","slug":"slug","version":"2.3.0","projectID":"proj_demo","parentID":"ses_C","location":{"directory":"/work/demo"},"subpath":"","title":"tab-G","permissions":[{"action":"*","resource":"*","effect":"ask"}]},"durable":{"aggregateID":"ses_G","seq":0,"version":1}}
+
+data: {"id":"evt_5","created":1000425,"type":"permission.asked","location":{"directory":"/work/demo"},"data":{"id":"per_1","sessionID":"ses_G","action":"bash","resources":["<redacted>"],"save":[]}}
+
+data: {"id":"evt_6","created":1000741,"type":"form.created","location":{"directory":"/work/demo"},"data":{"form":{"id":"frm_1","sessionID":"ses_C","title":"form-title","fields":[{"key":"a","title":"field","type":"string"}]}}}
+
+data: {"id":"evt_7","created":1001059,"type":"permission.replied","location":{"directory":"/work/demo"},"data":{"sessionID":"ses_G","requestID":"per_1","reply":"reject"}}
+
+data: {"id":"evt_8","created":1001478,"type":"form.cancelled","location":{"directory":"/work/demo"},"data":{"id":"frm_1","sessionID":"ses_C"}}
+
+data: {"id":"evt_9","created":1001903,"type":"session.created","location":{"directory":"/work/demo"},"data":{"sessionID":"ses_BAD","slug":"slug","version":"2.3.0","projectID":"proj_demo","location":{"directory":"/work/demo"},"subpath":"","title":"tab-BAD","model":{"id":"nope","providerID":"nope"}},"durable":{"aggregateID":"ses_BAD","seq":0,"version":1}}
+
+data: {"id":"evt_10","created":1001912,"type":"session.inbox.enqueued","location":{"directory":"/work/demo"},"data":{"inboxID":"msg_1","sessionID":"ses_BAD","item":{"type":"user","payload":{"text":"<redacted>"},"delivery":"steer"}},"durable":{"aggregateID":"ses_BAD","seq":1,"version":1}}
+
+data: {"id":"evt_11","created":1001918,"type":"session.execution.started","data":{"sessionID":"ses_BAD"},"durable":{"aggregateID":"ses_BAD","seq":2,"version":1}}
+
+data: {"id":"evt_12","created":1001932,"type":"session.inbox.delivered","location":{"directory":"/work/demo"},"data":{"sessionID":"ses_BAD","inboxID":"msg_1"},"durable":{"aggregateID":"ses_BAD","seq":4,"version":1}}
+
+data: {"id":"evt_13","created":1001937,"type":"session.execution.failed","data":{"sessionID":"ses_BAD","error":{"type":"provider.no-route","message":"Model unavailable: nope/nope"}},"durable":{"aggregateID":"ses_BAD","seq":5,"version":1}}
+
+data: {"id":"evt_14","created":1003433,"type":"session.created","location":{"directory":"/work/demo"},"data":{"sessionID":"ses_OK","slug":"slug","version":"2.3.0","projectID":"proj_demo","location":{"directory":"/work/demo"},"subpath":"","title":"tab-OK","permissions":[{"action":"*","resource":"*","effect":"ask"}]},"durable":{"aggregateID":"ses_OK","seq":0,"version":1}}
+
+data: {"id":"evt_15","created":1003443,"type":"session.inbox.enqueued","location":{"directory":"/work/demo"},"data":{"inboxID":"msg_2","sessionID":"ses_OK","item":{"type":"user","payload":{"text":"<redacted>"},"delivery":"steer"}},"durable":{"aggregateID":"ses_OK","seq":1,"version":1}}
+
+data: {"id":"evt_16","created":1003445,"type":"session.execution.started","data":{"sessionID":"ses_OK"},"durable":{"aggregateID":"ses_OK","seq":2,"version":1}}
+
+data: {"id":"evt_17","created":1003462,"type":"session.inbox.delivered","location":{"directory":"/work/demo"},"data":{"sessionID":"ses_OK","inboxID":"msg_2"},"durable":{"aggregateID":"ses_OK","seq":4,"version":1}}
+
+data: {"id":"evt_18","created":1007721,"type":"session.execution.succeeded","data":{"sessionID":"ses_OK"},"durable":{"aggregateID":"ses_OK","seq":11,"version":1}}
+
+data: {"id":"evt_19","created":1009492,"type":"session.viewed","data":{"sessionID":"ses_OK","idle":1007721},"durable":{"aggregateID":"ses_OK","seq":12,"version":1}}
+
+data: {"id":"evt_20","created":1010008,"type":"session.created","location":{"directory":"/work/demo"},"data":{"sessionID":"ses_I","slug":"slug","version":"2.3.0","projectID":"proj_demo","location":{"directory":"/work/demo"},"subpath":"","title":"tab-I","permissions":[{"action":"*","resource":"*","effect":"ask"}]},"durable":{"aggregateID":"ses_I","seq":0,"version":1}}
+
+data: {"id":"evt_21","created":1010014,"type":"session.inbox.enqueued","location":{"directory":"/work/demo"},"data":{"inboxID":"msg_3","sessionID":"ses_I","item":{"type":"user","payload":{"text":"<redacted>"},"delivery":"steer"}},"durable":{"aggregateID":"ses_I","seq":1,"version":1}}
+
+data: {"id":"evt_22","created":1010017,"type":"session.execution.started","data":{"sessionID":"ses_I"},"durable":{"aggregateID":"ses_I","seq":2,"version":1}}
+
+data: {"id":"evt_23","created":1010029,"type":"session.inbox.delivered","location":{"directory":"/work/demo"},"data":{"sessionID":"ses_I","inboxID":"msg_3"},"durable":{"aggregateID":"ses_I","seq":4,"version":1}}
+
+data: {"id":"evt_24","created":1011240,"type":"session.execution.interrupted","data":{"sessionID":"ses_I","reason":"user"},"durable":{"aggregateID":"ses_I","seq":7,"version":1}}
+
+data: {"id":"evt_25","created":1013271,"type":"session.deleted","data":{"sessionID":"ses_BAD"},"durable":{"aggregateID":"ses_BAD","seq":6,"version":2}}
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
+: heartbeat
+
