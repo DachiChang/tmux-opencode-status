@@ -506,6 +506,70 @@ func TestPendingApprovalsAndAnswersOnARealTmuxWithFakeOpenCodeService(t *testing
 	}
 }
 
+// 多層 subagent 家族：孫輩的執行與待處理彙整到 tab；主 session 先結束；啟動前已存在的後代；
+// 無關家族隔離；後代失敗不污染 tab。全程只有 GET，也不新增任何 tmux 綁定。
+func TestSessionFamilyRollsUpToTabsOnARealTmuxWithFakeOpenCodeService(t *testing.T) {
+	e := newEnv(t)
+	dir := filepath.Join(e.dir, "work", "api")
+	svc := fakeoc.New(t)
+	// 側欄啟動前就存在的多層家族（沒有任何 session 建立事件）
+	svc.Seed("ses_R", "", "", 0, 0, false)
+	svc.Seed("ses_C", "ses_R", "", 0, 0, false)
+	svc.Seed("ses_G", "ses_C", "", 0, 0, false)
+	svc.Seed("ses_Q", "", "", 0, 0, false)
+	svc.Seed("ses_Q1", "ses_Q", "", 0, 0, false)
+	svc.Seed("ses_X", "", "", 0, 0, false) // 無關家族
+	svc.Seed("ses_X1", "ses_X", "", 0, 0, false)
+	svc.SeedPermission("per_old", "ses_G") // 孫輩的待核准，tab 本身看不到
+	svc.WriteServiceFile(e.servicePath)
+	e.writeTabs(`{"global":{"tabs":[],"unread":{}},"cwd":{"` + dir + `":{"tabs":[` +
+		`{"sessionID":"ses_R","title":"root job"},{"sessionID":"ses_X","title":"other family"},{"sessionID":"ses_Q","title":"calm"}],"unread":{}}}}`)
+	bindingsBefore := e.outTmux("list-keys")
+	e.tui(dir, "--server", "http://127.0.0.1:1")
+
+	d := e.eventually(5*time.Second, "啟動前已存在的孫輩待核准", func(s string) bool { return strings.Contains(s, "? root job") })
+	t.Logf("既有孫輩阻塞 → 畫面：%v", d)
+	t.Logf("畫面：\n%s", e.sidebar())
+	svc.ReplyPermission("per_old")
+	e.eventually(time.Second, "處理後回閒置，後代不另列", func(s string) bool {
+		return strings.Contains(s, "· root job") && !strings.Contains(s, "ses_")
+	})
+
+	svc.AddSession("ses_G2", "ses_G") // 啟動後新增的第四層
+	svc.Start("ses_R")
+	svc.Start("ses_G2")
+	e.eventually(time.Second, "家族執行中", func(s string) bool { return strings.Contains(s, "● root job") })
+	svc.Finish("ses_R", "succeeded") // 主 session 先結束，後代仍在執行
+	time.Sleep(300 * time.Millisecond)
+	d = e.eventually(time.Second, "主先結束後仍為 ●", func(s string) bool { return strings.Contains(s, "● root job") })
+	t.Logf("主先結束 → 畫面：%v", d)
+	svc.AskForm("frm_1", "ses_G2")
+	e.eventually(time.Second, "孫輩待回答優先於執行中", func(s string) bool { return strings.Contains(s, "? root job") && !strings.Contains(s, "● root job") })
+	e.eventually(time.Second, "無關家族與其他 tab 不受影響", func(s string) bool {
+		return strings.Contains(s, "· other family") && strings.Contains(s, "· calm")
+	})
+	svc.AnswerForm("frm_1")
+	svc.Finish("ses_G2", "failed") // 後代失敗不是 tab 失敗
+	d = e.eventually(time.Second, "家族結束：只有 tab 自己的結束未讀", func(s string) bool {
+		return strings.Contains(s, "◆ root job") && !strings.Contains(s, "✗")
+	})
+	t.Logf("家族結束 → 畫面：%v", d)
+	svc.Start("ses_R") // 父被喚醒
+	e.eventually(time.Second, "父被喚醒", func(s string) bool { return strings.Contains(s, "● root job") })
+
+	if w := svc.Writes(); len(w) != 0 {
+		t.Fatalf("對 OpenCode 發出了寫入請求：%v", w)
+	}
+	for _, r := range svc.Requests() {
+		if strings.Contains(r, "reply") || strings.Contains(r, "/view") {
+			t.Fatalf("呼叫了回覆／標記已讀：%s", r)
+		}
+	}
+	if after := e.outTmux("list-keys"); after != bindingsBefore {
+		t.Fatal("不得新增或改變任何 tmux 綁定")
+	}
+}
+
 // ---- #8 cwd／global 模式與設定重載 ----
 
 const modeOpt = "@opencode-status-mode"
