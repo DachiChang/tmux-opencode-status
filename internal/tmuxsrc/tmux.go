@@ -186,6 +186,11 @@ func (c *Client) WatchEvents(ctx context.Context, wake chan<- struct{}) error {
 		return err
 	}
 	defer c.RemoveHooks()
+	// hook 裝好之前發生的變動不會有通知；裝好後補一次喚醒，讓啟動空窗內的變動不必等低頻補漏。
+	select {
+	case wake <- struct{}{}:
+	default:
+	}
 	for ctx.Err() == nil {
 		args := append(append(append([]string{}, c.SocketArgs...), c.ConfigArgs...), "wait-for", wakeChannel)
 		cmd := exec.CommandContext(ctx, "tmux", args...)

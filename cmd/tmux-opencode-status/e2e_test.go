@@ -17,13 +17,14 @@ import (
 // 使用者的預設 tmux server 與 OpenCode 資料完全不涉及。
 
 type env struct {
-	t        *testing.T
-	dir      string
-	in, out  string // 被觀察的 server 與承載 client 的外層 server
-	daemon   *exec.Cmd
-	tabsPath string
-	binDir   string
-	bin      string
+	t         *testing.T
+	dir       string
+	in, out   string // 被觀察的 server 與承載 client 的外層 server
+	daemon    *exec.Cmd
+	tabsPath  string
+	binDir    string
+	bin       string
+	daemonEnv []string
 }
 
 func (e *env) inTmux(args ...string) string {
@@ -44,7 +45,10 @@ func (e *env) outTmux(args ...string) string {
 	return string(b)
 }
 
-func newEnv(t *testing.T) *env {
+func newEnv(t *testing.T) *env { t.Helper(); return newEnvWith(t, nil) }
+
+// newEnvWith 的 daemonEnv 附加到常駐程式的環境變數（用來在 PATH 前面放 tmux 包裝，製造確定性的慢啟動）。
+func newEnvWith(t *testing.T, daemonEnv []string) *env {
 	t.Helper()
 	if testing.Short() {
 		t.Skip("-short")
@@ -85,6 +89,7 @@ func newEnv(t *testing.T) *env {
 		_ = exec.Command("tmux", "-L", e.in, "-f", "/dev/null", "kill-server").Run()
 		_ = exec.Command("tmux", "-L", e.out, "-f", "/dev/null", "kill-server").Run()
 	})
+	e.daemonEnv = daemonEnv
 	e.startDaemon(daemonBin)
 	return e
 }
@@ -92,6 +97,9 @@ func newEnv(t *testing.T) *env {
 func (e *env) startDaemon(bin string) {
 	e.daemon = exec.Command(bin, "-L", e.in, "-f", "/dev/null", "-tabs", e.tabsPath, "-show", "-backstop", "5s")
 	e.daemon.Stderr = os.Stderr
+	if e.daemonEnv != nil {
+		e.daemon.Env = append(os.Environ(), e.daemonEnv...)
+	}
 	must(e.t, e.daemon.Start())
 }
 
@@ -469,4 +477,27 @@ func TestStoppingDaemonAlsoRemovesTheModeHook(t *testing.T) {
 	if strings.Contains(hooks, "tos_wake") || !strings.Contains(hooks, "user-hook") {
 		t.Fatalf("結束後只應移除插件自己的 hook：\n%s", hooks)
 	}
+}
+
+// 啟動空窗：hook 還沒裝好時發生的設定變動，不能只靠低頻補漏（5 秒）才發現。
+// 以 tmux 包裝讓安裝模式 hook（最後一個裝的）慢 300ms，確定性地放大空窗而不依賴 -race 的快慢；
+// 在常駐程式首次讀到設定之後、hook 裝好之前重載設定，仍須在 1 秒內套用。
+func TestModeChangeDuringDaemonStartupIsNotLeftToTheBackstop(t *testing.T) {
+	realTmux, err := exec.LookPath("tmux")
+	if err != nil {
+		t.Skip("沒有 tmux")
+	}
+	shim := t.TempDir()
+	script := "#!/bin/sh\ncase \" $* \" in *\" after-set-option[\"*) sleep 0.3;; esac\nexec " + realTmux + " \"$@\"\n"
+	must(t, os.WriteFile(filepath.Join(shim, "tmux"), []byte(script), 0o755))
+
+	e := newEnvWith(t, []string{"PATH=" + shim + ":" + os.Getenv("PATH")})
+	api := filepath.Join(e.dir, "work", "api")
+	e.inTmux("set", "-g", modeOpt, "globl")
+	e.writeTabs(e.bothScopesJSON(map[string][]string{api: {"api tab"}}, []string{"shared a"}))
+	e.tui(api)
+	e.eventually(5*time.Second, "常駐程式首次讀到設定", func(s string) bool { return strings.Contains(s, "模式設定無效") })
+	e.reload("set -g " + modeOpt + " global\n")
+	d := e.eventually(time.Second, "啟動空窗內的重載於 1 秒內套用", func(s string) bool { return strings.Contains(s, "shared a") })
+	t.Logf("重載 → 畫面：%v", d)
 }
