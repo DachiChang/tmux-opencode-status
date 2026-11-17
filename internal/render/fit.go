@@ -77,14 +77,19 @@ func Fit(groups []Group, avail int) ([]Row, int) {
 // "無 tab" note; that note is not a tab and is not counted as hidden.
 func FitView(v View, avail int) ([]Row, int) {
 	groups := v.Groups
-	head := []Row{{Kind: RowTitle, Summary: Summary(groups)}, {Kind: RowRule}}
+	var notice []string
 	if v.Notice != "" {
-		for _, line := range strings.Split(v.Notice, "\n") {
-			head = append(head, Row{Kind: RowNotice, Text: line})
+		notice = strings.Split(v.Notice, "\n")
+	}
+	head := func(noticeLines int) []Row {
+		h := []Row{{Kind: RowTitle, Summary: Summary(groups)}, {Kind: RowRule}}
+		for _, line := range notice[:noticeLines] {
+			h = append(h, Row{Kind: RowNotice, Text: line})
 		}
+		return h
 	}
 	if len(groups) == 0 {
-		rows := head
+		rows := head(len(notice))
 		if v.Empty != "" {
 			rows = append(rows, Row{Kind: RowNote, Text: v.Empty})
 		}
@@ -96,10 +101,14 @@ func FitView(v View, avail int) ([]Row, int) {
 		units += max(len(g.Tabs), 1)
 	}
 
-	if full := layout(groups, units); len(head)+len(full) <= avail {
-		return append(head, full...), 0
+	if full := layout(groups, units); len(head(len(notice)))+len(full) <= avail {
+		return append(head(len(notice)), full...), 0
 	}
-	budget := avail - len(head) - 1 // one row reserved for the footer
+	// Something has to be hidden, so the summary row, the rule and the footer are
+	// not negotiable: notice lines are the ones that give way.
+	lines := min(len(notice), max(avail-3, 0))
+	h := head(lines)
+	budget := avail - len(h) - 1 // one row reserved for the footer
 	shown := 0
 	for shown < units && len(layout(groups, shown+1)) <= budget {
 		shown++
@@ -111,7 +120,7 @@ func FitView(v View, avail int) ([]Row, int) {
 			visible++
 		}
 	}
-	rows := append(head, body...)
+	rows := append(h, body...)
 	if visible == total {
 		return clip(rows, avail), 0
 	}

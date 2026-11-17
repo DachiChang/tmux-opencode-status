@@ -196,3 +196,27 @@ func TestPublishOnlyEmitsDistinctLayouts(t *testing.T) {
 		t.Fatalf("options = %d", len(p.Options))
 	}
 }
+
+func TestFooterAndSummarySurviveManyNoticeLines(t *testing.T) {
+	notice := "一\n二\n三\n四\n五"
+	for avail := 3; avail <= 12; avail++ {
+		rows, hidden := FitView(View{Groups: sample(), Notice: notice}, avail)
+		if len(rows) > avail {
+			t.Fatalf("avail=%d：列數 %d 超出", avail, len(rows))
+		}
+		if hidden == 0 {
+			continue
+		}
+		if rows[0].Kind != RowTitle || rows[0].Summary == "" {
+			t.Fatalf("avail=%d：頂部摘要被裁掉：%+v", avail, rows[0])
+		}
+		last := rows[len(rows)-1]
+		if last.Kind != RowMore || last.Hidden != hidden {
+			t.Fatalf("avail=%d：「還有 N 個 tab」被裁掉，最後一列 %+v（hidden=%d）", avail, last, hidden)
+		}
+		visible := len(tabTitles(rows))
+		if visible+hidden != 7 {
+			t.Fatalf("avail=%d：可見 %d + 隱藏 %d 應為 7", avail, visible, hidden)
+		}
+	}
+}
