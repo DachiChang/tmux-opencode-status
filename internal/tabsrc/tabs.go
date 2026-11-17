@@ -61,6 +61,12 @@ func (s Source) Watch(ctx context.Context, wake chan<- struct{}) {
 		}
 		func() {
 			defer w.Close()
+			// watcher 裝好之前的變動不會有事件；就緒後補一次喚醒（目錄稍後才出現而重試成功時亦同），
+			// 讓啟動空窗內的變動不必等低頻補漏。
+			select {
+			case wake <- struct{}{}:
+			default:
+			}
 			for {
 				select {
 				case <-ctx.Done():
