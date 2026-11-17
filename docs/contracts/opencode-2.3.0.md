@@ -83,6 +83,7 @@ OpenCode TUI 會把 pane title 設為 `OpenCode`；`mini`／`run` 不會。**本
 - `tabs` 順序即 TUI tab 順序。
 - `unread` 在 v2.3.0 **恆為空物件**（原始碼註解：Kept empty for rollback compatibility）。**不要讀它**；未讀以 session API 的 `time.idle/viewed` 為準。
 - `title` 只是備援（TUI 優先用 API 的 `session.title`）。它是使用者資料，診斷輸出不得包含。
+  - 實作：有 API session 資料時顯示 `session.title`（`GET /api/session/{id}` 的 `title`，並由 `session.created`／`session.renamed` 事件的 `data.title` 即時更新）；尚未取得（服務不可連、資料沒有 title）時才退回 tabs.json 的 `title`。`session.renamed` 的 schema 為 `{sessionID, title}`（v2.3.0 `packages/schema/src/session-event.ts`）。
 - 其他同目錄 `highlights.json`、`session-list.json`、`session-terminal-selection.json` 與本需求無關。
 
 ### 選擇來源（cwd / global）

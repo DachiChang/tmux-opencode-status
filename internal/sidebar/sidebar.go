@@ -298,6 +298,17 @@ func (d *Daemon) stateOf(session string) render.State {
 	return d.live.State(session)
 }
 
+// titleOf 是 tab 顯示的標題：有 API session.title 時以它為準（TUI 同樣如此），
+// 否則退回 tabs.json 保存的標題。
+func (d *Daemon) titleOf(t contract.Tab) string {
+	if d.live != nil {
+		if title, ok := d.live.Title(t.SessionID); ok {
+			return title
+		}
+	}
+	return t.Title
+}
+
 // view 由最後可用資料組出側欄內容。從未讀到成功資料的來源沒有任何內容可顯示，
 // 此時不輸出「沒有 TUI／無 tab」，只留提示。
 func (d *Daemon) view(mode contract.Mode) render.View {
@@ -319,7 +330,7 @@ func (d *Daemon) view(mode contract.Mode) render.View {
 	for _, tg := range d.groupsFor(mode, names) {
 		g := render.Group{Name: tg.name}
 		for _, t := range tg.tabs {
-			g.Tabs = append(g.Tabs, render.Tab{Title: t.Title, SessionID: t.SessionID, State: d.stateOf(t.SessionID)})
+			g.Tabs = append(g.Tabs, render.Tab{Title: d.titleOf(t), SessionID: t.SessionID, State: d.stateOf(t.SessionID)})
 		}
 		view.Groups = append(view.Groups, g)
 	}

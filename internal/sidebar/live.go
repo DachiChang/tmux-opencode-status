@@ -156,6 +156,13 @@ func (l *live) State(tab string) render.State {
 	return displayState(l.health(tab), l.tr.TabStatus(tab))
 }
 
+// Title 是 tab 的即時標題（API session.title）；尚未取得時 ok 為 false。
+func (l *live) Title(tab string) (string, bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.tr.Title(tab)
+}
+
 // Down 表示服務目前不可連線（已嘗試且失敗，或連線已中斷）。
 func (l *live) Down() bool {
 	l.mu.Lock()

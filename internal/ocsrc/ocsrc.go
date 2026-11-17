@@ -25,7 +25,7 @@ import (
 // 不含 session.status／session.idle：目標版本從未送出，不得依賴。
 // 排隊 prompt（inbox）初版不處理。
 var SSETypes = []string{
-	"session.created", "session.deleted",
+	"session.created", "session.deleted", "session.renamed",
 	"session.execution.started", "session.execution.succeeded",
 	"session.execution.failed", "session.execution.interrupted",
 	"session.viewed",

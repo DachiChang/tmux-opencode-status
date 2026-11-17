@@ -22,6 +22,7 @@ type Tracker struct {
 
 type tracked struct {
 	parent  string
+	title   string
 	running bool
 	outcome string
 	idle    int64
@@ -48,6 +49,16 @@ func (t *Tracker) Synced() bool { return t.synced }
 // Invalidate 讓事件推導的狀態失效（連線中斷等；效果同收到 server.connected），
 // 直到下一次 ApplySnapshot 前不得當成最新事實。
 func (t *Tracker) Invalidate() { t.Apply(Event{Type: EventServerConnected}) }
+
+// Title 回傳 session 目前已知的 API 標題；尚未取得（或服務沒有提供）時 ok 為 false，
+// 呼叫端退回 tabs.json 的備援標題。
+func (t *Tracker) Title(id string) (title string, ok bool) {
+	s := t.sessions[id]
+	if s == nil || s.title == "" {
+		return "", false
+	}
+	return s.title, true
+}
 
 // Mark 回傳目前的事件序號。在開始讀取 REST 之前取得，讀取完成後傳給 ApplyFamily：
 // 序號之後收到的事件比該次讀取新，不會被覆蓋。
@@ -77,6 +88,13 @@ func (t *Tracker) Apply(e Event) {
 	case "session.created":
 		s := t.get(e.SessionID)
 		s.parent = e.ParentID
+		if e.Title != "" {
+			s.title = e.Title
+		}
+	case "session.renamed":
+		if e.Title != "" {
+			t.get(e.SessionID).title = e.Title
+		}
 	case "session.deleted":
 		t.get(e.SessionID).deleted = true
 	case "session.execution.started":
@@ -154,6 +172,9 @@ func (t *Tracker) applySnapshot(s Snapshot, since uint64, scope map[string]bool)
 			if cur.parent == "" {
 				cur.parent = x.ParentID
 			}
+			if cur.title == "" {
+				cur.title = x.Title
+			}
 			if x.Time.Viewed > cur.viewed {
 				cur.viewed = x.Time.Viewed
 			}
@@ -164,6 +185,9 @@ func (t *Tracker) applySnapshot(s Snapshot, since uint64, scope map[string]bool)
 		}
 		cur := t.get(x.ID)
 		cur.parent, cur.outcome, cur.idle, cur.viewed = x.ParentID, x.Outcome, x.Time.Idle, x.Time.Viewed
+		if x.Title != "" {
+			cur.title = x.Title
+		}
 		cur.running = s.Running[x.ID]
 		cur.deleted = false
 	}
