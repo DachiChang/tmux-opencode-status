@@ -476,18 +476,21 @@ func TestPendingApprovalsAndAnswersOnARealTmuxWithFakeOpenCodeService(t *testing
 	// 顏色：黃色 ?，沒有背景色塊
 	svc.AskPermission("per_4", "ses_2")
 	e.eventually(time.Second, "待核准", func(s string) bool { return strings.Contains(s, "? calm") })
-	yellowQ := false
-	for _, l := range strings.Split(e.outTmux("show-options", "-g"), "\n") {
-		if !strings.HasPrefix(l, "@tos_sb_") {
-			continue
+	var own []string
+	for _, l := range strings.Split(e.inTmux("show-options", "-g"), "\n") {
+		if strings.HasPrefix(l, "@tos_sb_") {
+			own = append(own, l)
 		}
-		if strings.Contains(l, "bg=") || strings.Contains(l, "fg=yellow,bold]!") {
-			t.Fatalf("待處理不得使用背景色塊或黃色 !：%s", l)
-		}
-		yellowQ = yellowQ || strings.Contains(l, "#[fg=yellow,bold]?#[default]")
 	}
-	if !yellowQ {
-		t.Fatal("側欄輸出找不到黃色 ?")
+	opts := strings.Join(own, "\n")
+	if opts == "" {
+		t.Fatalf("找不到側欄輸出選項：\n%s", opts)
+	}
+	if strings.Contains(opts, "bg=") || strings.Contains(opts, "fg=yellow,bold]!") {
+		t.Fatalf("待處理不得使用背景色塊或黃色 !：\n%s", opts)
+	}
+	if !strings.Contains(opts, "#[fg=yellow,bold]?#[default]") {
+		t.Fatalf("側欄輸出找不到黃色 ?：\n%s", opts)
 	}
 
 	if w := svc.Writes(); len(w) != 0 {
