@@ -136,19 +136,19 @@ func TestRunningThenFinishedUnreadThenReadByAnotherClient(t *testing.T) {
 
 	lw.svc.Start("ses_1")
 	got := lw.eventually(t, "執行中", func(s string) bool { return hasLine(s, "● 修正登入") })
-	if !hasLine(got, "◆ OPENCODE                       ●1") || !hasLine(got, "api                              ●1") {
+	if !hasLine(got, "◆ OPENCODE                     ●1") || !hasLine(got, "api                            ●1") {
 		t.Fatalf("摘要未更新：\n%s", got)
 	}
 
 	lw.svc.Finish("ses_1", "succeeded")
 	got = lw.eventually(t, "結束未讀", func(s string) bool { return hasLine(s, "◆ 修正登入") })
-	if !hasLine(got, "◆ OPENCODE                       ◆1") {
+	if !hasLine(got, "◆ OPENCODE                     ◆1") {
 		t.Fatalf("摘要未更新：\n%s", got)
 	}
 
 	lw.svc.View("ses_1") // 其他 client 讀取；側欄不自己標記已讀
 	got = lw.eventually(t, "已讀後回到閒置", func(s string) bool { return hasLine(s, "· 修正登入") })
-	if hasLine(got, "◆ OPENCODE                       ◆1") || strings.Contains(got, "●") {
+	if hasLine(got, "◆ OPENCODE                     ◆1") || strings.Contains(got, "●") {
 		t.Fatalf("閒置不應出現在摘要：\n%s", got)
 	}
 }
@@ -166,7 +166,7 @@ func TestFailedIsRedAndInterruptedIsNotAFailure(t *testing.T) {
 	lw.svc.Start("ses_i")
 	lw.svc.Finish("ses_i", "interrupted")
 	got := lw.eventually(t, "失敗與中斷", func(s string) bool { return hasLine(s, "✗ fails") && hasLine(s, "◆ interrupted") })
-	if !hasLine(got, "◆ OPENCODE                    ◆1 ✗1") {
+	if !hasLine(got, "◆ OPENCODE                  ◆1 ✗1") {
 		t.Fatalf("摘要順序應為 ●、?、◆、✗、!：\n%s", got)
 	}
 }
@@ -187,7 +187,7 @@ func TestUnreadStateBeforeStartupComesFromSnapshotAndSharedReadState(t *testing.
 			t.Fatalf("缺 %q：\n%s", want, got)
 		}
 	}
-	if !hasLine(got, "◆ OPENCODE                 ●1 ◆2 ✗1") {
+	if !hasLine(got, "◆ OPENCODE               ●1 ◆2 ✗1") {
 		t.Fatalf("摘要不符：\n%s", got)
 	}
 }
@@ -216,10 +216,10 @@ func TestStateChangesNeverReorderTabsAndSummaryDedupesBySession(t *testing.T) {
 		last = i
 	}
 	// 同一 session 出現在兩個群組：群組各計一次，全體摘要按 session 去重
-	if !hasLine(got, "◆ OPENCODE                       ●1") {
+	if !hasLine(got, "◆ OPENCODE                     ●1") {
 		t.Fatalf("全體摘要未按 session 去重：\n%s", got)
 	}
-	if !hasLine(got, "api                              ●1") || !hasLine(got, "web                              ●1") {
+	if !hasLine(got, "api                            ●1") || !hasLine(got, "web                            ●1") {
 		t.Fatalf("群組摘要不符：\n%s", got)
 	}
 }
@@ -334,7 +334,7 @@ func TestPendingPermissionAndFormExistingAtStartupShowYellowQuestionMark(t *test
 	lw.svc.SeedForm("frm_1", "ses_b")
 	lw.openTabs(t, "/work/api", [2]string{"ses_a", "needs approval"}, [2]string{"ses_b", "needs answer"}, [2]string{"ses_c", "calm"})
 	got := lw.eventually(t, "初始化即讀到待處理", func(s string) bool { return hasLine(s, "? needs approval") && hasLine(s, "? needs answer") })
-	if !hasLine(got, "· calm") || !hasLine(got, "◆ OPENCODE                       ?2") {
+	if !hasLine(got, "· calm") || !hasLine(got, "◆ OPENCODE                     ?2") {
 		t.Fatalf("摘要或其他 tab 不符：\n%s", got)
 	}
 	// 顏色：黃色 ?，沒有背景色塊，也不是舊 POC 的黃色 !
@@ -342,10 +342,10 @@ func TestPendingPermissionAndFormExistingAtStartupShowYellowQuestionMark(t *test
 		if strings.Contains(opt, "bg=") {
 			t.Fatalf("待處理不得使用背景色塊：%q", opt)
 		}
-		if !strings.Contains(opt, "#[fg=yellow,bold]?#[default] ") {
+		if !strings.Contains(opt, "#[fg=#FACC15,bold]?#[default] ") {
 			continue
 		}
-		if strings.Contains(opt, "#[fg=yellow,bold]!") {
+		if strings.Contains(opt, "#[fg=#FACC15,bold]!") {
 			t.Fatalf("不得沿用黃色 !：%q", opt)
 		}
 		return
@@ -420,7 +420,7 @@ func TestSummaryCountsTabsNotRequests(t *testing.T) {
 	lw.svc.SeedForm("frm_3", "ses_2")
 	lw.openTabs(t, "/work/api", [2]string{"ses_1", "one"}, [2]string{"ses_2", "two"}, [2]string{"ses_3", "three"})
 	got := lw.eventually(t, "待處理", func(s string) bool { return hasLine(s, "? one") && hasLine(s, "? two") })
-	if !hasLine(got, "◆ OPENCODE                       ?2") || !hasLine(got, "api                              ?2") {
+	if !hasLine(got, "◆ OPENCODE                     ?2") || !hasLine(got, "api                            ?2") {
 		t.Fatalf("5 個請求只該算 2 個 tab：\n%s", got)
 	}
 	// 一個請求處理掉，tab 仍有另一個請求：維持 ?，不因單一回覆就當成已處理完
