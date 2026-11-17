@@ -58,6 +58,7 @@ type Config struct {
 	Width    int           // side-status-width，內容寬度為 Width-1（一格是分隔線）
 	Debounce time.Duration // 收到通知後等多久合併同時發生的變動
 	Retry    time.Duration // 服務連線失敗後的重試間隔（預設 DefaultRetry）
+	Resync   time.Duration // 家族補漏重讀週期（預設 DefaultResync）
 }
 
 // 時間預算（spec 驗收目標：一般變動 1 秒、漏通知／強制關閉 10 秒內修正）。
@@ -96,7 +97,7 @@ func New(cfg Config, deps Deps) *Daemon {
 	}
 	d := &Daemon{cfg: cfg, deps: deps, liveWake: make(chan struct{}, 1)}
 	if deps.Service != nil {
-		d.live = newLive(deps.Service, cfg.Retry, func() {
+		d.live = newLive(deps.Service, cfg.Retry, cfg.Resync, func() {
 			select {
 			case d.liveWake <- struct{}{}:
 			default:
@@ -161,8 +162,13 @@ func (d *Daemon) render() error {
 			}
 		}
 		d.live.Track(d.ctx, ids)
-		if view.Notice == "" && len(ids) > 0 && d.live.Down() {
-			view.Notice = "無法連線 OpenCode 服務"
+		// 服務斷線與 tab 清單／tmux 讀取失敗是不同問題，各自提示一次（多行）；
+		// 服務斷線的提示不依 tab 數重複。
+		if len(ids) > 0 && d.live.Down() {
+			if view.Notice != "" {
+				view.Notice += "\n"
+			}
+			view.Notice += "無法連線 OpenCode 服務"
 		}
 	}
 	return d.publish(view)

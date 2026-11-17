@@ -178,6 +178,7 @@ TUI 自己的做法 [文件 `data.tsx`/`client/solid/data.ts`]：以 `session.sy
 - `Content-Type: text/event-stream`，HTTP/1.1 chunked，`Cache-Control: no-cache, no-transform`。
 - **第一個事件永遠是** `data: {"id":"evt_…","type":"server.connected","data":{}}`，接著立刻一個 `: heartbeat`。
 - 心跳 = SSE 註解行 `: heartbeat`，**每 15 秒**一次（實測 1794903360 / …375 / …390 / …405 / …420，間隔 15 s）；它不是 `data:` 事件。無聲斷線偵測：> 2~3 個心跳間隔（建議 45 s）沒收到任何位元組即視為斷線。
+  - #9 實作：`ocsrc.DefaultIdleTimeout = 45s`；SSE 讀到任何位元組（含心跳）即重置計時，逾時取消連線並回報 `ErrIdleTimeout`，常駐程式把該連線的所有 tab 視為未知、顯示服務斷線提示，之後依重試間隔重新探索並完整重讀。測試／診斷可用 `-idle-timeout` 縮短。
 - 行尾 `\n`；解析器仍應容忍 `\r\n`。
 - 事件 ID 為 `evt_<hex>`；**不支援重播**：送 `Last-Event-ID` 不會補送斷線期間的事件（實測：新連線只收到 `server.connected`）。官方描述：「Volatile by contract: a slow consumer overflows and fails the stream, and events during disconnection are missed.」
 - `?types=a&types=b`（重複參數）過濾；**未知 type → 400** `InvalidRequestError`（會列出所有合法值）。`server.connected` 與心跳不受過濾影響，永遠送出。
@@ -217,6 +218,7 @@ location.shutdown
 **不可依賴的事件**：
 - `session.status` 與 `session.idle`：OpenAPI 宣告，但在本次所有錄製（使用者服務被動觀察、沙盒多情境、含 `types=session.status` 單獨過濾）中**從未出現**。TUI 也不用它們（改用 `session.execution.*`）。官方標為 deprecated（`session.idle`）。**不得依賴**。
 - `session.execution.interrupted` 且 `reason == "shutdown"`：TUI 忽略該事件（不改變 idle 訊息）；它代表服務關閉而不是使用者中斷。實作應與 TUI 一致視為非結束。（來自文件；[未確認] 實測，因本次不能關閉使用者服務。）
+  - #9 實作：`Tracker` 忽略此事件（不結束執行、不改未讀），並觸發全部 tab 的重讀，最終狀態以 REST 為準；其他 reason（`user`／`superseded`／`inactivity`）照常視為結束（中斷＝結束未讀，不算失敗）。與 spec 一致，無偏離。
 - 斷線期間的任何事件。
 - `permission.replied` 在**重啟服務前未回覆**的請求：沙盒重啟後 `GET /api/permission/request` 回空 → 待處理請求**不持久**（服務重啟會失去）；所以重連後必須以 REST 重讀，且不要對舊請求保留狀態。
 

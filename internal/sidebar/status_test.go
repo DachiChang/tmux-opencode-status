@@ -30,15 +30,30 @@ func startLive(t *testing.T) *liveWorld { return startLiveWith(t, nil) }
 
 // startLiveWith 在常駐迴圈啟動前先以 setup 設定外部世界（例如模式選項）。
 func startLiveWith(t *testing.T, setup func(*world)) *liveWorld {
+	return startLiveOpts(t, liveOpts{setup: setup})
+}
+
+// liveOpts 是時間相關的注入點：測試以短週期取代產品預設（45 秒無聲、60 秒補漏重讀、3 秒重試）。
+type liveOpts struct {
+	setup  func(*world)
+	idle   time.Duration // SSE 無聲逾時；0 = 產品預設
+	resync time.Duration // 家族補漏重讀週期；0 = 產品預設
+	retry  time.Duration // 連線失敗後的重試間隔；0 = 20ms
+}
+
+func startLiveOpts(t *testing.T, o liveOpts) *liveWorld {
 	t.Helper()
 	w := newWorld(t)
-	if setup != nil {
-		setup(w)
+	if o.setup != nil {
+		o.setup(w)
+	}
+	if o.retry == 0 {
+		o.retry = 20 * time.Millisecond
 	}
 	lw := &liveWorld{world: w, svc: fakeoc.New(t), svcFile: filepath.Join(t.TempDir(), "service.json"), wake: make(chan struct{}, 1)}
 	ctx, cancel := context.WithCancel(context.Background())
-	w.d = sidebar.New(sidebar.Config{Width: 36, Debounce: time.Millisecond, Retry: 20 * time.Millisecond},
-		sidebar.Deps{Panes: w.panes, Tabs: w.tabs, Out: w.out, Mode: w.mode, Wake: lw.wake, Service: ocsrc.Source{Path: lw.svcFile}})
+	w.d = sidebar.New(sidebar.Config{Width: 36, Debounce: time.Millisecond, Retry: o.retry, Resync: o.resync},
+		sidebar.Deps{Panes: w.panes, Tabs: w.tabs, Out: w.out, Mode: w.mode, Wake: lw.wake, Service: ocsrc.Source{Path: lw.svcFile, IdleTimeout: o.idle}})
 	done := make(chan error, 1)
 	go func() { done <- w.d.Run(ctx) }()
 	t.Cleanup(func() {
