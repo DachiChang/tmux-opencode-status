@@ -75,3 +75,6 @@ func (f *TabsFile) Select(mode Mode, dir string) []Tab {
 	}
 	return f.Cwd[dir].Tabs
 }
+
+// EmptyTabs 是尚未有任何 TUI 保存過 tab 的清單（tabs.json 不存在的全新環境）。
+func EmptyTabs() *TabsFile { return &TabsFile{Cwd: map[string]tabList{}} }

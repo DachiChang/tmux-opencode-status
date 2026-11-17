@@ -173,7 +173,7 @@ func TestPublishCoversEveryAvailableHeightWithItsOwnLayout(t *testing.T) {
 func TestPublishFormatSelectsByClientHeightAndStatusLines(t *testing.T) {
 	p := Publish(sample(), 36)
 	f := p.Format()
-	for _, must := range []string{"#{client_height}", "#{status}", "#{@sb_"} {
+	for _, must := range []string{"#{client_height}", "#{status}", "#{@tos_sb_"} {
 		if !strings.Contains(f, must) {
 			t.Fatalf("format lacks %q: %s", must, f)
 		}

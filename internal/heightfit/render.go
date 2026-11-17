@@ -55,6 +55,10 @@ func renderRow(r Row, width int) string {
 			ts = "fg=colour252,bold"
 		}
 		return styled(s.style, s.sym) + " " + styled(ts, esc(title))
+	case RowNote:
+		return styled("fg=colour244", esc(truncate(clean(r.Text), width)))
+	case RowNotice:
+		return styled("fg=yellow", esc(truncate(clean(r.Text), width)))
 	case RowMore:
 		return styled("fg=colour244", truncate("… 還有 "+itoa(r.Hidden)+" 個 tab", width))
 	}
