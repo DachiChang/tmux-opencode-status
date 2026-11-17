@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -42,6 +41,8 @@ type Deps struct {
 	Panes PaneSource
 	Tabs  TabSource
 	Out   Output
+	// Mode 讀取插件模式選項；nil 等同未設定（預設 cwd）。
+	Mode ModeSource
 
 	// Wake 是事件通知（tmux hook、tab 檔變動）；Ticks 是低頻補漏。兩者皆可為 nil，
 	// 時間由呼叫端注入，測試因此不需等待真實時間。
@@ -66,6 +67,8 @@ type Daemon struct {
 
 	panes     []PaneFact // 最後一次成功讀到的資料；讀取失敗時沿用並提示
 	tabs      *contract.TabsFile
+	mode      contract.Mode // 最後一次生效的有效模式
+	haveMode  bool
 	havePanes bool
 	last      string // 上次寫出內容的指紋
 	havePub   bool
@@ -78,6 +81,9 @@ func New(cfg Config, deps Deps) *Daemon {
 	if cfg.Debounce == 0 {
 		cfg.Debounce = DefaultDebounce
 	}
+	if deps.Mode == nil {
+		deps.Mode = unsetMode{}
+	}
 	return &Daemon{cfg: cfg, deps: deps}
 }
 
@@ -86,6 +92,17 @@ func New(cfg Config, deps Deps) *Daemon {
 func (d *Daemon) Sync() error {
 	var errs []error
 	notice := ""
+	mode, tracking, modeNotice, modeErr := d.resolveMode()
+	if modeErr != nil {
+		errs = append(errs, modeErr)
+	}
+	if !tracking {
+		// 首次就沒有有效模式：不開始追蹤（不讀 tmux／tab 清單、不顯示空狀態），只留提示。
+		if err := d.publish(heightfit.View{Notice: modeNotice}); err != nil {
+			errs = append(errs, err)
+		}
+		return errors.Join(errs...)
+	}
 	if panes, err := d.deps.Panes.Panes(); err != nil {
 		errs = append(errs, fmt.Errorf("讀取 tmux pane：%w", err))
 		notice = "無法讀取 tmux，顯示最後可用資料"
@@ -100,8 +117,11 @@ func (d *Daemon) Sync() error {
 	} else {
 		d.tabs = tabs
 	}
-	view := d.view()
+	view := d.view(mode)
 	view.Notice = notice
+	if modeNotice != "" {
+		view.Notice = modeNotice // 設定錯誤比資料讀取提示更需要使用者處理
+	}
 	if err := d.publish(view); err != nil {
 		errs = append(errs, err)
 	}
@@ -110,7 +130,7 @@ func (d *Daemon) Sync() error {
 
 // view 由最後可用資料組出側欄內容。從未讀到成功資料的來源沒有任何內容可顯示，
 // 此時不輸出「沒有 TUI／無 tab」，只留提示。
-func (d *Daemon) view() heightfit.View {
+func (d *Daemon) view(mode contract.Mode) heightfit.View {
 	if !d.havePanes || d.tabs == nil {
 		return heightfit.View{}
 	}
@@ -126,9 +146,9 @@ func (d *Daemon) view() heightfit.View {
 	}
 	sort.Strings(names)
 	view := heightfit.View{Empty: "沒有 OpenCode TUI"}
-	for _, dir := range names {
-		g := heightfit.Group{Name: filepath.Base(dir)}
-		for _, t := range d.tabs.Select(contract.ModeCwd, dir) {
+	for _, tg := range d.groupsFor(mode, names) {
+		g := heightfit.Group{Name: tg.name}
+		for _, t := range tg.tabs {
 			g.Tabs = append(g.Tabs, heightfit.Tab{Title: t.Title, State: heightfit.Unknown})
 		}
 		view.Groups = append(view.Groups, g)
