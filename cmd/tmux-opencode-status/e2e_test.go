@@ -10,6 +10,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/DachiChang/tmux-opencode-status/internal/fakeoc"
 )
 
 // 程序層級的外部行為測試：真實常駐程式 + 隔離的 tmux server（-L <socket> -f /dev/null）+
@@ -22,8 +24,10 @@ type env struct {
 	in, out  string // 被觀察的 server 與承載 client 的外層 server
 	daemon   *exec.Cmd
 	tabsPath string
-	binDir   string
-	bin      string
+	// servicePath 指向測試自己的 service.json；絕不讀取使用者真實的 OpenCode 服務。
+	servicePath string
+	binDir      string
+	bin         string
 }
 
 func (e *env) inTmux(args ...string) string {
@@ -55,6 +59,7 @@ func newEnv(t *testing.T) *env {
 	root, _ := filepath.EvalSymlinks(t.TempDir())
 	e := &env{t: t, dir: root, in: fmt.Sprintf("tos-e2e-in-%d", os.Getpid()), out: fmt.Sprintf("tos-e2e-out-%d", os.Getpid())}
 	e.tabsPath = filepath.Join(root, "state", "tabs.json")
+	e.servicePath = filepath.Join(root, "state", "service.json")
 	e.binDir = filepath.Join(root, "bin")
 	must(t, os.MkdirAll(filepath.Dir(e.tabsPath), 0o755))
 	must(t, os.MkdirAll(e.binDir, 0o755))
@@ -90,7 +95,7 @@ func newEnv(t *testing.T) *env {
 }
 
 func (e *env) startDaemon(bin string) {
-	e.daemon = exec.Command(bin, "-L", e.in, "-f", "/dev/null", "-tabs", e.tabsPath, "-show", "-backstop", "5s")
+	e.daemon = exec.Command(bin, "-L", e.in, "-f", "/dev/null", "-tabs", e.tabsPath, "-service", e.servicePath, "-show", "-backstop", "5s")
 	e.daemon.Stderr = os.Stderr
 	must(e.t, e.daemon.Start())
 }
@@ -314,5 +319,63 @@ func TestOtherTmuxServerPanesAreNotMixedIn(t *testing.T) {
 	e.eventually(2*time.Second, "本 server 的 TUI", func(s string) bool { return strings.Contains(s, "local") })
 	if s := e.sidebar(); strings.Contains(s, "foreign") || strings.Contains(s, "elsewhere") {
 		t.Fatalf("混入其他 server 的資料：\n%s", s)
+	}
+}
+
+// 完整程序：真實常駐程式 + 隔離 tmux + 假 OpenCode 服務（httptest + SSE）。
+// 從 attached client 的實際畫面觀察一個 session 的執行／結束／已讀生命週期。
+func TestSessionLifecycleOnARealTmuxWithFakeOpenCodeService(t *testing.T) {
+	e := newEnv(t)
+	dir := filepath.Join(e.dir, "work", "api")
+	svc := fakeoc.New(t)
+	svc.AddSession("ses_0", "")
+	svc.AddSession("ses_1", "")
+	e.writeTabs(e.tabsJSON(map[string][]string{dir: {"修正登入", "write tests"}}))
+	e.tui(dir, "--server", "http://127.0.0.1:1")
+
+	e.eventually(3*time.Second, "服務尚未開啟：保持 ! 並提示，不顯示閒置", func(s string) bool {
+		return strings.Contains(s, "! 修正登入") && strings.Contains(s, "無法連線 OpenCode 服務")
+	})
+	svc.WriteServiceFile(e.servicePath)
+	e.eventually(5*time.Second, "服務出現後自動接上", func(s string) bool {
+		return strings.Contains(s, "· 修正登入") && strings.Contains(s, "· write tests") && !strings.Contains(s, "無法連線")
+	})
+
+	svc.Start("ses_0")
+	d := e.eventually(time.Second, "執行中 1 秒內出現", func(s string) bool {
+		return strings.Contains(s, "● 修正登入") && strings.Contains(s, "◆ OPENCODE") && strings.Contains(s, "●1")
+	})
+	t.Logf("執行中 → 畫面：%v", d)
+	svc.Finish("ses_0", "failed")
+	svc.Start("ses_1")
+	svc.Finish("ses_1", "interrupted")
+	d = e.eventually(time.Second, "失敗／中斷於 1 秒內出現", func(s string) bool {
+		return strings.Contains(s, "✗ 修正登入") && strings.Contains(s, "◆ write tests")
+	})
+	t.Logf("結束未讀 → 畫面：%v", d)
+	t.Logf("畫面：\n%s", e.sidebar())
+	svc.View("ses_0")
+	svc.View("ses_1")
+	d = e.eventually(time.Second, "其他 client 已讀後回閒置", func(s string) bool {
+		return strings.Contains(s, "· 修正登入") && strings.Contains(s, "· write tests")
+	})
+	t.Logf("已讀 → 閒置：%v", d)
+
+	// 服務中斷：移除探索檔並斷線，改為 !；服務回來自動恢復
+	_ = os.Remove(e.servicePath)
+	svc.Drop()
+	e.eventually(3*time.Second, "斷線後為 !", func(s string) bool {
+		return strings.Contains(s, "! 修正登入") && strings.Contains(s, "無法連線 OpenCode 服務")
+	})
+	svc.WriteServiceFile(e.servicePath)
+	e.eventually(5*time.Second, "自動恢復", func(s string) bool { return strings.Contains(s, "· 修正登入") })
+
+	if w := svc.Writes(); len(w) != 0 {
+		t.Fatalf("對 OpenCode 發出了寫入請求：%v", w)
+	}
+	for _, r := range svc.Requests() {
+		if strings.Contains(r, "/view") || strings.Contains(r, "/reply") {
+			t.Fatalf("呼叫了標記已讀／回覆：%s", r)
+		}
 	}
 }

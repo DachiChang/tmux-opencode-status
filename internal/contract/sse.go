@@ -71,12 +71,22 @@ func decodeEvent(payload string) (Event, error) {
 	return e, nil
 }
 
-// ParseSSE 解析 text/event-stream。行尾可為 \n 或 \r\n；以 ':' 開頭的行是註解
-// （伺服器每 15 秒送 ": heartbeat"，不是事件）；空行結束一個事件；多行 data 以 \n 串接。
+// ParseSSE 解析完整的 text/event-stream（到 EOF 為止）；即時串流請用 StreamSSE。
 func ParseSSE(r io.Reader) ([]Event, error) {
+	var events []Event
+	err := StreamSSE(r, func(e Event) error {
+		events = append(events, e)
+		return nil
+	})
+	return events, err
+}
+
+// StreamSSE 逐個解析 text/event-stream 並交給 handle，直到串流結束或 handle 回傳錯誤。
+// 行尾可為 \n 或 \r\n；以 ':' 開頭的行是註解（伺服器每 15 秒送 ": heartbeat"，不是事件）；
+// 空行結束一個事件；多行 data 以 \n 串接。
+func StreamSSE(r io.Reader, handle func(Event) error) error {
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
-	var events []Event
 	var data []string
 	flush := func() error {
 		if len(data) == 0 {
@@ -87,15 +97,14 @@ func ParseSSE(r io.Reader) ([]Event, error) {
 		if err != nil {
 			return err
 		}
-		events = append(events, e)
-		return nil
+		return handle(e)
 	}
 	for sc.Scan() {
 		line := strings.TrimSuffix(sc.Text(), "\r")
 		switch {
 		case line == "":
 			if err := flush(); err != nil {
-				return events, err
+				return err
 			}
 		case strings.HasPrefix(line, ":"):
 		case strings.HasPrefix(line, "data:"):
@@ -103,7 +112,7 @@ func ParseSSE(r io.Reader) ([]Event, error) {
 		}
 	}
 	if err := sc.Err(); err != nil {
-		return events, err
+		return err
 	}
-	return events, flush()
+	return flush()
 }

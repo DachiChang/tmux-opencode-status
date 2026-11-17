@@ -180,3 +180,36 @@ func TestEventTimestampsMatchSessionTimesInRecordedData(t *testing.T) {
 		}
 	}
 }
+
+// 同步期間收到事件的 session，snapshot 仍要補上事件不會帶的靜態／單調資料
+// （父子關係、已讀時間），否則家族會缺成員、已讀會被遺漏；但不得讓事件結果倒退。
+func TestTrackerSnapshotStillFillsParentAndViewedForTouchedSessions(t *testing.T) {
+	tr := contract.NewTracker()
+	tr.Apply(contract.Event{Type: contract.EventServerConnected})
+	tr.Apply(contract.Event{Type: "session.execution.started", SessionID: "child"}) // 建立事件在連線前，沒有 parentID
+	snap := contract.Snapshot{
+		Sessions: []contract.Session{{ID: "root"}, {ID: "child", ParentID: "root"}},
+		Running:  map[string]bool{"child": true},
+	}
+	tr.ApplySnapshot(snap)
+	if got := tr.TabStatus("root"); got != contract.Running {
+		t.Fatalf("後代在同步期間有事件，仍須歸屬到 tab 家族：%v", got)
+	}
+
+	tr = contract.NewTracker()
+	tr.Apply(contract.Event{Type: contract.EventServerConnected})
+	tr.Apply(contract.Event{Type: "session.execution.succeeded", SessionID: "root", Created: 900})
+	old := contract.Session{ID: "root"}
+	old.Time.Idle, old.Time.Viewed, old.Outcome = 500, 500, "failed" // 較舊的結果
+	tr.ApplySnapshot(contract.Snapshot{Sessions: []contract.Session{old}})
+	if got := tr.TabStatus("root"); got != contract.FinishedUnread {
+		t.Fatalf("較舊 snapshot 讓事件結果倒退：%v", got)
+	}
+
+	fresh := contract.Session{ID: "root", Outcome: "succeeded"}
+	fresh.Time.Idle, fresh.Time.Viewed = 900, 900 // 其他 client 已讀（事件在斷線期間遺失）
+	tr.ApplySnapshot(contract.Snapshot{Sessions: []contract.Session{fresh}})
+	if got := tr.TabStatus("root"); got != contract.Idle {
+		t.Fatalf("snapshot 的已讀時間應被採用：%v", got)
+	}
+}
