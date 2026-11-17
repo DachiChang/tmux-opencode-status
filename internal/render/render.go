@@ -22,12 +22,12 @@ const (
 )
 
 var stateStyle = map[State]struct{ sym, style string }{
-	Running:   {"●", "fg=" + colGreen + ",bold"},
-	Attention: {"?", "fg=" + colYellow + ",bold"},
-	Unread:    {"◆", "fg=" + colBlue + ",bold"},
-	Failed:    {"✗", "fg=" + colRed + ",bold"},
-	Unknown:   {"!", "fg=" + colGray + ",bold"},
-	Idle:      {"·", "fg=" + colGray + ",bold"},
+	Running:        {"●", "fg=" + colGreen + ",bold"},
+	Attention:      {"?", "fg=" + colYellow + ",bold"},
+	FinishedUnread: {"◆", "fg=" + colBlue + ",bold"},
+	FailedUnread:   {"✗", "fg=" + colRed + ",bold"},
+	DataProblem:    {"!", "fg=" + colGray + ",bold"},
+	Idle:           {"·", "fg=" + colGray + ",bold"},
 }
 
 var summaryStyle = map[string]string{
@@ -75,7 +75,7 @@ func renderRow(r Row, usable int) string {
 		switch r.State {
 		case Idle:
 			ts = "fg=" + colGray
-		case Unread, Failed:
+		case FinishedUnread, FailedUnread:
 			ts = "fg=" + colTitle + ",bold"
 		}
 		return strings.Repeat(" ", tabIndent) + styled(s.style, s.sym) + " " + styled(ts, esc(title))

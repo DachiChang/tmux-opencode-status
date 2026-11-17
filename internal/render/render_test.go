@@ -26,7 +26,7 @@ func plain(ls []string) []string {
 }
 
 func one(title string, st render.State) []render.Group {
-	return []render.Group{{Name: "api", Tabs: []render.Tab{{Title: title, State: st, Session: "s1"}}}}
+	return []render.Group{{Name: "api", Tabs: []render.Tab{{Title: title, State: st, SessionID: "s1"}}}}
 }
 
 // ---- 視覺骨架：與 POC 相同的邊界、縮排與右對齊 ----
@@ -34,11 +34,11 @@ func one(title string, st render.State) []render.Group {
 func TestLayoutMatchesThePOCGeometryAt36Cells(t *testing.T) {
 	groups := []render.Group{
 		{Name: "opencode", Tabs: []render.Tab{
-			{Title: "桃園搜尋爬取與分類", State: render.Running, Session: "a"},
-			{Title: "protal-prod-eks202606 reloaded 很長很長很長", State: render.Unread, Session: "b"},
-			{Title: "opencode 2.3.0 更新內容", State: render.Idle, Session: "c"},
+			{Title: "桃園搜尋爬取與分類", State: render.Running, SessionID: "a"},
+			{Title: "protal-prod-eks202606 reloaded 很長很長很長", State: render.FinishedUnread, SessionID: "b"},
+			{Title: "opencode 2.3.0 更新內容", State: render.Idle, SessionID: "c"},
 		}},
-		{Name: "asgard", Tabs: []render.Tab{{Title: "InfluxDB 磁碟用量持續上升", State: render.Attention, Session: "d"}}},
+		{Name: "asgard", Tabs: []render.Tab{{Title: "InfluxDB 磁碟用量持續上升", State: render.Attention, SessionID: "d"}}},
 	}
 	want := []string{
 		" ◆ OPENCODE               ●1 ?1 ◆1",
@@ -92,9 +92,9 @@ func TestStateSymbolsUseTheSpecColours(t *testing.T) {
 	}{
 		{render.Running, "●", "#4ADE80"},
 		{render.Attention, "?", "#FACC15"},
-		{render.Unread, "◆", "#60A5FA"},
-		{render.Failed, "✗", "#F87171"},
-		{render.Unknown, "!", "#737373"},
+		{render.FinishedUnread, "◆", "#60A5FA"},
+		{render.FailedUnread, "✗", "#F87171"},
+		{render.DataProblem, "!", "#737373"},
 		{render.Idle, "·", "#737373"},
 	}
 	for _, c := range cases {
@@ -113,7 +113,7 @@ func TestTitleEmphasisFollowsSpec(t *testing.T) {
 	dim := func(st render.State) bool {
 		return strings.Contains(styleOf(t, tabLine(t, st, "TITLE"), "TITLE"), "fg=#737373")
 	}
-	if !bold(render.Unread) || !bold(render.Failed) {
+	if !bold(render.FinishedUnread) || !bold(render.FailedUnread) {
 		t.Error("未讀（◆ ✗）標題應粗體")
 	}
 	if bold(render.Running) || bold(render.Idle) || bold(render.Attention) {
@@ -122,15 +122,15 @@ func TestTitleEmphasisFollowsSpec(t *testing.T) {
 	if !dim(render.Idle) {
 		t.Error("閒置標題應壓暗")
 	}
-	if dim(render.Running) || dim(render.Unread) {
+	if dim(render.Running) || dim(render.FinishedUnread) {
 		t.Error("非閒置標題不得壓暗")
 	}
 }
 
 func TestNoBackgroundColoursAnywhere(t *testing.T) {
 	groups := []render.Group{{Name: "api", Tabs: []render.Tab{
-		{Title: "a", State: render.Attention, Session: "1"}, {Title: "b", State: render.Unknown, Session: "2"},
-		{Title: "c", State: render.Failed, Session: "3"}, {Title: "d", State: render.Idle, Session: "4"}}}, {Name: "empty"}}
+		{Title: "a", State: render.Attention, SessionID: "1"}, {Title: "b", State: render.DataProblem, SessionID: "2"},
+		{Title: "c", State: render.FailedUnread, SessionID: "3"}, {Title: "d", State: render.Idle, SessionID: "4"}}}, {Name: "empty"}}
 	rows, _ := render.FitView(render.View{Groups: groups, Notice: "n"}, 30)
 	for _, l := range render.Render(rows, contentWidth) {
 		if strings.Contains(l, "bg=") || strings.Contains(l, "reverse") {
@@ -160,9 +160,9 @@ func TestChromeColoursFollowThePOC(t *testing.T) {
 
 func TestSummarySymbolsAreColouredIndividually(t *testing.T) {
 	groups := []render.Group{{Name: "g", Tabs: []render.Tab{
-		{Title: "1", State: render.Running, Session: "1"}, {Title: "2", State: render.Attention, Session: "2"},
-		{Title: "3", State: render.Unread, Session: "3"}, {Title: "4", State: render.Failed, Session: "4"},
-		{Title: "5", State: render.Unknown, Session: "5"}}}}
+		{Title: "1", State: render.Running, SessionID: "1"}, {Title: "2", State: render.Attention, SessionID: "2"},
+		{Title: "3", State: render.FinishedUnread, SessionID: "3"}, {Title: "4", State: render.FailedUnread, SessionID: "4"},
+		{Title: "5", State: render.DataProblem, SessionID: "5"}}}}
 	ls := lines(groups, 20)
 	for sym, colour := range map[string]string{"●1": "#4ADE80", "?1": "#FACC15", "◆1": "#60A5FA", "✗1": "#F87171", "!1": "#737373"} {
 		if st := styleOf(t, ls[0], sym); !strings.Contains(st, "fg="+colour) {
@@ -178,8 +178,8 @@ func TestSummarySymbolsAreColouredIndividually(t *testing.T) {
 
 func TestTopSummaryDedupesBySessionButGroupSummariesCountTheirMembers(t *testing.T) {
 	groups := []render.Group{
-		{Name: "a", Tabs: []render.Tab{{Title: "x", State: render.Running, Session: "shared"}}},
-		{Name: "b", Tabs: []render.Tab{{Title: "x", State: render.Running, Session: "shared"}, {Title: "y", State: render.Running, Session: "other"}}},
+		{Name: "a", Tabs: []render.Tab{{Title: "x", State: render.Running, SessionID: "shared"}}},
+		{Name: "b", Tabs: []render.Tab{{Title: "x", State: render.Running, SessionID: "shared"}, {Title: "y", State: render.Running, SessionID: "other"}}},
 	}
 	got := plain(lines(groups, 30))
 	if !strings.HasSuffix(got[0], "●2") {
@@ -201,7 +201,7 @@ func TestTopSummaryDedupesBySessionButGroupSummariesCountTheirMembers(t *testing
 
 func TestGroupSummaryCountsEveryMemberTabOncePerTab(t *testing.T) {
 	groups := []render.Group{{Name: "a", Tabs: []render.Tab{
-		{Title: "x", State: render.Attention, Session: "s"}, {Title: "y", State: render.Attention, Session: "s"}}}}
+		{Title: "x", State: render.Attention, SessionID: "s"}, {Title: "y", State: render.Attention, SessionID: "s"}}}}
 	got := plain(lines(groups, 30))
 	if !strings.HasSuffix(got[2], "?2") || !strings.HasSuffix(got[0], "?1") {
 		t.Fatalf("群組按成員 ?2、全體按 session ?1：\n%s", strings.Join(got, "\n"))
@@ -271,7 +271,7 @@ func TestShortTitlesAreNotTruncated(t *testing.T) {
 }
 
 func TestLongGroupNameIsTruncatedLeavingRoomForItsSummary(t *testing.T) {
-	groups := []render.Group{{Name: strings.Repeat("很長的目錄名稱", 6), Tabs: []render.Tab{{Title: "x", State: render.Running, Session: "1"}}}}
+	groups := []render.Group{{Name: strings.Repeat("很長的目錄名稱", 6), Tabs: []render.Tab{{Title: "x", State: render.Running, SessionID: "1"}}}}
 	got := plain(lines(groups, 20))[2]
 	if w := cellwidth.String(got); w != 34 {
 		t.Fatalf("群組列寬 = %d，摘要應貼齊右邊界：%q", w, got)
@@ -296,7 +296,7 @@ func TestHostileTextIsRenderedLiterallyAndStaysOnOneLine(t *testing.T) {
 		"\xff\xfe invalid utf8 \xc3",
 	}
 	for _, title := range hostile {
-		groups := []render.Group{{Name: title, Tabs: []render.Tab{{Title: title, State: render.Running, Session: "s"}}}}
+		groups := []render.Group{{Name: title, Tabs: []render.Tab{{Title: title, State: render.Running, SessionID: "s"}}}}
 		rows, _ := render.FitView(render.View{Groups: groups, Notice: title, Empty: title}, 30)
 		ls := render.Render(rows, contentWidth)
 		for _, l := range ls {
@@ -363,7 +363,7 @@ func TestLeadingInvisibleCharactersCannotWidenTheirNeighbours(t *testing.T) {
 		if w := cellwidth.String(tab); w != cellwidth.String("  · abc") {
 			t.Errorf("開頭 %U 使 tab 行寬變成 %d：%q", []rune(lead)[0], w, tab)
 		}
-		group := plain(lines([]render.Group{{Name: title, Tabs: []render.Tab{{Title: "x", State: render.Running, Session: "1"}}}}, 20))[2]
+		group := plain(lines([]render.Group{{Name: title, Tabs: []render.Tab{{Title: "x", State: render.Running, SessionID: "1"}}}}, 20))[2]
 		if w := cellwidth.String(group); w != 34 {
 			t.Errorf("開頭 %U 使群組行寬變成 %d：%q", []rune(lead)[0], w, group)
 		}
@@ -372,9 +372,9 @@ func TestLeadingInvisibleCharactersCannotWidenTheirNeighbours(t *testing.T) {
 
 func TestAbsurdlyLargeCountsNeverPushASummaryPastTheEdge(t *testing.T) {
 	var tabs []render.Tab
-	for _, st := range []render.State{render.Running, render.Attention, render.Unread, render.Failed, render.Unknown} {
+	for _, st := range []render.State{render.Running, render.Attention, render.FinishedUnread, render.FailedUnread, render.DataProblem} {
 		for i := 0; i < 120; i++ {
-			tabs = append(tabs, render.Tab{Title: "t", State: st, Session: string(rune('a'+st)) + string(rune(i+0x100))})
+			tabs = append(tabs, render.Tab{Title: "t", State: st, SessionID: string(rune('a'+st)) + string(rune(i+0x100))})
 		}
 	}
 	groups := []render.Group{{Name: "一個很長很長的群組名稱", Tabs: tabs}}

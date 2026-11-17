@@ -242,7 +242,7 @@ func (c *Client) SessionOverrides() ([]SessionOverride, error) {
 		if err != nil {
 			continue // session 在查詢之間消失
 		}
-		o := SessionOverride{Session: id}
+		o := SessionOverride{TmuxSession: id}
 		for _, line := range strings.Split(string(opts), "\n") {
 			name, val, _ := strings.Cut(line, " ")
 			if name == "side-status" || name == "side-status-width" || name == "side-status-format" {
@@ -261,8 +261,8 @@ func (c *Client) SessionOverrides() ([]SessionOverride, error) {
 
 // SessionOverride 是一個 session 的 side-status 覆寫。
 type SessionOverride struct {
-	Session string
-	Options []string
+	TmuxSession string
+	Options     []string
 }
 
 // GlobalValue 唯讀取得全域選項的值。

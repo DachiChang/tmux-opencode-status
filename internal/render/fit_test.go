@@ -8,8 +8,8 @@ import (
 func sample() []Group {
 	return []Group{
 		{Name: "aicova/api", Tabs: []Tab{{Title: "a1", State: Running}, {Title: "a2", State: Attention}, {Title: "a3", State: Idle}}},
-		{Name: "infra", Tabs: []Tab{{Title: "b1", State: Failed}, {Title: "b2", State: Unread}}},
-		{Name: "profcoo/api", Tabs: []Tab{{Title: "c1", State: Unknown}, {Title: "c2", State: Running}}},
+		{Name: "infra", Tabs: []Tab{{Title: "b1", State: FailedUnread}, {Title: "b2", State: FinishedUnread}}},
+		{Name: "profcoo/api", Tabs: []Tab{{Title: "c1", State: DataProblem}, {Title: "c2", State: Running}}},
 	}
 }
 

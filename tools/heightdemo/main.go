@@ -24,11 +24,11 @@ var scenarios = map[string][]render.Group{
 			{Title: "寫單元測試", State: render.Idle},
 		}},
 		{Name: "infra", Tabs: []render.Tab{
-			{Title: "terraform plan failed 這是一個非常長的標題需要截斷", State: render.Failed},
-			{Title: "k8s upgrade", State: render.Unread},
+			{Title: "terraform plan failed 這是一個非常長的標題需要截斷", State: render.FailedUnread},
+			{Title: "k8s upgrade", State: render.FinishedUnread},
 		}},
 		{Name: "profcoo/api", Tabs: []render.Tab{
-			{Title: "migrate db", State: render.Unknown},
+			{Title: "migrate db", State: render.DataProblem},
 			{Title: "docs", State: render.Running},
 			{Title: "refactor", State: render.Idle},
 		}},
@@ -41,9 +41,9 @@ var scenarios = map[string][]render.Group{
 		{Name: "aicova/api", Tabs: []render.Tab{
 			{Title: "t1", State: render.Running}, {Title: "t2", State: render.Running},
 			{Title: "t3", State: render.Attention}, {Title: "t4", State: render.Idle},
-			{Title: "t5", State: render.Idle}, {Title: "t6", State: render.Unread},
+			{Title: "t5", State: render.Idle}, {Title: "t6", State: render.FinishedUnread},
 		}},
-		{Name: "infra", Tabs: []render.Tab{{Title: "x1", State: render.Failed}, {Title: "x2", State: render.Idle}}},
+		{Name: "infra", Tabs: []render.Tab{{Title: "x1", State: render.FailedUnread}, {Title: "x2", State: render.Idle}}},
 	},
 }
 

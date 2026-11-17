@@ -230,7 +230,7 @@ func (d *Daemon) report() {
 		seen := map[string]bool{}
 		for _, g := range d.view(d.mode).Groups {
 			for _, t := range g.Tabs {
-				seen[t.Session] = true
+				seen[t.SessionID] = true
 			}
 		}
 		st.Tabs = len(seen)
@@ -274,7 +274,7 @@ func (d *Daemon) render() error {
 		var ids []string
 		for _, g := range view.Groups {
 			for _, t := range g.Tabs {
-				ids = append(ids, t.Session)
+				ids = append(ids, t.SessionID)
 			}
 		}
 		d.live.Track(d.ctx, ids)
@@ -290,10 +290,10 @@ func (d *Daemon) render() error {
 	return d.publish(view)
 }
 
-// stateOf 是 tab 目前的狀態；未接服務或基準資料不完整時為未知，不猜測閒置。
+// stateOf 是 tab 目前的狀態；未接服務或基準資料不完整時為資料異常，不猜測閒置。
 func (d *Daemon) stateOf(session string) render.State {
 	if d.live == nil {
-		return render.Unknown
+		return render.DataProblem
 	}
 	return d.live.State(session)
 }
@@ -319,7 +319,7 @@ func (d *Daemon) view(mode contract.Mode) render.View {
 	for _, tg := range d.groupsFor(mode, names) {
 		g := render.Group{Name: tg.name}
 		for _, t := range tg.tabs {
-			g.Tabs = append(g.Tabs, render.Tab{Title: t.Title, Session: t.SessionID, State: d.stateOf(t.SessionID)})
+			g.Tabs = append(g.Tabs, render.Tab{Title: t.Title, SessionID: t.SessionID, State: d.stateOf(t.SessionID)})
 		}
 		view.Groups = append(view.Groups, g)
 	}

@@ -14,17 +14,17 @@ const (
 	Idle State = iota
 	Running
 	Attention
-	Unread
-	Failed
-	Unknown
+	FinishedUnread
+	FailedUnread
+	DataProblem
 )
 
 type Tab struct {
 	Title string
 	State State
-	// Session 是 tab 對應的 session；非空時摘要按 session 去重（同一 session
+	// SessionID 是 tab 對應的 session；非空時摘要按 session 去重（同一 session
 	// 出現在多個 tab 清單也只計一次）。
-	Session string
+	SessionID string
 }
 
 type Group struct {
@@ -168,11 +168,11 @@ func summarize(groups []Group, dedupe bool) string {
 	seen := map[string]bool{}
 	for _, g := range groups {
 		for _, t := range g.Tabs {
-			if dedupe && t.Session != "" {
-				if seen[t.Session] {
+			if dedupe && t.SessionID != "" {
+				if seen[t.SessionID] {
 					continue
 				}
-				seen[t.Session] = true
+				seen[t.SessionID] = true
 			}
 			c[t.State]++
 		}
@@ -181,7 +181,7 @@ func summarize(groups []Group, dedupe bool) string {
 	for _, e := range []struct {
 		sym string
 		n   int
-	}{{"●", c[Running]}, {"?", c[Attention]}, {"◆", c[Unread]}, {"✗", c[Failed]}, {"!", c[Unknown]}} {
+	}{{"●", c[Running]}, {"?", c[Attention]}, {"◆", c[FinishedUnread]}, {"✗", c[FailedUnread]}, {"!", c[DataProblem]}} {
 		if e.n == 0 {
 			continue
 		}

@@ -24,16 +24,6 @@ const (
 	maxParallel    = 4 // 同時進行中的 tab 讀取數；單一 tab 慢不會拖住其他 tab，也不會一次灌爆服務
 )
 
-// Health 是 tab 的資料健康度。「狀態未知」與「session 不存在」在內部保持區別
-// （重試與恢復的方式不同），畫面共用灰色 !。
-type health int
-
-const (
-	healthOK      health = iota
-	healthUnknown        // 資料尚未讀到或讀取失敗（暫時性）：持續重試
-	healthMissing        // OpenCode 明確回報 session 不存在：不輪詢，出現（建立事件）或補漏重讀才恢復
-)
-
 // live 維護對本機共用服務的唯讀連線與狀態：連上 SSE → 以 server.connected 為界逐 tab
 // 重讀基準資料 → 由事件增量更新。沒有被追蹤的 tab 時不連線、不查詢 session。
 //
@@ -159,24 +149,11 @@ func (l *live) health(tab string) health {
 	return healthOK
 }
 
-// State 是 tab 目前可呈現的狀態；基準資料不完整時為 Unknown，不猜測閒置。
+// State 是 tab 目前可呈現的狀態；基準資料不完整時為資料異常，不猜測閒置。
 func (l *live) State(tab string) render.State {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if l.health(tab) != healthOK {
-		return render.Unknown
-	}
-	switch l.tr.TabStatus(tab) {
-	case contract.WaitingApproval, contract.WaitingAnswer:
-		return render.Attention
-	case contract.Running:
-		return render.Running
-	case contract.FailedUnread:
-		return render.Failed
-	case contract.FinishedUnread:
-		return render.Unread
-	}
-	return render.Idle
+	return displayState(l.health(tab), l.tr.TabStatus(tab))
 }
 
 // Down 表示服務目前不可連線（已嘗試且失敗，或連線已中斷）。
@@ -204,7 +181,7 @@ func (l *live) Status() (state, reason string) {
 
 func (l *live) loop(ctx context.Context) {
 	for ctx.Err() == nil {
-		err := l.session(ctx)
+		err := l.runConnection(ctx)
 		if ctx.Err() != nil {
 			return // 追蹤已停止（Track 空清單已重置狀態）；不得動到之後可能啟動的新迴圈
 		}
@@ -222,8 +199,8 @@ func (l *live) loop(ctx context.Context) {
 	}
 }
 
-// session 是一條連線的生命週期：每次都重新探索服務，直到串流結束或無聲逾時才返回。
-func (l *live) session(ctx context.Context) error {
+// runConnection 是一條連線的生命週期：每次都重新探索服務，直到串流結束或無聲逾時才返回。
+func (l *live) runConnection(ctx context.Context) error {
 	svc, err := l.dialer.Dial(ctx)
 	if err != nil {
 		return err

@@ -110,7 +110,7 @@ func diagnose(o *options, w io.Writer) int {
 	default:
 		p("session 層級覆寫：%d 個 session 自行設定了 side-status 選項。這些 session 不跟隨全域設定：", len(ov))
 		for _, x := range ov {
-			p("  session %s：%s", x.Session, strings.Join(x.Options, "、"))
+			p("  session %s：%s", x.TmuxSession, strings.Join(x.Options, "、"))
 		}
 		p("  影響：覆寫 side-status=off 的 session 看不到側欄；覆寫 side-status-width／format 的 session 會用自己的寬度或格式，")
 		p("  不會顯示插件內容。插件不會清除或修改這些覆寫；要讓該 session 顯示，請自行 `set -u -t <session> <選項>`。")
