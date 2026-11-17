@@ -79,6 +79,33 @@ type serviceFile struct {
 
 var ErrNoService = errors.New("找不到 OpenCode 服務探索檔")
 
+var (
+	ErrBadDiscovery     = errors.New("服務探索檔格式不相容")
+	ErrIdentityMismatch = errors.New("服務身分與探索檔不符（可能已重啟，將重新探索）")
+)
+
+// Reason 把連線錯誤歸類成固定的描述，供診斷使用。原始錯誤文字可能夾帶路徑或回應內容，
+// 診斷與狀態檔只使用這裡的固定文字，絕不輸出憑證或回應本文。
+func Reason(err error) string {
+	var h *HTTPError
+	switch {
+	case err == nil:
+		return ""
+	case errors.Is(err, ErrNoService):
+		return "找不到服務探索檔（OpenCode 服務尚未開啟）"
+	case errors.Is(err, ErrBadDiscovery):
+		return "服務探索檔格式不相容"
+	case errors.Is(err, ErrIdentityMismatch):
+		return "服務身分與探索檔不符（可能已重啟）"
+	case errors.Is(err, ErrIdleTimeout):
+		return "事件串流無聲逾時"
+	case errors.As(err, &h):
+		return fmt.Sprintf("服務回應 HTTP %d", h.Status)
+	default:
+		return "無法連線服務"
+	}
+}
+
 // Dial 讀取探索檔並以 GET /api/info 驗證身分（pid、version 必須與探索檔相符）。
 func (s Source) Dial(ctx context.Context) (Service, error) {
 	raw, err := os.ReadFile(s.Path)
@@ -90,7 +117,7 @@ func (s Source) Dial(ctx context.Context) (Service, error) {
 	}
 	var f serviceFile
 	if err := json.Unmarshal(raw, &f); err != nil || f.URL == "" || f.Password == "" {
-		return nil, errors.New("服務探索檔格式不相容")
+		return nil, ErrBadDiscovery
 	}
 	u, err := url.Parse(f.URL)
 	if err != nil || u.Host == "" {
@@ -116,7 +143,7 @@ func (s Source) Dial(ctx context.Context) (Service, error) {
 		return nil, fmt.Errorf("驗證服務身分：%w", err)
 	}
 	if info.PID != f.PID || info.Version != f.Version {
-		return nil, errors.New("服務身分與探索檔不符（可能已重啟，將重新探索）")
+		return nil, ErrIdentityMismatch
 	}
 	return svc, nil
 }

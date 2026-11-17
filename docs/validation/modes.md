@@ -36,7 +36,7 @@ set -g @opencode-status-mode global
   該空窗內的重載因此也在 1 秒內套用，不必等 5 秒補漏（`TestModeChangeDuringDaemonStartupIsNotLeftToTheBackstop` 以 tmux 包裝確定性放大空窗）。
 - 喚醒後內容一律重讀；漏通知由低頻補漏補上。模式與資料都沒變時不重寫 tmux（指紋比對）。
 - 切換模式只改變同一個實例的讀取結果，不重啟、不產生第二個實例，也不呼叫 `side-status`
-  （不強制打開已隱藏的側欄；只有明確 `-show` 才會設定）。完整單實例生命週期屬 #11。
+  （不強制打開已隱藏的側欄；只有明確 `-show` 才會設定，且每個 tmux server 只做一次）。單實例與重載交接見 `lifecycle.md`。
 - 結束時只移除自己的 hook 索引。
 
 ## 測試（外部行為接縫）

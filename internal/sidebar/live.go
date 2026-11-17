@@ -57,7 +57,8 @@ type live struct {
 	loaded map[string]bool
 	jobs   map[string]*tabJob
 	tokens uint64
-	down   bool // 最近一次連線嘗試失敗或已中斷
+	down   bool   // 最近一次連線嘗試失敗或已中斷
+	reason string // 最近一次失敗的固定描述（診斷用，不含原始錯誤文字）
 
 	parent context.Context
 	cancel context.CancelFunc // 非 nil 表示連線迴圈執行中
@@ -185,6 +186,22 @@ func (l *live) Down() bool {
 	return l.down
 }
 
+// Status 回報服務連線的固定描述：沒有追蹤項目時為 idle（刻意不連線），
+// 已完成基準讀取為 connected，其餘為 down 並附固定原因。
+func (l *live) Status() (state, reason string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	switch {
+	case l.cancel == nil:
+		return ServiceIdle, ""
+	case l.down:
+		return ServiceDown, l.reason
+	case l.ready:
+		return ServiceConnected, ""
+	}
+	return ServiceConnecting, ""
+}
+
 func (l *live) loop(ctx context.Context) {
 	for ctx.Err() == nil {
 		err := l.session(ctx)
@@ -194,6 +211,7 @@ func (l *live) loop(ctx context.Context) {
 		l.mu.Lock()
 		l.reset()
 		l.down = err != nil
+		l.reason = ocsrc.Reason(err)
 		l.mu.Unlock()
 		l.notify()
 		select {

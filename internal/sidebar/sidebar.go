@@ -52,7 +52,42 @@ type Deps struct {
 
 	// Service 是 OpenCode 本機共用服務的唯讀連線來源；nil 表示不接服務，所有 tab 維持未知。
 	Service ocsrc.Dialer
+
+	// Report 在可觀察狀態改變時被呼叫（診斷用）。內容只有計數與固定描述，
+	// 不含憑證、prompt、對話、session 或 tab 標題，也不含原始錯誤文字。nil 表示不回報。
+	Report func(Status)
 }
+
+// Service 連線狀態的固定描述值。
+const (
+	ServiceIdle       = "idle"       // 沒有追蹤項目，刻意不連線、不查詢
+	ServiceConnected  = "connected"  // 已連上並完成基準讀取
+	ServiceConnecting = "connecting" // 正在連線或讀取基準資料
+	ServiceDown       = "down"       // 連線失敗或已中斷，自動重試中
+	ServiceNone       = "none"       // 未設定服務來源
+)
+
+// Status 是診斷用的目前狀態快照。
+type Status struct {
+	Mode          string // 目前生效的模式（cwd／global）；尚未開始追蹤時為空
+	ModeIssue     string // 模式設定問題的固定描述
+	Tracking      bool
+	TUIs          int
+	Tabs          int
+	Service       string
+	ServiceReason string
+	Issues        []string // 目前持續存在的問題（固定描述）
+	Recent        []ErrorRecord
+}
+
+// ErrorRecord 是一筆最近發生的問題：只有來源與固定描述。
+type ErrorRecord struct {
+	At      time.Time
+	Source  string // tmux／tabs／mode／service／output
+	Message string
+}
+
+const maxRecent = 8
 
 type Config struct {
 	Width    int           // side-status-width，內容寬度為 Width-1（一格是分隔線）
@@ -83,6 +118,14 @@ type Daemon struct {
 	live     *live
 	liveWake chan struct{} // 服務事件／狀態變化通知（只需重新排版，不必重讀 tmux）
 	ctx      context.Context
+
+	issues    []string // 最近一次 Sync 的來源問題（固定描述）
+	modeIssue string
+	recent    []ErrorRecord
+	lastRecv  map[string]bool // 目前仍在持續的問題來源，避免同一個持續問題每次同步都記一筆
+	lastRep   string
+
+	lastService string
 }
 
 func New(cfg Config, deps Deps) *Daemon {
@@ -112,9 +155,25 @@ func New(cfg Config, deps Deps) *Daemon {
 func (d *Daemon) Sync() error {
 	var errs []error
 	notice := ""
+	d.issues = d.issues[:0]
+	active := map[string]bool{}
+	note := func(source, msg string) {
+		d.issues = append(d.issues, msg)
+		active[source] = true
+		if !d.lastRecv[source] {
+			d.recent = append(d.recent, ErrorRecord{At: time.Now(), Source: source, Message: msg})
+			if len(d.recent) > maxRecent {
+				d.recent = d.recent[len(d.recent)-maxRecent:]
+			}
+		}
+	}
+	defer func() { d.lastRecv = active; d.report() }()
 	_, tracking, modeNotice, modeErr := d.resolveMode()
+	d.modeIssue = ""
 	if modeErr != nil {
 		errs = append(errs, modeErr)
+		d.modeIssue = modeNotice
+		note("mode", modeNotice)
 	}
 	if !tracking {
 		// 首次就沒有有效模式：不開始追蹤（不讀 tmux／tab 清單、不顯示空狀態），只留提示。
@@ -126,11 +185,13 @@ func (d *Daemon) Sync() error {
 	if panes, err := d.deps.Panes.Panes(); err != nil {
 		errs = append(errs, fmt.Errorf("讀取 tmux pane：%w", err))
 		notice = "無法讀取 tmux，顯示最後可用資料"
+		note("tmux", "無法讀取 tmux pane 清單")
 	} else {
 		d.panes, d.havePanes = panes, true
 	}
 	if tabs, err := d.deps.Tabs.Read(); err != nil {
 		errs = append(errs, fmt.Errorf("讀取 tab 清單：%w", err))
+		note("tabs", "tab 清單不可讀或格式不相容")
 		if notice == "" {
 			notice = "無法讀取 tab 清單，顯示最後可用資料"
 		}
@@ -143,8 +204,63 @@ func (d *Daemon) Sync() error {
 	}
 	if err := d.render(); err != nil {
 		errs = append(errs, err)
+		note("output", "無法寫入 tmux 側欄選項")
 	}
 	return errors.Join(errs...)
+}
+
+// report 把目前狀態交給 Report；只有內容改變才呼叫。
+func (d *Daemon) report() {
+	if d.deps.Report == nil {
+		return
+	}
+	st := Status{Mode: "", ModeIssue: d.modeIssue, Tracking: d.haveMode, Service: ServiceNone,
+		Issues: append([]string(nil), d.issues...), Recent: append([]ErrorRecord(nil), d.recent...)}
+	if d.haveMode {
+		st.Mode = string(d.mode)
+	}
+	if d.havePanes {
+		for _, p := range d.panes {
+			if contract.IsTUICandidate(p.Pane) {
+				st.TUIs++
+			}
+		}
+	}
+	if d.haveMode && d.havePanes && d.tabs != nil {
+		seen := map[string]bool{}
+		for _, g := range d.view(d.mode).Groups {
+			for _, t := range g.Tabs {
+				seen[t.Session] = true
+			}
+		}
+		st.Tabs = len(seen)
+	}
+	if d.live != nil {
+		st.Service, st.ServiceReason = d.live.Status()
+		down := st.Service == ServiceDown && st.ServiceReason != ""
+		if down {
+			st.Issues = append(st.Issues, "無法連線 OpenCode 服務："+st.ServiceReason)
+		}
+		// 服務失敗與其他來源一樣只在「剛發生」時記一筆最近錯誤，不因持續失敗而洗版。
+		if down && d.lastService != st.ServiceReason {
+			d.recent = append(d.recent, ErrorRecord{At: time.Now(), Source: "service", Message: st.ServiceReason})
+			if len(d.recent) > maxRecent {
+				d.recent = d.recent[len(d.recent)-maxRecent:]
+			}
+			st.Recent = append([]ErrorRecord(nil), d.recent...)
+		}
+		if down {
+			d.lastService = st.ServiceReason
+		} else if st.Service == ServiceConnected || st.Service == ServiceIdle {
+			d.lastService = ""
+		}
+	}
+	key := fmt.Sprintf("%v|%v", st.Issues, st)
+	if key == d.lastRep {
+		return
+	}
+	d.lastRep = key
+	d.deps.Report(st)
 }
 
 // render 以最後可用資料與服務狀態重新排版並寫出（內容沒變就不寫）。
@@ -252,6 +368,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 			case <-time.After(d.cfg.Debounce):
 			}
 			_ = d.render()
+			d.report()
 			continue
 		case <-d.deps.Ticks:
 		case <-d.deps.Wake:

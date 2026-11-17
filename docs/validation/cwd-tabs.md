@@ -4,7 +4,8 @@
 
 ```sh
 go build -o tmux-opencode-status ./cmd/tmux-opencode-status
-./tmux-opencode-status -L <socket> [-show] [-tabs <tabs.json>] [-backstop 5s]   # 或 -S <path>
+./tmux-opencode-status start [-show] [-tabs <tabs.json>] [-backstop 5s]   # 冪等啟動（TPM 入口），見 lifecycle.md
+./tmux-opencode-status run -L <socket> [-show] [-tabs <tabs.json>] [-backstop 5s]   # 常駐程式本體；或 -S <path>
 ```
 
 - 必須明確指定 `-L` 或 `-S`，不使用預設 tmux server；`-f /dev/null` 僅供隔離測試。

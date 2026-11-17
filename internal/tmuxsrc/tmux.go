@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/DachiChang/tmux-opencode-status/internal/contract"
@@ -26,6 +27,9 @@ type Client struct {
 	// Width 是 side-status-width（含 1 格分隔線）。
 	Width     int
 	published map[string]bool
+	// lastFormat 是本實例最後寫入的 side-status-format；停止時只有內容仍相同才移除，
+	// 不覆蓋使用者之後自己設定的值。
+	lastFormat string
 }
 
 const (
@@ -138,6 +142,10 @@ func (c *Client) Publish(p heightfit.Published) error {
 		names = append(names, n)
 	}
 	sort.Strings(names)
+	if c.published == nil {
+		// 第一次寫入：本插件專屬前綴下既有的選項（前一個實例或崩潰留下的）一併由這次寫入清掉。
+		c.published = c.existingLayoutOptions()
+	}
 	next := map[string]bool{}
 	for _, n := range names {
 		next[n] = true
@@ -153,7 +161,38 @@ func (c *Client) Publish(p heightfit.Published) error {
 		return err
 	}
 	c.published = next
+	c.lastFormat = p.Format()
 	return nil
+}
+
+// existingLayoutOptions 列出目前全域中屬於本插件前綴的版面選項。讀取失敗視為沒有（之後的寫入會補上新內容）。
+func (c *Client) existingLayoutOptions() map[string]bool {
+	out, err := c.tmux("", "show-options", "-g")
+	found := map[string]bool{}
+	if err != nil {
+		return found
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		if name, _, _ := strings.Cut(line, " "); strings.HasPrefix(name, heightfit.OptPrefix) {
+			found[name] = true
+		}
+	}
+	return found
+}
+
+// ClearDisplay 在常駐程式因明確停止而退出（server 仍在）時，移除本插件發布的版面選項，
+// 並在 side-status-format 仍是本實例寫入的內容時把它與 width 重設為 tmux 預設，避免留下不再更新的過期內容。
+// 只動本插件前綴的選項與它自己寫入的全域選項；不碰其他使用者選項。
+func (c *Client) ClearDisplay() {
+	var b strings.Builder
+	if cur, err := c.tmux("", "show-options", "-gqv", "side-status-format"); err == nil && c.lastFormat != "" &&
+		strings.TrimSuffix(string(cur), "\n") == c.lastFormat {
+		b.WriteString("set-option -gu side-status-format\nset-option -gu side-status-width\n")
+	}
+	for name := range c.existingLayoutOptions() {
+		b.WriteString("set-option -gu " + name + "\n")
+	}
+	_, _ = c.tmux(b.String(), "source-file", "-")
 }
 
 // quote 轉成 tmux 設定檔的雙引號字串。
@@ -174,10 +213,115 @@ func (c *Client) Setting() (sidebar.ModeSetting, error) {
 	return sidebar.ModeSetting{Value: strings.TrimSuffix(string(out), "\n"), Set: true}, nil
 }
 
-// Show 把 side-status 設為 left（僅在使用者明確要求時由呼叫端使用）。
+// MissingCapabilities 列出此 tmux 缺少的必要能力（3.9 的 side-status 相關選項）。
+// 選項不存在（invalid option）才算缺少；其他錯誤（server 暫時不可用）原樣回報，不誤判成缺少能力。
+func (c *Client) MissingCapabilities() ([]string, error) {
+	var missing []string
+	for _, opt := range []string{"side-status", "side-status-width", "side-status-format"} {
+		if _, err := c.tmux("", "show-options", "-gv", opt); err != nil {
+			if strings.Contains(err.Error(), "invalid option") {
+				missing = append(missing, opt)
+				continue
+			}
+			return nil, err
+		}
+	}
+	return missing, nil
+}
+
+// SessionOverrides 列出在 session 層級覆寫了 side-status 相關選項的 tmux session（只回 session id 與選項名稱，
+// 不回 session 名稱）。這些 session 不會跟隨全域設定，插件也絕不清除它們。
+func (c *Client) SessionOverrides() ([]SessionOverride, error) {
+	out, err := c.tmux("", "list-sessions", "-F", "#{session_id}")
+	if err != nil {
+		return nil, err
+	}
+	var res []SessionOverride
+	for _, id := range strings.Fields(string(out)) {
+		opts, err := c.tmux("", "show-options", "-t", id)
+		if err != nil {
+			continue // session 在查詢之間消失
+		}
+		o := SessionOverride{Session: id}
+		for _, line := range strings.Split(string(opts), "\n") {
+			name, val, _ := strings.Cut(line, " ")
+			if name == "side-status" || name == "side-status-width" || name == "side-status-format" {
+				if name == "side-status-format" {
+					val = "（自訂格式）"
+				}
+				o.Options = append(o.Options, name+"="+val)
+			}
+		}
+		if len(o.Options) > 0 {
+			res = append(res, o)
+		}
+	}
+	return res, nil
+}
+
+// SessionOverride 是一個 session 的 side-status 覆寫。
+type SessionOverride struct {
+	Session string
+	Options []string
+}
+
+// GlobalValue 唯讀取得全域選項的值。
+func (c *Client) GlobalValue(name string) (string, error) {
+	out, err := c.tmux("", "show-options", "-gqv", name)
+	return strings.TrimSuffix(string(out), "\n"), err
+}
+
+// ShownMarker 記錄「本 server 已由插件顯示過側欄」；之後的重載、交接或重啟都不再替使用者打開，
+// 以免把使用者已經隱藏的側欄重新打開。選項隨 tmux server 結束而消失。
+const ShownMarker = "@opencode-status-shown"
+
+// Show 把 side-status 設為 left，且每個 tmux server 生命週期只做一次（僅在使用者明確要求時由呼叫端使用）。
 func (c *Client) Show() error {
-	_, err := c.tmux("", "set-option", "-g", "side-status", "left")
+	out, err := c.tmux("", "show-options", "-gqv", ShownMarker)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(string(out)) != "" {
+		return nil
+	}
+	_, err = c.tmux("", "set-option", "-g", "side-status", "left", ";", "set-option", "-g", ShownMarker, "1")
 	return err
+}
+
+// ClearShownMarker 供明確停止時移除（讓之後重新啟動可再次顯示）。
+func (c *Client) ClearShownMarker() {
+	_, _ = c.tmux("", "set-option", "-gu", ShownMarker)
+}
+
+// ServerInfo 是這個 socket 上 tmux server 的身分。
+type ServerInfo struct {
+	SocketPath string
+	PID        int
+	Version    string
+}
+
+// Server 詢問 server 的 socket 路徑、行程與版本；server 不在時回報錯誤。
+func (c *Client) Server() (ServerInfo, error) {
+	out, err := c.tmux("", "display-message", "-p", "#{socket_path}\t#{pid}\t#{version}")
+	if err != nil {
+		return ServerInfo{}, err
+	}
+	f := strings.Split(strings.TrimRight(string(out), "\n"), "\t")
+	if len(f) != 3 {
+		return ServerInfo{}, fmt.Errorf("tmux display-message 回應格式不符")
+	}
+	pid, perr := strconv.Atoi(f[1])
+	if perr != nil || f[0] == "" {
+		return ServerInfo{}, fmt.Errorf("tmux display-message 回應格式不符")
+	}
+	return ServerInfo{SocketPath: f[0], PID: pid, Version: f[2]}, nil
+}
+
+// ProcessAlive 回報行程是否仍存在。tmux server 結束與否以它的行程為準，
+// 而不是以單次指令失敗判斷：指令可能因一時忙碌或環境問題失敗，行程不在才是確定的結束。
+func ProcessAlive(pid int) bool {
+	err := syscall.Kill(pid, 0)
+	return err == nil || err == syscall.EPERM
 }
 
 // WatchEvents 安裝喚醒用 hook，並以 `tmux wait-for` 阻塞等待；每次被喚醒送出一次通知。

@@ -30,6 +30,9 @@ type env struct {
 	bin         string
 	daemonEnv   []string
 	daemonArgs  []string // 附加到常駐程式的命令列旗標（例如縮短無聲逾時）
+	daemonBin   string
+	// runtimeDir 隔離鎖檔與狀態檔（XDG_RUNTIME_DIR），測試不碰使用者真實的 runtime 目錄。
+	runtimeDir string
 }
 
 func (e *env) inTmux(args ...string) string {
@@ -96,6 +99,14 @@ func newEnvWith(t *testing.T, daemonEnv []string) *env { return newEnvFull(t, da
 
 func newEnvFull(t *testing.T, daemonEnv, daemonArgs []string) *env {
 	t.Helper()
+	e := newBareEnv(t, daemonEnv, daemonArgs)
+	e.startDaemon(e.daemonBin)
+	return e
+}
+
+// newBareEnv 建好隔離的 tmux server、外層 client 與假 opencode，但不啟動常駐程式（由測試自己決定如何啟動）。
+func newBareEnv(t *testing.T, daemonEnv, daemonArgs []string) *env {
+	t.Helper()
 	if testing.Short() {
 		t.Skip("-short")
 	}
@@ -104,6 +115,7 @@ func newEnvFull(t *testing.T, daemonEnv, daemonArgs []string) *env {
 	}
 	root, _ := filepath.EvalSymlinks(t.TempDir())
 	e := &env{t: t, dir: root, in: fmt.Sprintf("tos-e2e-in-%d", os.Getpid()), out: fmt.Sprintf("tos-e2e-out-%d", os.Getpid())}
+	e.runtimeDir = filepath.Join(root, "run")
 	e.tabsPath = filepath.Join(root, "state", "tabs.json")
 	e.servicePath = filepath.Join(root, "state", "service.json")
 	e.binDir = filepath.Join(root, "bin")
@@ -122,6 +134,7 @@ func newEnvFull(t *testing.T, daemonEnv, daemonArgs []string) *env {
 	if b, err := exec.Command("go", "build", "-o", daemonBin, ".").CombinedOutput(); err != nil {
 		t.Fatalf("build daemon: %v: %s", err, b)
 	}
+	e.daemonBin = daemonBin
 	e.writeTabs(`{"global":{"tabs":[],"unread":{}},"cwd":{}}`)
 
 	e.inTmux("new-session", "-d", "-s", "main", "-x", "100", "-y", "30", "-c", root)
@@ -133,11 +146,11 @@ func newEnvFull(t *testing.T, daemonEnv, daemonArgs []string) *env {
 			_ = e.daemon.Process.Kill()
 			_ = e.daemon.Wait()
 		}
+		e.stopStartedDaemons()
 		_ = exec.Command("tmux", "-L", e.in, "-f", "/dev/null", "kill-server").Run()
 		_ = exec.Command("tmux", "-L", e.out, "-f", "/dev/null", "kill-server").Run()
 	})
 	e.daemonEnv, e.daemonArgs = daemonEnv, daemonArgs
-	e.startDaemon(daemonBin)
 	return e
 }
 
@@ -145,9 +158,7 @@ func (e *env) startDaemon(bin string) {
 	args := append([]string{"-L", e.in, "-f", "/dev/null", "-tabs", e.tabsPath, "-service", e.servicePath, "-show", "-backstop", "5s"}, e.daemonArgs...)
 	e.daemon = exec.Command(bin, args...)
 	e.daemon.Stderr = os.Stderr
-	if e.daemonEnv != nil {
-		e.daemon.Env = append(os.Environ(), e.daemonEnv...)
-	}
+	e.daemon.Env = e.cmdEnv()
 	must(e.t, e.daemon.Start())
 }
 
