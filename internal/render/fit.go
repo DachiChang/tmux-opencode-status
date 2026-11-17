@@ -1,4 +1,7 @@
-package heightfit
+// Package render 把側欄的邏輯內容（群組、tab、狀態、提示）依各 client 的可用高度排版、
+// 依終端格寬渲染成 tmux 樣式字串，並發布為全域使用者選項與 side-status-format。
+
+package render
 
 import (
 	"strconv"

@@ -59,4 +59,4 @@ go build -o tmux-opencode-status ./cmd/tmux-opencode-status
   （`tabsrc.TestWatchWakesOnceWhenReadyEvenWithoutAnyFileEvent`）。
 - 讀取失敗（tmux、tabs.json）：沿用最後可用資料並在標題下顯示一行提示；從未成功讀過時只有提示，不顯示「沒有 OpenCode TUI」／「無 tab」。
 - tabs.json 不存在視為全新環境（空清單），格式不相容才是錯誤。
-- heightfit 擴充：`View`（`Empty`、`Notice`）、無 tab 群組以 `無 tab` 行呈現且不計入隱藏 tab 數。
+- render（原 heightfit）擴充：`View`（`Empty`、`Notice`）、無 tab 群組以 `無 tab` 行呈現且不計入隱藏 tab 數。

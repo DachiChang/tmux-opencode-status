@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/DachiChang/tmux-opencode-status/internal/contract"
-	"github.com/DachiChang/tmux-opencode-status/internal/heightfit"
 	"github.com/DachiChang/tmux-opencode-status/internal/ocsrc"
+	"github.com/DachiChang/tmux-opencode-status/internal/render"
 )
 
 // DefaultRetry 是服務連線失敗（尚未開啟、重啟、斷線）後的重試間隔；不啟動或重啟服務。
@@ -160,23 +160,23 @@ func (l *live) health(tab string) health {
 }
 
 // State 是 tab 目前可呈現的狀態；基準資料不完整時為 Unknown，不猜測閒置。
-func (l *live) State(tab string) heightfit.State {
+func (l *live) State(tab string) render.State {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.health(tab) != healthOK {
-		return heightfit.Unknown
+		return render.Unknown
 	}
 	switch l.tr.TabStatus(tab) {
 	case contract.WaitingApproval, contract.WaitingAnswer:
-		return heightfit.Attention
+		return render.Attention
 	case contract.Running:
-		return heightfit.Running
+		return render.Running
 	case contract.FailedUnread:
-		return heightfit.Failed
+		return render.Failed
 	case contract.FinishedUnread:
-		return heightfit.Unread
+		return render.Unread
 	}
-	return heightfit.Idle
+	return render.Idle
 }
 
 // Down 表示服務目前不可連線（已嘗試且失敗，或連線已中斷）。

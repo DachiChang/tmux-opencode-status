@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/DachiChang/tmux-opencode-status/internal/contract"
-	"github.com/DachiChang/tmux-opencode-status/internal/heightfit"
 	"github.com/DachiChang/tmux-opencode-status/internal/ocsrc"
+	"github.com/DachiChang/tmux-opencode-status/internal/render"
 )
 
 // PaneFact 是一個 tmux pane 的辨識事實（PaneID 用於去除 linked window 的重複列出）。
@@ -35,7 +35,7 @@ type TabSource interface {
 
 // Output 把已排好版的側欄寫到 tmux。
 type Output interface {
-	Publish(heightfit.Published) error
+	Publish(render.Published) error
 }
 
 type Deps struct {
@@ -177,7 +177,7 @@ func (d *Daemon) Sync() error {
 	}
 	if !tracking {
 		// 首次就沒有有效模式：不開始追蹤（不讀 tmux／tab 清單、不顯示空狀態），只留提示。
-		if err := d.publish(heightfit.View{Notice: modeNotice}); err != nil {
+		if err := d.publish(render.View{Notice: modeNotice}); err != nil {
 			errs = append(errs, err)
 		}
 		return errors.Join(errs...)
@@ -291,18 +291,18 @@ func (d *Daemon) render() error {
 }
 
 // stateOf 是 tab 目前的狀態；未接服務或基準資料不完整時為未知，不猜測閒置。
-func (d *Daemon) stateOf(session string) heightfit.State {
+func (d *Daemon) stateOf(session string) render.State {
 	if d.live == nil {
-		return heightfit.Unknown
+		return render.Unknown
 	}
 	return d.live.State(session)
 }
 
 // view 由最後可用資料組出側欄內容。從未讀到成功資料的來源沒有任何內容可顯示，
 // 此時不輸出「沒有 TUI／無 tab」，只留提示。
-func (d *Daemon) view(mode contract.Mode) heightfit.View {
+func (d *Daemon) view(mode contract.Mode) render.View {
 	if !d.havePanes || d.tabs == nil {
-		return heightfit.View{}
+		return render.View{}
 	}
 	dirs := map[string]bool{}
 	for _, p := range d.panes {
@@ -315,19 +315,19 @@ func (d *Daemon) view(mode contract.Mode) heightfit.View {
 		names = append(names, dir)
 	}
 	sort.Strings(names)
-	view := heightfit.View{Empty: "沒有 OpenCode TUI"}
+	view := render.View{Empty: "沒有 OpenCode TUI"}
 	for _, tg := range d.groupsFor(mode, names) {
-		g := heightfit.Group{Name: tg.name}
+		g := render.Group{Name: tg.name}
 		for _, t := range tg.tabs {
-			g.Tabs = append(g.Tabs, heightfit.Tab{Title: t.Title, Session: t.SessionID, State: d.stateOf(t.SessionID)})
+			g.Tabs = append(g.Tabs, render.Tab{Title: t.Title, Session: t.SessionID, State: d.stateOf(t.SessionID)})
 		}
 		view.Groups = append(view.Groups, g)
 	}
 	return view
 }
 
-func (d *Daemon) publish(v heightfit.View) error {
-	p := heightfit.PublishView(v, d.cfg.Width-1)
+func (d *Daemon) publish(v render.View) error {
+	p := render.PublishView(v, d.cfg.Width-1)
 	fp := fingerprint(p)
 	if d.havePub && fp == d.last {
 		return nil
@@ -339,7 +339,7 @@ func (d *Daemon) publish(v heightfit.View) error {
 	return nil
 }
 
-func fingerprint(p heightfit.Published) string {
+func fingerprint(p render.Published) string {
 	names := make([]string, 0, len(p.Options))
 	for n := range p.Options {
 		names = append(names, n)

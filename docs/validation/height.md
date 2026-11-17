@@ -18,7 +18,7 @@
 ## 重現
 
 ```sh
-./scripts/validate-height.sh            # 全部情境，輸出即 docs/validation/fixtures/height-run.txt
+./tools/heightdemo/validate-height.sh           # 全部情境，輸出即 docs/validation/fixtures/height-run.txt
 go test ./...                           # 純邏輯／輸出測試
 ```
 
@@ -43,9 +43,9 @@ go test ./...                           # 純邏輯／輸出測試
 
 ## 做法（已實測）
 
-- 純函式 `heightfit.Fit(groups, avail)`：保留標題＋分隔線，依群組／tab 順序累積「完整 tab 行（含必要群組標題與群組間空行）」，
+- 純函式 `render.Fit(groups, avail)`：保留標題＋分隔線，依群組／tab 順序累積「完整 tab 行（含必要群組標題與群組間空行）」，
   放不下時最後一列是 `… 還有 N 個 tab`（N = 未呈現的 tab 數）；整組被隱藏則不顯示其群組標題，只計入 N。
-- `heightfit.Publish`：為每個「版面會改變的可用高度」各算一份版面，存成全域使用者選項 `@tos_sb_<avail>`；
+- `render.Publish`：為每個「版面會改變的可用高度」各算一份版面，存成全域使用者選項 `@tos_sb_<avail>`；
   `side-status-format` 為 `#{?#{e|>=:AVAIL,N},#{@tos_sb_N},…,#{@tos_sb_min}}`，其中
   `AVAIL = client_height − status 行數`。所有 client 共用同一份全域選項，**各自**依 `client_height` 選版面，
   不是以最小 client 高度裁切。
@@ -131,7 +131,7 @@ c7（7 列）                             c10（10 列）
   Hangul jamo 依 初聲→中聲→終聲 組合並丟棄多餘字元、`U+3164` 不畫、行首零寬字元不畫。
   `TestWidthAgreesWithARealAttachedTmuxClient` 以隔離 tmux 的真實 client 逐一驗證 43 個樣本。
 - 未驗證 `side-status right`、`status-position top`（原始碼上可用列數同樣由 `status_side_rows` 決定，預期相同）。
-- #3 本身不涵蓋正式資料來源；`cmd/heightfit-demo` 是驗證用工具（以受控資料與 `-socket` 隔離 server 展示版面，不屬於正式側欄），`internal/heightfit` 已由 #10 成為正式排版／渲染。
+- #3 本身不涵蓋正式資料來源；`tools/heightdemo` 是驗證用工具（以受控資料與 `-socket` 隔離 server 展示版面，不屬於正式側欄），`internal/render` 已由 #10 成為正式排版／渲染。
 
 ## 受影響需求
 

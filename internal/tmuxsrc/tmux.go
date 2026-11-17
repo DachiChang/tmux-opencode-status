@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/DachiChang/tmux-opencode-status/internal/contract"
-	"github.com/DachiChang/tmux-opencode-status/internal/heightfit"
+	"github.com/DachiChang/tmux-opencode-status/internal/render"
 	"github.com/DachiChang/tmux-opencode-status/internal/sidebar"
 )
 
@@ -134,7 +134,7 @@ func foregroundProcs() (map[string]int, error) {
 
 // Publish 以單一 source-file（同一 command queue）寫入所有版面選項與 side-status-format，
 // 並清掉不再使用的版面選項。client 永遠不會看到半更新。
-func (c *Client) Publish(p heightfit.Published) error {
+func (c *Client) Publish(p render.Published) error {
 	var s strings.Builder
 	s.WriteString("set-option -g side-status-width " + strconv.Itoa(c.Width) + "\n")
 	names := make([]string, 0, len(p.Options))
@@ -173,7 +173,7 @@ func (c *Client) existingLayoutOptions() map[string]bool {
 		return found
 	}
 	for _, line := range strings.Split(string(out), "\n") {
-		if name, _, _ := strings.Cut(line, " "); strings.HasPrefix(name, heightfit.OptPrefix) {
+		if name, _, _ := strings.Cut(line, " "); strings.HasPrefix(name, render.OptPrefix) {
 			found[name] = true
 		}
 	}
