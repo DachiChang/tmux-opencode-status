@@ -30,6 +30,28 @@ type Client struct {
 	// lastFormat 是本實例最後寫入的 side-status-format；停止時只有內容仍相同才移除，
 	// 不覆蓋使用者之後自己設定的值。
 	lastFormat string
+	// proc 是讀取前景行程事實的來源；nil 使用本機實作（測試以受控實作替換）。
+	proc procReader
+}
+
+// procReader 讀取前景行程的 argv 與工作目錄；alive 回報行程是否仍存在。
+type procReader interface {
+	Argv(pid int) ([]string, error)
+	Cwd(pid int) (string, error)
+	Alive(pid int) bool
+}
+
+type localProc struct{}
+
+func (localProc) Argv(pid int) ([]string, error) { return procArgv(pid) }
+func (localProc) Cwd(pid int) (string, error)    { return procCwd(pid) }
+func (localProc) Alive(pid int) bool             { return ProcessAlive(pid) }
+
+func (c *Client) procs() procReader {
+	if c.proc != nil {
+		return c.proc
+	}
+	return localProc{}
 }
 
 const (
@@ -88,6 +110,7 @@ func (c *Client) Panes() ([]sidebar.PaneFact, error) {
 	}
 	seen := map[string]bool{}
 	facts := []sidebar.PaneFact{}
+	var unresolved []string
 	for _, line := range strings.Split(strings.TrimRight(string(out), "\n"), "\n") {
 		f := strings.Split(line, "\t")
 		if len(f) != 5 || seen[f[0]] {
@@ -98,16 +121,48 @@ func (c *Client) Panes() ([]sidebar.PaneFact, error) {
 			PaneCurrentPath: f[2], PaneCurrentCommand: f[3], AlternateOn: f[4] == "1",
 		}}
 		if pid, ok := procs[strings.TrimPrefix(f[1], "/dev/")]; ok {
-			if argv, err := procArgv(pid); err == nil {
-				fact.ForegroundArgv = argv
-				if contract.IsTUICandidate(fact.Pane) {
-					fact.ForegroundCwd = procCwd(pid)
-				}
+			if err := c.readForeground(&fact, pid); err != nil {
+				unresolved = append(unresolved, f[0])
+				continue
 			}
 		}
 		facts = append(facts, fact)
 	}
+	if len(unresolved) > 0 {
+		return nil, fmt.Errorf("無法判定 %d 個 pane 的前景行程（%s）", len(unresolved), strings.Join(unresolved, "、"))
+	}
 	return facts, nil
+}
+
+// readForeground 讀取前景行程的 argv 與（TUI 候選的）工作目錄。
+//   - 行程已結束：正常消失，不是錯誤；pane 此刻沒有可辨識的前景行程，下一次掃描就是新的事實。
+//   - 行程仍在卻讀不到：只有 tmux 自己報告前景指令為 opencode 的 pane 才是無法判定的候選，
+//     回報錯誤（呼叫端保留最後可用資料並提示）；其他 pane（例如屬於其他使用者的行程）
+//     不可能是使用者的 OpenCode TUI，不因此讓整個側欄失效。
+func (c *Client) readForeground(fact *sidebar.PaneFact, pid int) error {
+	pr := c.procs()
+	candidate := fact.PaneCurrentCommand == "opencode"
+	argv, err := pr.Argv(pid)
+	if err != nil {
+		if !pr.Alive(pid) || !candidate {
+			return nil
+		}
+		return fmt.Errorf("讀取行程 argv：%w", err)
+	}
+	fact.ForegroundArgv = argv
+	if !contract.IsTUICandidate(fact.Pane) {
+		return nil
+	}
+	cwd, err := pr.Cwd(pid)
+	if err != nil {
+		if !pr.Alive(pid) {
+			fact.ForegroundArgv = nil
+			return nil
+		}
+		return fmt.Errorf("讀取行程工作目錄：%w", err)
+	}
+	fact.ForegroundCwd = cwd
+	return nil
 }
 
 // foregroundProcs 回傳 tty 名稱 → 前景行程組組長（pgid == tpgid）。pane_pid 通常是 shell，不能用。
