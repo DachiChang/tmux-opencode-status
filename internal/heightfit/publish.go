@@ -29,6 +29,9 @@ func Publish(groups []Group, width int) Published {
 
 // PublishView is Publish for a full View.
 func PublishView(v View, width int) Published {
+	if v.Notice != "" {
+		v.Notice = strings.Join(wrap(v.Notice, max(width-2*margin, 1)), "\n")
+	}
 	full, _ := FitView(v, 1<<20)
 	fullAvail := max(len(full), MinAvail)
 	p := Published{Options: map[string]string{}}

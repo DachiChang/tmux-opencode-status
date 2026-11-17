@@ -16,9 +16,9 @@ func TestGlobalModeListsOneSharedListUnderASingleGlobalGroupInSourceOrder(t *tes
 	w.setTabs(t, bothScopes)
 	w.sync(t)
 	assertLines(t, w.out.screen(20), []string{
-		"◆ OPENCODE                       !3",
-		"───────────────────────────────────",
-		"GLOBAL                           !3",
+		"◆ OPENCODE                     !3",
+		"─────────────────────────────────",
+		"GLOBAL                         !3",
 		"! global one",
 		"! 其他目錄的工作",
 		"! global three",
@@ -52,7 +52,7 @@ func TestGlobalModeStopsIncludingTheListOnceTheLastTUIIsGone(t *testing.T) {
 	w.sync(t)
 	assertLines(t, w.out.screen(20), []string{
 		"◆ OPENCODE",
-		"───────────────────────────────────",
+		"─────────────────────────────────",
 		"沒有 OpenCode TUI",
 	})
 }
@@ -65,9 +65,9 @@ func TestGlobalModeWithTUIButNoSharedTabsKeepsTheGlobalGroup(t *testing.T) {
 	w.sync(t)
 	assertLines(t, w.out.screen(20), []string{
 		"◆ OPENCODE",
-		"───────────────────────────────────",
+		"─────────────────────────────────",
 		"GLOBAL",
-		"  無 tab",
+		" 無 tab",
 	})
 }
 

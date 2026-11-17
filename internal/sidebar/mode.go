@@ -2,7 +2,7 @@ package sidebar
 
 import (
 	"fmt"
-	"path/filepath"
+	"strings"
 
 	"github.com/DachiChang/tmux-opencode-status/internal/contract"
 )
@@ -66,9 +66,52 @@ func (d *Daemon) groupsFor(mode contract.Mode, tuiDirs []string) []tabGroup {
 	if mode == contract.ModeGlobal {
 		return []tabGroup{{name: "GLOBAL", tabs: d.tabs.Select(contract.ModeGlobal, "")}}
 	}
+	names := displayNames(tuiDirs)
 	groups := make([]tabGroup, 0, len(tuiDirs))
-	for _, dir := range tuiDirs {
-		groups = append(groups, tabGroup{name: filepath.Base(dir), tabs: d.tabs.Select(contract.ModeCwd, dir)})
+	for i, dir := range tuiDirs {
+		groups = append(groups, tabGroup{name: names[i], tabs: d.tabs.Select(contract.ModeCwd, dir)})
 	}
 	return groups
+}
+
+// displayNames 為目前納入的目錄決定顯示名稱：預設最後一段，同名者逐層補上父目錄，
+// 直到彼此可以區分。只是顯示用；目錄身分與排序一律用完整路徑，不因名稱合併。
+func displayNames(dirs []string) []string {
+	segs := make([][]string, len(dirs))
+	depth := make([]int, len(dirs))
+	for i, dir := range dirs {
+		for _, p := range strings.Split(dir, "/") {
+			if p != "" {
+				segs[i] = append(segs[i], p)
+			}
+		}
+		depth[i] = 1
+	}
+	name := func(i int) string {
+		if len(segs[i]) == 0 {
+			return dirs[i] // 根目錄 "/"
+		}
+		return strings.Join(segs[i][max(len(segs[i])-depth[i], 0):], "/")
+	}
+	for {
+		count := map[string]int{}
+		for i := range dirs {
+			count[name(i)]++
+		}
+		grew := false
+		for i := range dirs {
+			if count[name(i)] > 1 && depth[i] < len(segs[i]) {
+				depth[i]++
+				grew = true
+			}
+		}
+		if !grew {
+			break
+		}
+	}
+	out := make([]string, len(dirs))
+	for i := range dirs {
+		out[i] = name(i)
+	}
+	return out
 }
