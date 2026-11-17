@@ -26,13 +26,19 @@ type liveWorld struct {
 
 // startLive 啟動常駐迴圈（假 tmux 資料來源 + 假 OpenCode 服務）。服務探索檔 service.json
 // 由測試控制：publishService 之前服務「尚未開啟」。
-func startLive(t *testing.T) *liveWorld {
+func startLive(t *testing.T) *liveWorld { return startLiveWith(t, nil) }
+
+// startLiveWith 在常駐迴圈啟動前先以 setup 設定外部世界（例如模式選項）。
+func startLiveWith(t *testing.T, setup func(*world)) *liveWorld {
 	t.Helper()
 	w := newWorld(t)
+	if setup != nil {
+		setup(w)
+	}
 	lw := &liveWorld{world: w, svc: fakeoc.New(t), svcFile: filepath.Join(t.TempDir(), "service.json"), wake: make(chan struct{}, 1)}
 	ctx, cancel := context.WithCancel(context.Background())
 	w.d = sidebar.New(sidebar.Config{Width: 36, Debounce: time.Millisecond, Retry: 20 * time.Millisecond},
-		sidebar.Deps{Panes: w.panes, Tabs: w.tabs, Out: w.out, Wake: lw.wake, Service: ocsrc.Source{Path: lw.svcFile}})
+		sidebar.Deps{Panes: w.panes, Tabs: w.tabs, Out: w.out, Mode: w.mode, Wake: lw.wake, Service: ocsrc.Source{Path: lw.svcFile}})
 	done := make(chan error, 1)
 	go func() { done <- w.d.Run(ctx) }()
 	t.Cleanup(func() {
@@ -273,5 +279,30 @@ func TestNoTrackedTabsMeansNoSessionQueries(t *testing.T) {
 	}
 	if lw.svc.Connects() != 0 {
 		t.Fatal("沒有追蹤項目不應連線")
+	}
+}
+
+func TestGlobalModeGroupShowsLifecycleStatesAndInvalidModeNeverConnects(t *testing.T) {
+	lw := startLive(t)
+	lw.publishService()
+	lw.svc.AddSession("ses_g", "")
+	lw.mode.use("global")
+	lw.panes.set(tui("%1", "/anywhere"))
+	lw.setTabs(t, `{"global":{"tabs":[{"sessionID":"ses_g","title":"shared"}]},"cwd":{}}`)
+	lw.wake <- struct{}{}
+	lw.eventually(t, "GLOBAL 群組閒置", func(s string) bool { return hasLine(s, "· shared") && strings.Contains(s, "GLOBAL") })
+	lw.svc.Start("ses_g")
+	lw.eventually(t, "GLOBAL 群組執行中", func(s string) bool { return hasLine(s, "● shared") })
+}
+
+func TestInvalidInitialModeDoesNotQueryTheService(t *testing.T) {
+	lw := startLiveWith(t, func(w *world) { w.mode.use("globl") })
+	lw.publishService()
+	lw.svc.AddSession("ses_1", "")
+	lw.openTabs(t, "/work/api", [2]string{"ses_1", "x"})
+	lw.eventually(t, "提示", func(s string) bool { return strings.Contains(s, "模式設定無效") })
+	time.Sleep(100 * time.Millisecond)
+	if n := lw.svc.SessionRequests(); n != 0 || lw.svc.Connects() != 0 {
+		t.Fatalf("尚未開始追蹤卻連線／查詢服務：%v", lw.svc.Requests())
 	}
 }

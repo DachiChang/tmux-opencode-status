@@ -63,7 +63,7 @@ func main() {
 	}
 	tick := time.NewTicker(*backstop)
 	defer tick.Stop()
-	d := sidebar.New(sidebar.Config{Width: *width}, sidebar.Deps{Panes: tm, Tabs: tabs, Out: tm, Wake: wake, Ticks: tick.C, Service: ocsrc.Source{Path: *servicePath}})
+	d := sidebar.New(sidebar.Config{Width: *width}, sidebar.Deps{Panes: tm, Tabs: tabs, Out: tm, Mode: tm, Wake: wake, Ticks: tick.C, Service: ocsrc.Source{Path: *servicePath}})
 	_ = d.Run(ctx)
 	stop()
 	<-events // 等 hook 清理完成再退出
