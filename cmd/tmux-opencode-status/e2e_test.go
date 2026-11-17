@@ -45,6 +45,45 @@ func (e *env) outTmux(args ...string) string {
 	return string(b)
 }
 
+// fakeOpencodeSrc 是假 opencode：預設只睡眠。FAKE_TITLE 非空時像真的 TUI 一樣在啟動時設定終端標題，
+// 收到 SIGINT／SIGTERM 時還原標題再結束；FAKE_CHURN_MS 讓它持續頻繁改標題。
+const fakeOpencodeSrc = `package main
+
+import (
+	"fmt"
+	"os"
+	"os/signal"
+	"strconv"
+	"syscall"
+	"time"
+)
+
+func title(s string) {
+	if os.Getenv("FAKE_TITLE") != "" {
+		fmt.Fprintf(os.Stdout, "\033]0;%s\007", s)
+	}
+}
+
+func main() {
+	title("OpenCode")
+	if ms, _ := strconv.Atoi(os.Getenv("FAKE_CHURN_MS")); ms > 0 {
+		go func() {
+			for i := 0; ; i++ {
+				title(fmt.Sprintf("OpenCode %d", i))
+				time.Sleep(time.Duration(ms) * time.Millisecond)
+			}
+		}()
+	}
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, syscall.SIGINT, syscall.SIGTERM)
+	select {
+	case <-c:
+		title("shell")
+	case <-time.After(time.Hour):
+	}
+}
+`
+
 func newEnv(t *testing.T) *env { t.Helper(); return newEnvWith(t, nil) }
 
 // newEnvWith 的 daemonEnv 附加到常駐程式的環境變數（用來在 PATH 前面放 tmux 包裝，製造確定性的慢啟動）。
@@ -66,7 +105,7 @@ func newEnvWith(t *testing.T, daemonEnv []string) *env {
 	// 假 opencode：只是睡眠的行程，argv[0] 的 basename 為 opencode。
 	src := filepath.Join(root, "fake", "main.go")
 	must(t, os.MkdirAll(filepath.Dir(src), 0o755))
-	must(t, os.WriteFile(src, []byte("package main\nimport \"time\"\nfunc main(){time.Sleep(time.Hour)}\n"), 0o644))
+	must(t, os.WriteFile(src, []byte(fakeOpencodeSrc), 0o644))
 	e.bin = filepath.Join(e.binDir, "opencode")
 	if b, err := exec.Command("go", "build", "-o", e.bin, src).CombinedOutput(); err != nil {
 		t.Fatalf("build fake opencode: %v: %s", err, b)
@@ -500,4 +539,114 @@ func TestModeChangeDuringDaemonStartupIsNotLeftToTheBackstop(t *testing.T) {
 	e.reload("set -g " + modeOpt + " global\n")
 	d := e.eventually(time.Second, "啟動空窗內的重載於 1 秒內套用", func(s string) bool { return strings.Contains(s, "shared a") })
 	t.Logf("重載 → 畫面：%v", d)
+}
+
+// ---- #4 追加：pane title 變更作為提早重新掃描的喚醒訊號 ----
+
+// shellWindow 開一個互動 shell window（有 job control），回傳 window id；之後以 shellRun 在其中執行指令。
+// 使用乾淨的 sh -i，避免使用者 zsh 設定（prompt、preexec）的延遲污染時間量測。
+func (e *env) shellWindow(dir string) string {
+	must(e.t, os.MkdirAll(dir, 0o755))
+	win := strings.TrimSpace(e.inTmux("new-window", "-d", "-P", "-F", "#{window_id}", "-c", dir, "env PS1='$ ' sh -i"))
+	time.Sleep(400 * time.Millisecond) // 等 shell 就緒
+	return win
+}
+
+func (e *env) shellRun(win, cmdline string) { e.inTmux("send-keys", "-t", win, cmdline, "Enter") }
+
+// 既有 shell 中啟動／結束 TUI：tmux 不發結構事件，但 TUI 會改終端標題 → 1 秒內反映。
+func TestTUIStartedAndStoppedInAnExistingShellFollowsWithin1SecondWhenTitlesAreOn(t *testing.T) {
+	e := newEnv(t)
+	dir := filepath.Join(e.dir, "work", "api")
+	e.writeTabs(e.tabsJSON(map[string][]string{dir: {"a"}}))
+	e.eventually(3*time.Second, "啟動", func(s string) bool { return strings.Contains(s, "沒有 OpenCode TUI") })
+	win := e.shellWindow(dir)
+
+	e.shellRun(win, "FAKE_TITLE=1 "+e.bin)
+	d := e.eventually(time.Second, "shell 內啟動 TUI 於 1 秒內出現", func(s string) bool { return strings.Contains(s, "! a") })
+	t.Logf("shell 內啟動 → 畫面：%v", d)
+
+	e.inTmux("send-keys", "-t", win, "C-c")
+	d = e.eventually(time.Second, "shell 內結束 TUI 於 1 秒內消失", func(s string) bool { return strings.Contains(s, "沒有 OpenCode TUI") })
+	t.Logf("shell 內結束 → 畫面：%v", d)
+}
+
+// 終端標題關閉（行程不改標題）：沒有喚醒，仍由低頻補漏在 10 秒內正確反映。
+func TestTUIInAnExistingShellStillFollowsViaBackstopWhenTitlesAreOff(t *testing.T) {
+	e := newEnv(t)
+	dir := filepath.Join(e.dir, "work", "api")
+	e.writeTabs(e.tabsJSON(map[string][]string{dir: {"a"}}))
+	e.eventually(3*time.Second, "啟動", func(s string) bool { return strings.Contains(s, "沒有 OpenCode TUI") })
+	win := e.shellWindow(dir)
+
+	e.shellRun(win, e.bin)
+	e.eventually(10*time.Second, "標題關閉時啟動於 10 秒內出現", func(s string) bool { return strings.Contains(s, "! a") })
+	e.inTmux("send-keys", "-t", win, "C-c")
+	e.eventually(10*time.Second, "標題關閉時結束於 10 秒內消失", func(s string) bool { return strings.Contains(s, "沒有 OpenCode TUI") })
+}
+
+// 辨識以前景行程為準：非 TUI 的 opencode 指令改標題、任意行程把標題設成 OpenCode，都不算 TUI。
+func TestTitleChangesNeverMakeANonTUIProcessLookLikeATUI(t *testing.T) {
+	e := newEnv(t)
+	dir := filepath.Join(e.dir, "work", "svc")
+	e.writeTabs(e.tabsJSON(map[string][]string{dir: {"x"}}))
+	win := e.shellWindow(dir)
+	e.shellRun(win, "FAKE_TITLE=1 "+e.bin+" serve")
+	win2 := e.shellWindow(dir)
+	e.shellRun(win2, `printf '\033]0;OpenCode\007'; sleep 60`)
+	time.Sleep(1500 * time.Millisecond)
+	if s := e.sidebar(); !strings.Contains(s, "沒有 OpenCode TUI") || strings.Contains(s, "svc") || strings.Contains(s, "x") {
+		t.Fatalf("非 TUI 因標題被列入：\n%s", s)
+	}
+}
+
+// tmuxLog 以 PATH 前面的 tmux 包裝記錄常駐程式發出的每個 tmux 指令。
+func tmuxLogShim(t *testing.T) (path, logFile string) {
+	realTmux, err := exec.LookPath("tmux")
+	if err != nil {
+		t.Skip("沒有 tmux")
+	}
+	shim := t.TempDir()
+	logFile = filepath.Join(shim, "calls.log")
+	script := "#!/bin/sh\necho \"$*\" >> " + logFile + "\nexec " + realTmux + " \"$@\"\n"
+	must(t, os.WriteFile(filepath.Join(shim, "tmux"), []byte(script), 0o755))
+	return shim + ":" + os.Getenv("PATH"), logFile
+}
+
+func countCalls(t *testing.T, logFile, sub string) int {
+	b, _ := os.ReadFile(logFile)
+	n := 0
+	for _, l := range strings.Split(string(b), "\n") {
+		if strings.Contains(l, sub) {
+			n++
+		}
+	}
+	return n
+}
+
+// TUI 持續頻繁改標題（20ms 一次）：不得變成喚醒風暴（掃描次數有上限），
+// 也不得因標題變化而寫入 tmux（內容不變不寫）。
+func TestFrequentTitleChangesDoNotCauseAWakeStormOrTmuxWrites(t *testing.T) {
+	path, logFile := tmuxLogShim(t)
+	e := newEnvWith(t, []string{"PATH=" + path})
+	dir := filepath.Join(e.dir, "work", "api")
+	e.writeTabs(e.tabsJSON(map[string][]string{dir: {"a"}}))
+	win := e.shellWindow(dir)
+	e.shellRun(win, "FAKE_TITLE=1 FAKE_CHURN_MS=20 "+e.bin)
+	e.eventually(2*time.Second, "TUI 出現", func(s string) bool { return strings.Contains(s, "! a") })
+
+	time.Sleep(500 * time.Millisecond)
+	scans0, writes0 := countCalls(t, logFile, "list-panes"), countCalls(t, logFile, "source-file")
+	time.Sleep(3 * time.Second)
+	scans, writes := countCalls(t, logFile, "list-panes")-scans0, countCalls(t, logFile, "source-file")-writes0
+	t.Logf("3 秒內掃描 %d 次、寫入 %d 次（標題約每 20ms 變一次）", scans, writes)
+	if scans > 14 {
+		t.Fatalf("喚醒風暴：3 秒內掃描 %d 次", scans)
+	}
+	if writes != 0 {
+		t.Fatalf("內容不變卻寫入 tmux %d 次", writes)
+	}
+	if s := e.sidebar(); !strings.Contains(s, "! a") {
+		t.Fatalf("節流後畫面仍須正確：\n%s", s)
+	}
 }

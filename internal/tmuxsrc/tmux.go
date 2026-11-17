@@ -5,12 +5,12 @@ package tmuxsrc
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"os/exec"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/DachiChang/tmux-opencode-status/internal/contract"
@@ -30,14 +30,18 @@ type Client struct {
 
 const (
 	wakeChannel = "tos_wake"
+	// titleChannel 專用於 pane title 變更：TUI 可能頻繁改標題，需要與結構事件分開節流。
+	titleChannel = "tos_title"
+	// titleMinGap 是標題喚醒的最小間隔：靜止後的第一次變更立即喚醒（leading），
+	// 間隔內的連續變更由 tmux 合併為一次記住的 signal，間隔結束後補一次（trailing）。
+	titleMinGap = 300 * time.Millisecond
 	// hookIndex 是本插件在 hook 陣列使用的專屬索引，避免覆蓋使用者自己的 hook。
 	hookIndex = 41700
 )
 
 // 這些 hook 只用來「喚醒」同步；實際內容一律重新讀取，漏掉任何一個都由低頻補漏補上。
-// pane-title-changed 只是加速 TUI 啟動的偵測，不是辨識依據。
 var wakeHooks = []string{
-	"pane-exited", "pane-title-changed", "window-linked", "window-unlinked",
+	"pane-exited", "window-linked", "window-unlinked",
 	"after-new-window", "after-split-window", "after-kill-pane",
 	"session-created", "session-closed",
 }
@@ -45,6 +49,10 @@ var wakeHooks = []string{
 // 模式選項被設定（含 `set -gu` 與重載設定檔中的 set）時才喚醒，避免常駐程式自己
 // 寫入側欄選項造成回授。
 var modeHook = "after-set-option"
+
+// titleHook 只用來提早重新掃描（在既有 shell 啟動／結束 TUI 時 tmux 沒有結構事件）；
+// 不讀取標題內容，也不是辨識依據。終端標題關閉時不會觸發，由低頻補漏負責。
+var titleHook = "pane-title-changed"
 
 func modeHookCmd() string {
 	return `if-shell -F "#{==:#{hook_argument_0},` + sidebar.ModeOption + `}" "wait-for -S ` + wakeChannel + `"`
@@ -185,26 +193,40 @@ func (c *Client) WatchEvents(ctx context.Context, wake chan<- struct{}) error {
 		c.RemoveHooks()
 		return err
 	}
+	if _, err := c.tmux("", "set-hook", "-g", titleHook+"["+strconv.Itoa(hookIndex)+"]", "wait-for -S "+titleChannel); err != nil {
+		c.RemoveHooks()
+		return err
+	}
+	var titleLoop sync.WaitGroup
+	titleLoop.Add(1)
+	go func() {
+		defer titleLoop.Done()
+		c.waitLoop(ctx, titleChannel, titleMinGap, wake)
+	}()
+	defer titleLoop.Wait()
 	defer c.RemoveHooks()
 	// hook 裝好之前發生的變動不會有通知；裝好後補一次喚醒，讓啟動空窗內的變動不必等低頻補漏。
 	select {
 	case wake <- struct{}{}:
 	default:
 	}
+	c.waitLoop(ctx, wakeChannel, 0, wake)
+	return nil
+}
+
+// waitLoop 以 `tmux wait-for <channel>` 阻塞等待，每次被喚醒送出一次通知，之後至少間隔 minGap
+// 才再次等待（0 表示不節流）。節流期間的 signal 由 tmux 記住並合併，不會遺失也不會累積。
+func (c *Client) waitLoop(ctx context.Context, channel string, minGap time.Duration, wake chan<- struct{}) {
 	for ctx.Err() == nil {
-		args := append(append(append([]string{}, c.SocketArgs...), c.ConfigArgs...), "wait-for", wakeChannel)
+		args := append(append(append([]string{}, c.SocketArgs...), c.ConfigArgs...), "wait-for", channel)
 		cmd := exec.CommandContext(ctx, "tmux", args...)
 		if err := cmd.Run(); err != nil {
 			if ctx.Err() != nil {
-				return nil
-			}
-			var ee *exec.ExitError
-			if !errors.As(err, &ee) {
-				return err
+				return
 			}
 			select { // server 暫時不可用：稍後重試，同步由低頻補漏負責
 			case <-ctx.Done():
-				return nil
+				return
 			case <-time.After(time.Second):
 			}
 			continue
@@ -213,13 +235,20 @@ func (c *Client) WatchEvents(ctx context.Context, wake chan<- struct{}) error {
 		case wake <- struct{}{}:
 		default:
 		}
+		if minGap > 0 {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(minGap):
+			}
+		}
 	}
-	return nil
 }
 
 // RemoveHooks 只移除本插件安裝的 hook 索引，不動使用者自己的 hook。
 func (c *Client) RemoveHooks() {
 	_, _ = c.tmux("", "set-hook", "-gu", modeHook+"["+strconv.Itoa(hookIndex)+"]")
+	_, _ = c.tmux("", "set-hook", "-gu", titleHook+"["+strconv.Itoa(hookIndex)+"]")
 	for _, h := range wakeHooks {
 		_, _ = c.tmux("", "set-hook", "-gu", h+"["+strconv.Itoa(hookIndex)+"]")
 	}
