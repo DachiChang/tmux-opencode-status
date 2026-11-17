@@ -39,6 +39,7 @@ var knownTypes = map[string]bool{
 
 type session struct {
 	id, parent string
+	title      string // 空 = REST 資料不帶 title（模擬舊資料；側欄退回 tabs.json 的標題）
 	outcome    string
 	idle, view int64
 	running    bool
@@ -278,7 +279,10 @@ func (s *Server) addSession(id, parent string, parentInEvent bool) {
 	defer s.mu.Unlock()
 	x := s.get(id)
 	x.parent = parent
-	d := map[string]any{"sessionID": id, "title": "t"}
+	d := map[string]any{"sessionID": id}
+	if x.title != "" {
+		d["title"] = x.title
+	}
 	if parent != "" && parentInEvent {
 		d["parentID"] = parent
 	}
@@ -337,6 +341,21 @@ func (s *Server) Seed(id, parent, outcome string, idle, viewed int64, running bo
 	defer s.mu.Unlock()
 	x := s.get(id)
 	x.parent, x.outcome, x.idle, x.view, x.running = parent, outcome, idle, viewed, running
+}
+
+// SeedTitle 在不送事件的情況下設定 session 的 API 標題（插件啟動前就已存在的資料）。
+func (s *Server) SeedTitle(id, title string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.get(id).title = title
+}
+
+// Rename 改變 session 的 API 標題並送出 session.renamed（durable；data{sessionID,title}）。
+func (s *Server) Rename(id, title string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.get(id).title = title
+	s.emit("session.renamed", s.now(), map[string]any{"sessionID": id, "title": title})
 }
 
 // ---- 待核准的權限請求與待回答的問題（OpenCode 稱 form）----
@@ -523,7 +542,10 @@ func (s *Server) sessionJSON(x *session) map[string]any {
 	if x.view != 0 {
 		t["viewed"] = x.view
 	}
-	m := map[string]any{"id": x.id, "time": t, "title": "t"}
+	m := map[string]any{"id": x.id, "time": t}
+	if x.title != "" {
+		m["title"] = x.title
+	}
 	if x.parent != "" {
 		m["parentID"] = x.parent
 	}

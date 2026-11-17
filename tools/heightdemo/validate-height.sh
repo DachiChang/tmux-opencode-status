@@ -4,17 +4,17 @@
 # never touched. "Clients" are real tmux clients attached from panes of an
 # outer isolated server, so each has the pane size we give it.
 set -u
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../.."
 IN=tos-h3-in-$$ ; OUT=tos-h3-out-$$
 I(){ tmux -L "$IN" -f /dev/null "$@"; }
 O(){ tmux -L "$OUT" -f /dev/null "$@"; }
 trap 'I kill-server 2>/dev/null; O kill-server 2>/dev/null' EXIT
-DEMO=$(mktemp -d)/heightfit-demo
-go build -o "$DEMO" ./cmd/heightfit-demo || exit 1
+DEMO=$(mktemp -d)/heightdemo
+go build -o "$DEMO" ./tools/heightdemo || exit 1
 pub(){ "$DEMO" -socket "$IN" -scenario "$1"; }
 show(){ # name
   echo "### client $1 ($(O display -p -t "$1" '#{pane_width}x#{pane_height}'))"
-  O capture-pane -p -t "$1" | python3 scripts/cells.py 36
+  O capture-pane -p -t "$1" | python3 tools/heightdemo/cells.py 36
 }
 step(){ echo; echo "## $*"; }
 

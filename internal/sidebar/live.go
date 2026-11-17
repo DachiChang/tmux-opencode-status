@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/DachiChang/tmux-opencode-status/internal/contract"
-	"github.com/DachiChang/tmux-opencode-status/internal/heightfit"
 	"github.com/DachiChang/tmux-opencode-status/internal/ocsrc"
+	"github.com/DachiChang/tmux-opencode-status/internal/render"
 )
 
 // DefaultRetry 是服務連線失敗（尚未開啟、重啟、斷線）後的重試間隔；不啟動或重啟服務。
@@ -22,16 +22,6 @@ const DefaultResync = 60 * time.Second
 const (
 	familyPageSize = 50
 	maxParallel    = 4 // 同時進行中的 tab 讀取數；單一 tab 慢不會拖住其他 tab，也不會一次灌爆服務
-)
-
-// Health 是 tab 的資料健康度。「狀態未知」與「session 不存在」在內部保持區別
-// （重試與恢復的方式不同），畫面共用灰色 !。
-type health int
-
-const (
-	healthOK      health = iota
-	healthUnknown        // 資料尚未讀到或讀取失敗（暫時性）：持續重試
-	healthMissing        // OpenCode 明確回報 session 不存在：不輪詢，出現（建立事件）或補漏重讀才恢復
 )
 
 // live 維護對本機共用服務的唯讀連線與狀態：連上 SSE → 以 server.connected 為界逐 tab
@@ -159,24 +149,18 @@ func (l *live) health(tab string) health {
 	return healthOK
 }
 
-// State 是 tab 目前可呈現的狀態；基準資料不完整時為 Unknown，不猜測閒置。
-func (l *live) State(tab string) heightfit.State {
+// State 是 tab 目前可呈現的狀態；基準資料不完整時為資料異常，不猜測閒置。
+func (l *live) State(tab string) render.State {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if l.health(tab) != healthOK {
-		return heightfit.Unknown
-	}
-	switch l.tr.TabStatus(tab) {
-	case contract.WaitingApproval, contract.WaitingAnswer:
-		return heightfit.Attention
-	case contract.Running:
-		return heightfit.Running
-	case contract.FailedUnread:
-		return heightfit.Failed
-	case contract.FinishedUnread:
-		return heightfit.Unread
-	}
-	return heightfit.Idle
+	return displayState(l.health(tab), l.tr.TabStatus(tab))
+}
+
+// Title 是 tab 的即時標題（API session.title）；尚未取得時 ok 為 false。
+func (l *live) Title(tab string) (string, bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.tr.Title(tab)
 }
 
 // Down 表示服務目前不可連線（已嘗試且失敗，或連線已中斷）。
@@ -204,7 +188,7 @@ func (l *live) Status() (state, reason string) {
 
 func (l *live) loop(ctx context.Context) {
 	for ctx.Err() == nil {
-		err := l.session(ctx)
+		err := l.runConnection(ctx)
 		if ctx.Err() != nil {
 			return // 追蹤已停止（Track 空清單已重置狀態）；不得動到之後可能啟動的新迴圈
 		}
@@ -222,8 +206,8 @@ func (l *live) loop(ctx context.Context) {
 	}
 }
 
-// session 是一條連線的生命週期：每次都重新探索服務，直到串流結束或無聲逾時才返回。
-func (l *live) session(ctx context.Context) error {
+// runConnection 是一條連線的生命週期：每次都重新探索服務，直到串流結束或無聲逾時才返回。
+func (l *live) runConnection(ctx context.Context) error {
 	svc, err := l.dialer.Dial(ctx)
 	if err != nil {
 		return err

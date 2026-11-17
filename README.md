@@ -31,6 +31,12 @@ set -g @plugin 'DachiChang/tmux-opencode-status'
 ### 預設行為
 
 - 預設放在**左側**，寬 **36 格**（終端格寬，不是字元數）。首次載入打開側欄；之後重載、交接都不會把你已隱藏的側欄重新打開（每個 tmux server 只打開一次）。
+- **已知限制：無法尊重「你在設定檔明確寫了 `set -g side-status off`」。** tmux 的 `side-status` 預設值就是 `off`，
+  `show-options`（含 `-g`、`-q`、`-A`、`-H`）與格式變數都不會標示「這是預設值還是被明確設定」（以 tmux next-3.9 實測：
+  未設定、`set -g side-status off`、`set -gu side-status` 三種狀態的輸出完全相同；原始碼 `options-table.c` 中預設為 `default_num = 0`）。
+  所以插件啟動（`start -show`）的**第一次**載入無法分辨你是「從未打開過」還是「明確想隱藏」，會把側欄打開一次。
+  之後（同一個 tmux server 的重載、交接、重啟常駐程式）都不會再替你打開。若你不想在啟動時打開：
+  不要使用 `-show`（例如在 TPM 以外自行呼叫 `start`，不帶 `-show`），再用 `tmux set -g side-status left` 自行顯示。
 - 重複載入（`tmux source-file`、TPM 更新）是冪等的：每個 tmux socket 只有一個常駐實例；設定或執行檔不同時安全交接。
 - tmux server 結束時常駐程式自動退出並清理本插件資源。
 

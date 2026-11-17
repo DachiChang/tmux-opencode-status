@@ -3,6 +3,8 @@ package tmuxsrc
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
+	"fmt"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -36,15 +38,16 @@ func procArgv(pid int) ([]string, error) {
 }
 
 // procCwd 以 lsof 取得行程目前工作目錄（cwd 模式的目錄身分是 TUI 行程 cwd）。
-func procCwd(pid int) string {
+// 讀不到或沒有輸出都是錯誤，絕不回傳空字串當成目錄。
+func procCwd(pid int) (string, error) {
 	out, err := exec.Command("lsof", "-a", "-p", strconv.Itoa(pid), "-d", "cwd", "-Fn").Output()
 	if err != nil {
-		return ""
+		return "", fmt.Errorf("lsof：%w", err)
 	}
 	for _, l := range strings.Split(string(out), "\n") {
-		if strings.HasPrefix(l, "n") {
-			return l[1:]
+		if strings.HasPrefix(l, "n") && len(l) > 1 {
+			return l[1:], nil
 		}
 	}
-	return ""
+	return "", errors.New("lsof 沒有回報工作目錄")
 }

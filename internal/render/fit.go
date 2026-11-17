@@ -1,4 +1,7 @@
-package heightfit
+// Package render 把側欄的邏輯內容（群組、tab、狀態、提示）依各 client 的可用高度排版、
+// 依終端格寬渲染成 tmux 樣式字串，並發布為全域使用者選項與 side-status-format。
+
+package render
 
 import (
 	"strconv"
@@ -11,17 +14,17 @@ const (
 	Idle State = iota
 	Running
 	Attention
-	Unread
-	Failed
-	Unknown
+	FinishedUnread
+	FailedUnread
+	DataProblem
 )
 
 type Tab struct {
 	Title string
 	State State
-	// Session 是 tab 對應的 session；非空時摘要按 session 去重（同一 session
+	// SessionID 是 tab 對應的 session；非空時摘要按 session 去重（同一 session
 	// 出現在多個 tab 清單也只計一次）。
-	Session string
+	SessionID string
 }
 
 type Group struct {
@@ -74,14 +77,19 @@ func Fit(groups []Group, avail int) ([]Row, int) {
 // "無 tab" note; that note is not a tab and is not counted as hidden.
 func FitView(v View, avail int) ([]Row, int) {
 	groups := v.Groups
-	head := []Row{{Kind: RowTitle, Summary: Summary(groups)}, {Kind: RowRule}}
+	var notice []string
 	if v.Notice != "" {
-		for _, line := range strings.Split(v.Notice, "\n") {
-			head = append(head, Row{Kind: RowNotice, Text: line})
+		notice = strings.Split(v.Notice, "\n")
+	}
+	head := func(noticeLines int) []Row {
+		h := []Row{{Kind: RowTitle, Summary: Summary(groups)}, {Kind: RowRule}}
+		for _, line := range notice[:noticeLines] {
+			h = append(h, Row{Kind: RowNotice, Text: line})
 		}
+		return h
 	}
 	if len(groups) == 0 {
-		rows := head
+		rows := head(len(notice))
 		if v.Empty != "" {
 			rows = append(rows, Row{Kind: RowNote, Text: v.Empty})
 		}
@@ -93,10 +101,14 @@ func FitView(v View, avail int) ([]Row, int) {
 		units += max(len(g.Tabs), 1)
 	}
 
-	if full := layout(groups, units); len(head)+len(full) <= avail {
-		return append(head, full...), 0
+	if full := layout(groups, units); len(head(len(notice)))+len(full) <= avail {
+		return append(head(len(notice)), full...), 0
 	}
-	budget := avail - len(head) - 1 // one row reserved for the footer
+	// Something has to be hidden, so the summary row, the rule and the footer are
+	// not negotiable: notice lines are the ones that give way.
+	lines := min(len(notice), max(avail-3, 0))
+	h := head(lines)
+	budget := avail - len(h) - 1 // one row reserved for the footer
 	shown := 0
 	for shown < units && len(layout(groups, shown+1)) <= budget {
 		shown++
@@ -108,7 +120,7 @@ func FitView(v View, avail int) ([]Row, int) {
 			visible++
 		}
 	}
-	rows := append(head, body...)
+	rows := append(h, body...)
 	if visible == total {
 		return clip(rows, avail), 0
 	}
@@ -165,11 +177,11 @@ func summarize(groups []Group, dedupe bool) string {
 	seen := map[string]bool{}
 	for _, g := range groups {
 		for _, t := range g.Tabs {
-			if dedupe && t.Session != "" {
-				if seen[t.Session] {
+			if dedupe && t.SessionID != "" {
+				if seen[t.SessionID] {
 					continue
 				}
-				seen[t.Session] = true
+				seen[t.SessionID] = true
 			}
 			c[t.State]++
 		}
@@ -178,7 +190,7 @@ func summarize(groups []Group, dedupe bool) string {
 	for _, e := range []struct {
 		sym string
 		n   int
-	}{{"●", c[Running]}, {"?", c[Attention]}, {"◆", c[Unread]}, {"✗", c[Failed]}, {"!", c[Unknown]}} {
+	}{{"●", c[Running]}, {"?", c[Attention]}, {"◆", c[FinishedUnread]}, {"✗", c[FailedUnread]}, {"!", c[DataProblem]}} {
 		if e.n == 0 {
 			continue
 		}

@@ -5,6 +5,8 @@ package contract
 type Session struct {
 	ID       string `json:"id"`
 	ParentID string `json:"parentID"`
+	// Title 是 session 的即時標題；tabs.json 的 title 只是備援。
+	Title string `json:"title"`
 	// Outcome 只在 session 曾結束一次執行後出現：succeeded | failed | interrupted。
 	Outcome string `json:"outcome"`
 	Time    struct {

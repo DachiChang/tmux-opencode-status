@@ -101,5 +101,10 @@ tmux-opencode-status run -L <name> | -S <path> …                           # �
 
 - 只支援 macOS（沿用 #4 的 `KERN_PROCARGS2`／`lsof`）；fcntl 鎖與 `$TMPDIR` 邏輯本身可攜。
 - `-show` 的「只做一次」以 tmux server 為單位；使用者若 `set -gu @opencode-status-shown`，下一次 start 會再次打開側欄（這是他自己的操作）。
+- **無法分辨「明確設定 side-status off」與預設值**（code review 查證，tmux next-3.9 實測＋原始碼 `options-table.c`：`side-status` 的 `default_num = 0` = `off`）：
+  新 tmux server 未設定、`set -g side-status off`、`set -gu side-status` 後的 `show-options -g side-status`、`-gqv`、`-gA`、`-gH` 輸出完全相同，
+  也沒有 `option_is_default` 之類的格式變數。因此第一次 `-show` 無法尊重使用者在設定檔明確寫的 `off`。
+  這與 spec「不得把使用者已隱藏的側欄強制打開」存在落差；本實作的界線是「每個 tmux server 只打開一次」，之後不再打開。
+  已在 README「預設行為」文件化，並提示改為不帶 `-show` 自行顯示。需要完整滿足時須改需求（例如新增明確的選項 `@opencode-status-show`），尚未更動。
 - 診斷的服務連線狀態來自常駐程式，不是診斷當下重新探測（刻意：診斷不連 OpenCode）。
 - 診斷無法判斷 session override 的「實際效果」是否正好是使用者想要的，只列事實與影響。

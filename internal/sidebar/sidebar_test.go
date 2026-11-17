@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/DachiChang/tmux-opencode-status/internal/contract"
-	"github.com/DachiChang/tmux-opencode-status/internal/heightfit"
+	"github.com/DachiChang/tmux-opencode-status/internal/render"
 	"github.com/DachiChang/tmux-opencode-status/internal/sidebar"
 )
 
@@ -101,12 +101,12 @@ func (f *fakeMode) fail(err error) {
 
 type fakeOut struct {
 	mu   sync.Mutex
-	pubs []heightfit.Published
+	pubs []render.Published
 	err  error
 	ch   chan struct{}
 }
 
-func (f *fakeOut) Publish(p heightfit.Published) error {
+func (f *fakeOut) Publish(p render.Published) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.err != nil {
@@ -156,7 +156,7 @@ func (f *fakeOut) rawScreen(avail int) []string {
 	if len(f.pubs) == 0 {
 		return nil
 	}
-	return strings.Split(heightfit.StripStyles(f.pubs[len(f.pubs)-1].Select(avail)), "\n")
+	return strings.Split(render.StripStyles(f.pubs[len(f.pubs)-1].Select(avail)), "\n")
 }
 
 func foldGeometry(lines []string) []string {

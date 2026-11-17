@@ -501,3 +501,50 @@ func TestPendingRequestIsReadOnlyNothingIsEverReplied(t *testing.T) {
 		}
 	}
 }
+
+// ---- tab 標題：以 API session.title 為準，tabs.json 的 title 只是備援（契約 §2）----
+
+func TestTabTitleFollowsAPISessionTitleOverTabsFileTitle(t *testing.T) {
+	lw := startLive(t)
+	lw.publishService()
+	lw.svc.AddSession("ses_1", "")
+	lw.svc.SeedTitle("ses_1", "API 最新標題")
+	lw.openTabs(t, "/work/api", [2]string{"ses_1", "舊的備援標題"})
+	got := lw.eventually(t, "讀到 API 標題", func(s string) bool { return hasLine(s, "· API 最新標題") })
+	if strings.Contains(got, "舊的備援標題") {
+		t.Fatalf("有 API 標題時不應顯示 tabs.json 的標題：\n%s", got)
+	}
+}
+
+func TestTabTitleFallsBackToTabsFileWhenNoAPITitleIsAvailable(t *testing.T) {
+	lw := startLive(t)
+	lw.svc.AddSession("ses_1", "") // 沒有標題資料
+	lw.openTabs(t, "/work/api", [2]string{"ses_1", "備援標題"})
+	lw.eventually(t, "服務未開時用備援標題", func(s string) bool { return hasLine(s, "! 備援標題") })
+	lw.publishService()
+	lw.eventually(t, "API 沒有標題時仍用備援標題", func(s string) bool { return hasLine(s, "· 備援標題") })
+}
+
+func TestRenamedEventUpdatesTheTabTitleWithoutWaitingForTheBackstop(t *testing.T) {
+	lw := startLive(t)
+	lw.publishService()
+	lw.svc.AddSession("ses_1", "")
+	lw.svc.SeedTitle("ses_1", "第一版標題")
+	lw.openTabs(t, "/work/api", [2]string{"ses_1", "備援標題"})
+	lw.eventually(t, "初始 API 標題", func(s string) bool { return hasLine(s, "· 第一版標題") })
+
+	lw.svc.Rename("ses_1", "改名後的標題")
+	lw.eventually(t, "session.renamed 後更新", func(s string) bool { return hasLine(s, "· 改名後的標題") })
+}
+
+func TestRenamedEventTypeIsSubscribed(t *testing.T) {
+	lw := startLive(t)
+	lw.publishService()
+	lw.svc.AddSession("ses_1", "")
+	lw.openTabs(t, "/work/api", [2]string{"ses_1", "x"})
+	lw.eventually(t, "連線", func(s string) bool { return hasLine(s, "· x") })
+	qs := lw.svc.EventQueries()
+	if len(qs) == 0 || !strings.Contains(qs[0], "types=session.renamed") {
+		t.Fatalf("事件連線必須訂閱 session.renamed：%v", qs)
+	}
+}

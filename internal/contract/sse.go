@@ -28,6 +28,8 @@ type Event struct {
 	FormID    string
 	// Idle：session.viewed 的 data.idle（被確認已讀的 idle 時間戳）。
 	Idle int64
+	// Title：session.renamed 的 data.title（也可能出現在 session.created）。
+	Title string
 	// Reason：session.execution.interrupted 的 data.reason（user | shutdown | superseded | inactivity）。
 	Reason string
 }
@@ -42,6 +44,7 @@ type rawEvent struct {
 		ID        string `json:"id"`
 		RequestID string `json:"requestID"`
 		Reason    string `json:"reason"`
+		Title     string `json:"title"`
 		Idle      int64  `json:"idle"`
 		Form      *struct {
 			ID        string `json:"id"`
@@ -58,7 +61,7 @@ func decodeEvent(payload string) (Event, error) {
 	if r.Type == "" {
 		return Event{}, fmt.Errorf("事件缺少 type")
 	}
-	e := Event{ID: r.ID, Type: r.Type, Created: r.Created, SessionID: r.Data.SessionID, ParentID: r.Data.ParentID, Idle: r.Data.Idle, Reason: r.Data.Reason}
+	e := Event{ID: r.ID, Type: r.Type, Created: r.Created, SessionID: r.Data.SessionID, ParentID: r.Data.ParentID, Title: r.Data.Title, Idle: r.Data.Idle, Reason: r.Data.Reason}
 	switch r.Type {
 	case "permission.asked":
 		e.RequestID = r.Data.ID
