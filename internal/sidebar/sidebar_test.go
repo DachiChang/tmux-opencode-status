@@ -128,6 +128,20 @@ func (f *fakeOut) count() int {
 	return len(f.pubs)
 }
 
+// options 是最近一次發布的所有版面（含樣式標記），用來驗證顏色。
+func (f *fakeOut) options() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.pubs) == 0 {
+		return nil
+	}
+	var out []string
+	for _, v := range f.pubs[len(f.pubs)-1].Options {
+		out = append(out, v)
+	}
+	return out
+}
+
 // screen 是 side-status 內容寬度為 35 的 client、可用 avail 列時看到的純文字畫面。
 func (f *fakeOut) screen(avail int) []string {
 	f.mu.Lock()

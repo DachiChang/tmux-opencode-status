@@ -427,6 +427,82 @@ func TestSessionLifecycleOnARealTmuxWithFakeOpenCodeService(t *testing.T) {
 	}
 }
 
+// 等你核准／等你回答：多個請求、交錯處理、權限優先、問題取消；全程只有 GET，
+// 也不新增任何 tmux 綁定。
+func TestPendingApprovalsAndAnswersOnARealTmuxWithFakeOpenCodeService(t *testing.T) {
+	e := newEnv(t)
+	dir := filepath.Join(e.dir, "work", "api")
+	svc := fakeoc.New(t)
+	for _, id := range []string{"ses_0", "ses_1", "ses_2"} {
+		svc.AddSession(id, "")
+	}
+	svc.SeedPermission("per_old", "ses_0") // 側欄啟動前已存在
+	svc.WriteServiceFile(e.servicePath)
+	e.writeTabs(e.tabsJSON(map[string][]string{dir: {"approve me", "answer me", "calm"}}))
+	bindingsBefore := e.outTmux("list-keys")
+	e.tui(dir, "--server", "http://127.0.0.1:1")
+
+	d := e.eventually(5*time.Second, "啟動前已存在的待核准", func(s string) bool {
+		return strings.Contains(s, "? approve me") && strings.Contains(s, "· answer me") && strings.Contains(s, "?1")
+	})
+	t.Logf("初始待核准 → 畫面：%v", d)
+
+	svc.AskForm("frm_1", "ses_1")
+	svc.AskForm("frm_2", "ses_1")
+	svc.AskPermission("per_new", "ses_0")
+	e.eventually(time.Second, "多個請求：每個 tab 只計一次", func(s string) bool {
+		return strings.Contains(s, "? approve me") && strings.Contains(s, "? answer me") && strings.Contains(s, "?2") && !strings.Contains(s, "?4")
+	})
+	svc.ReplyPermission("per_old") // 交錯：ses_0 仍有 per_new
+	svc.AnswerForm("frm_1")        // ses_1 仍有 frm_2
+	e.eventually(time.Second, "交錯處理後仍待處理", func(s string) bool {
+		return strings.Contains(s, "? approve me") && strings.Contains(s, "? answer me")
+	})
+	svc.ReplyPermission("per_new")
+	svc.CancelForm("frm_2")
+	e.eventually(time.Second, "請求完成／取消後回復閒置", func(s string) bool {
+		return strings.Contains(s, "· approve me") && strings.Contains(s, "· answer me") && !strings.Contains(s, "?")
+	})
+
+	// 權限優先於問題與執行中；回覆後不猜閒置：仍在執行就回到執行中
+	svc.Start("ses_2")
+	svc.AskForm("frm_3", "ses_2")
+	svc.AskPermission("per_3", "ses_2")
+	e.eventually(time.Second, "待處理蓋過執行中", func(s string) bool { return strings.Contains(s, "? calm") && !strings.Contains(s, "●") })
+	svc.ReplyPermission("per_3")
+	svc.CancelForm("frm_3")
+	e.eventually(time.Second, "回到執行中", func(s string) bool { return strings.Contains(s, "● calm") })
+
+	// 顏色：黃色 ?，沒有背景色塊
+	svc.AskPermission("per_4", "ses_2")
+	e.eventually(time.Second, "待核准", func(s string) bool { return strings.Contains(s, "? calm") })
+	yellowQ := false
+	for _, l := range strings.Split(e.outTmux("show-options", "-g"), "\n") {
+		if !strings.HasPrefix(l, "@tos_sb_") {
+			continue
+		}
+		if strings.Contains(l, "bg=") || strings.Contains(l, "fg=yellow,bold]!") {
+			t.Fatalf("待處理不得使用背景色塊或黃色 !：%s", l)
+		}
+		yellowQ = yellowQ || strings.Contains(l, "#[fg=yellow,bold]?#[default]")
+	}
+	if !yellowQ {
+		t.Fatal("側欄輸出找不到黃色 ?")
+	}
+
+	if w := svc.Writes(); len(w) != 0 {
+		t.Fatalf("對 OpenCode 發出了寫入請求：%v", w)
+	}
+	for _, r := range svc.Requests() {
+		if strings.Contains(r, "reply") || strings.Contains(r, "/view") {
+			t.Fatalf("呼叫了回覆／標記已讀：%s", r)
+		}
+	}
+	if after := e.outTmux("list-keys"); after != bindingsBefore {
+		t.Fatal("不得新增或改變任何 tmux 綁定")
+	}
+}
+
 // ---- #8 cwd／global 模式與設定重載 ----
 
 const modeOpt = "@opencode-status-mode"

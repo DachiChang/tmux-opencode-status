@@ -244,6 +244,84 @@ func (s *Server) Seed(id, parent, outcome string, idle, viewed int64, running bo
 	x.parent, x.outcome, x.idle, x.view, x.running = parent, outcome, idle, viewed, running
 }
 
+// ---- 待核准的權限請求與待回答的問題（OpenCode 稱 form）----
+// Ask*／Resolve*／Cancel* 模擬「使用者在 OpenCode 內處理」：改變服務資料並送出事件；
+// 側欄本身永遠不會呼叫這些寫入端點。Seed* 只放資料不送事件（插件啟動前就已存在）。
+
+func (s *Server) AskPermission(id, sessionID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.perms = append(s.perms, item{id, sessionID})
+	s.emit("permission.asked", s.now(), map[string]any{"id": id, "sessionID": sessionID, "action": "bash", "resources": []string{"x"}, "save": []string{}})
+}
+
+// ReplyPermission 模擬使用者在 OpenCode 回覆（核准或拒絕）該請求。
+func (s *Server) ReplyPermission(id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sess := ""
+	s.perms, sess = remove(s.perms, id)
+	s.emit("permission.replied", s.now(), map[string]any{"sessionID": sess, "requestID": id, "reply": "once"})
+}
+
+func (s *Server) AskForm(id, sessionID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.forms = append(s.forms, item{id, sessionID})
+	s.emit("form.created", s.now(), map[string]any{"form": map[string]any{"id": id, "sessionID": sessionID, "title": "q", "fields": []any{}}})
+}
+
+// AnswerForm 模擬使用者回答問題。
+func (s *Server) AnswerForm(id string) { s.closeForm("form.replied", id) }
+
+// CancelForm 模擬問題被取消。
+func (s *Server) CancelForm(id string) { s.closeForm("form.cancelled", id) }
+
+func (s *Server) closeForm(typ, id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sess := ""
+	s.forms, sess = remove(s.forms, id)
+	d := map[string]any{"id": id, "sessionID": sess}
+	if typ == "form.replied" {
+		d["answer"] = map[string]any{}
+	}
+	s.emit(typ, s.now(), d)
+}
+
+func remove(list []item, id string) ([]item, string) {
+	out := list[:0:0]
+	sess := ""
+	for _, it := range list {
+		if it.id == id {
+			sess = it.session
+			continue
+		}
+		out = append(out, it)
+	}
+	return out, sess
+}
+
+// SeedPermission／SeedForm 不送事件地放入待處理項目。
+func (s *Server) SeedPermission(id, sessionID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.perms = append(s.perms, item{id, sessionID})
+}
+
+func (s *Server) SeedForm(id, sessionID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.forms = append(s.forms, item{id, sessionID})
+}
+
+// ForgetPending 模擬服務重啟：待處理請求不持久，重啟後全部消失（不送事件）。
+func (s *Server) ForgetPending() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.perms, s.forms = nil, nil
+}
+
 func (s *Server) Delete(id string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

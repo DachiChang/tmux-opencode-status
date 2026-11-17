@@ -213,3 +213,48 @@ func TestTrackerSnapshotStillFillsParentAndViewedForTouchedSessions(t *testing.T
 		t.Fatalf("snapshot 的已讀時間應被採用：%v", got)
 	}
 }
+
+// 同步期間某 session 收到待處理事件，snapshot 仍要補上「連線前就存在、事件不會再送」的其他請求；
+// 同步期間已被回覆／取消的請求，則不得被較舊的 snapshot 復活。
+func TestTrackerSnapshotKeepsPreexistingRequestsOfTouchedSessions(t *testing.T) {
+	tr := contract.NewTracker()
+	tr.Apply(contract.Event{Type: contract.EventServerConnected})
+	tr.Apply(contract.Event{Type: "permission.asked", SessionID: "s", RequestID: "new"})
+	tr.ApplySnapshot(contract.Snapshot{
+		Sessions:    []contract.Session{{ID: "s"}},
+		Permissions: []contract.PermissionRequest{{ID: "old", SessionID: "s"}},
+	})
+	tr.Apply(contract.Event{Type: "permission.replied", SessionID: "s", RequestID: "new"})
+	if got := tr.TabStatus("s"); got != contract.WaitingApproval {
+		t.Fatalf("連線前就存在的請求被遺漏：%v", got)
+	}
+	tr.Apply(contract.Event{Type: "permission.replied", SessionID: "s", RequestID: "old"})
+	if got := tr.TabStatus("s"); got != contract.Idle {
+		t.Fatalf("全部回覆後應回到閒置：%v", got)
+	}
+}
+
+func TestTrackerStaleSnapshotDoesNotResurrectRequestsResolvedDuringSync(t *testing.T) {
+	tr := contract.NewTracker()
+	tr.Apply(contract.Event{Type: contract.EventServerConnected})
+	tr.Apply(contract.Event{Type: "permission.replied", SessionID: "s", RequestID: "p"})
+	tr.Apply(contract.Event{Type: "form.cancelled", SessionID: "s", FormID: "f"})
+	tr.ApplySnapshot(contract.Snapshot{
+		Sessions:    []contract.Session{{ID: "s"}},
+		Permissions: []contract.PermissionRequest{{ID: "p", SessionID: "s"}},
+		Forms:       []contract.Form{{ID: "f", SessionID: "s"}},
+	})
+	if got := tr.TabStatus("s"); got != contract.Idle {
+		t.Fatalf("較舊 snapshot 讓已處理的請求復活：%v", got)
+	}
+}
+
+func TestTrackerRequestAskedDuringSyncSurvivesOlderSnapshot(t *testing.T) {
+	tr := contract.NewTracker()
+	tr.Apply(contract.Event{Type: contract.EventServerConnected})
+	tr.Apply(contract.Event{Type: "form.created", SessionID: "s", FormID: "f"})
+	tr.ApplySnapshot(contract.Snapshot{Sessions: []contract.Session{{ID: "s"}}}) // 在 form 出現前讀取
+	if got := tr.TabStatus("s"); got != contract.WaitingAnswer {
+		t.Fatalf("同步期間出現的請求不得被較舊 snapshot 抹掉：%v", got)
+	}
+}
