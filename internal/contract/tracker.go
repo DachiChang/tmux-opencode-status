@@ -97,6 +97,17 @@ func (t *Tracker) Apply(e Event) {
 
 // ApplySnapshot 以完整讀取的資料對齊狀態；同步期間已有事件的 session 保持事件結果。
 func (t *Tracker) ApplySnapshot(s Snapshot) {
+	// 完整重讀沒有出現、同步期間也沒有事件的 session 已經不存在（例如斷線期間被刪除的
+	// 後代）；不丟掉的話，它最後已知的執行中會變成永遠不會結束的幽靈。
+	inSnap := make(map[string]bool, len(s.Sessions))
+	for _, x := range s.Sessions {
+		inSnap[x.ID] = true
+	}
+	for id := range t.sessions {
+		if !inSnap[id] && !t.touched[id] {
+			delete(t.sessions, id)
+		}
+	}
 	for _, x := range s.Sessions {
 		if t.touched[x.ID] {
 			// 事件較新，不覆蓋；但父子關係與單調資料（已讀時間、較新的結束時間）仍要補上，
@@ -151,15 +162,20 @@ func (t *Tracker) snapshot() Snapshot {
 		sess := Session{ID: id, ParentID: x.parent, Outcome: x.outcome}
 		sess.Time.Idle, sess.Time.Viewed = x.idle, x.viewed
 		s.Sessions = append(s.Sessions, sess)
-		if x.running {
+		// 已刪除的 session 保留在家族關係中（讓它的後代不脫離），但不再執行也不能被處理。
+		if x.running && !x.deleted {
 			s.Running[id] = true
 		}
 	}
 	for id, sess := range t.permissions {
-		s.Permissions = append(s.Permissions, PermissionRequest{ID: id, SessionID: sess})
+		if !t.Missing(sess) {
+			s.Permissions = append(s.Permissions, PermissionRequest{ID: id, SessionID: sess})
+		}
 	}
 	for id, sess := range t.forms {
-		s.Forms = append(s.Forms, Form{ID: id, SessionID: sess})
+		if !t.Missing(sess) {
+			s.Forms = append(s.Forms, Form{ID: id, SessionID: sess})
+		}
 	}
 	return s
 }

@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -72,6 +73,7 @@ type Server struct {
 	writes   []string // 非 GET 的請求（必須永遠為空）
 	connects int
 	eventQs  []string // 每次 /api/event 連線的 query
+	broken   []string // 請求 URI 含其中任一字串的 REST GET 回 500（模擬暫時性失敗）
 
 	// Heartbeat 每隔多久送一次 ": heartbeat"；0 表示不送。
 	Heartbeat time.Duration
@@ -151,6 +153,31 @@ func (s *Server) Subscribers() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return len(s.subs)
+}
+
+// Break 讓 URI（含 query）含 substr 的 REST GET 回 500，直到 Heal；不影響 /api/info 與 /api/event。
+func (s *Server) Break(substr string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.broken = append(s.broken, substr)
+}
+
+// Heal 解除所有 Break。
+func (s *Server) Heal() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.broken = nil
+}
+
+func (s *Server) isBroken(uri string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, b := range s.broken {
+		if strings.Contains(uri, b) {
+			return true
+		}
+	}
+	return false
 }
 
 // Drop 斷開所有 SSE 連線（模擬連線中斷；斷線期間發生的事件不會補送）。
@@ -346,6 +373,10 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	path := r.URL.Path
+	if path != "/api/info" && path != "/api/event" && s.isBroken(r.URL.RequestURI()) {
+		writeJSON(w, 500, map[string]any{"_tag": "InternalError"})
+		return
+	}
 	switch {
 	case path == "/api/info":
 		writeJSON(w, 200, map[string]any{"version": Version, "pid": PID, "hostname": "h", "urls": []string{}})
@@ -437,16 +468,20 @@ func (s *Server) listChildren(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	sort.Strings(kids)
-	var data []map[string]any
-	if r.URL.Query().Get("cursor") == "" {
-		for _, id := range kids {
-			data = append(data, s.sessionJSON(s.sessions[id]))
-		}
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	offset := 0
+	if c := r.URL.Query().Get("cursor"); c != "" {
+		offset, _ = strconv.Atoi(strings.TrimPrefix(c, "off"))
 	}
+	var data []map[string]any
+	for i := offset; i < len(kids) && i < offset+limit; i++ {
+		data = append(data, s.sessionJSON(s.sessions[kids[i]]))
+	}
+	end := offset + len(data)
 	s.mu.Unlock()
 	next := any(nil)
 	if len(data) > 0 {
-		next = "more"
+		next = "off" + strconv.Itoa(end)
 	}
 	if data == nil {
 		data = []map[string]any{}
