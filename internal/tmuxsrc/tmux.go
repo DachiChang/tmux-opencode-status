@@ -42,6 +42,14 @@ var wakeHooks = []string{
 	"session-created", "session-closed",
 }
 
+// 模式選項被設定（含 `set -gu` 與重載設定檔中的 set）時才喚醒，避免常駐程式自己
+// 寫入側欄選項造成回授。
+var modeHook = "after-set-option"
+
+func modeHookCmd() string {
+	return `if-shell -F "#{==:#{hook_argument_0},` + sidebar.ModeOption + `}" "wait-for -S ` + wakeChannel + `"`
+}
+
 func (c *Client) tmux(stdin string, args ...string) ([]byte, error) {
 	full := append(append(append([]string{}, c.SocketArgs...), c.ConfigArgs...), args...)
 	cmd := exec.Command("tmux", full...)
@@ -145,6 +153,19 @@ func quote(v string) string {
 	return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`, "$", `\$`, "\n", `\n`).Replace(v) + `"`
 }
 
+// Setting 唯讀取得全域模式選項。選項不存在（輸出為空）與存在但值為空字串（輸出為單一換行）
+// 是兩種狀態；值本身只去掉 tmux 加上的一個結尾換行，不做任何修剪。
+func (c *Client) Setting() (sidebar.ModeSetting, error) {
+	out, err := c.tmux("", "show-options", "-gqv", sidebar.ModeOption)
+	if err != nil {
+		return sidebar.ModeSetting{}, err
+	}
+	if len(out) == 0 {
+		return sidebar.ModeSetting{}, nil
+	}
+	return sidebar.ModeSetting{Value: strings.TrimSuffix(string(out), "\n"), Set: true}, nil
+}
+
 // Show 把 side-status 設為 left（僅在使用者明確要求時由呼叫端使用）。
 func (c *Client) Show() error {
 	_, err := c.tmux("", "set-option", "-g", "side-status", "left")
@@ -160,7 +181,16 @@ func (c *Client) WatchEvents(ctx context.Context, wake chan<- struct{}) error {
 			return err
 		}
 	}
+	if _, err := c.tmux("", "set-hook", "-g", modeHook+"["+strconv.Itoa(hookIndex)+"]", modeHookCmd()); err != nil {
+		c.RemoveHooks()
+		return err
+	}
 	defer c.RemoveHooks()
+	// hook 裝好之前發生的變動不會有通知；裝好後補一次喚醒，讓啟動空窗內的變動不必等低頻補漏。
+	select {
+	case wake <- struct{}{}:
+	default:
+	}
 	for ctx.Err() == nil {
 		args := append(append(append([]string{}, c.SocketArgs...), c.ConfigArgs...), "wait-for", wakeChannel)
 		cmd := exec.CommandContext(ctx, "tmux", args...)
@@ -189,6 +219,7 @@ func (c *Client) WatchEvents(ctx context.Context, wake chan<- struct{}) error {
 
 // RemoveHooks 只移除本插件安裝的 hook 索引，不動使用者自己的 hook。
 func (c *Client) RemoveHooks() {
+	_, _ = c.tmux("", "set-hook", "-gu", modeHook+"["+strconv.Itoa(hookIndex)+"]")
 	for _, h := range wakeHooks {
 		_, _ = c.tmux("", "set-hook", "-gu", h+"["+strconv.Itoa(hookIndex)+"]")
 	}

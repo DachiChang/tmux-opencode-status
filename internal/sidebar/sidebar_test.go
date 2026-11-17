@@ -66,6 +66,39 @@ func (f *fakeTabs) fail(err error) {
 	f.err = err
 }
 
+type fakeMode struct {
+	mu  sync.Mutex
+	set sidebar.ModeSetting
+	err error
+	n   int
+}
+
+func (f *fakeMode) Setting() (sidebar.ModeSetting, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.n++
+	return f.set, f.err
+}
+
+// use 模擬使用者設定（unset 以外）或重載 tmux 設定後的選項值。
+func (f *fakeMode) use(v string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.set, f.err = sidebar.ModeSetting{Value: v, Set: true}, nil
+}
+
+func (f *fakeMode) unset() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.set, f.err = sidebar.ModeSetting{}, nil
+}
+
+func (f *fakeMode) fail(err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.err = err
+}
+
 type fakeOut struct {
 	mu   sync.Mutex
 	pubs []heightfit.Published
@@ -109,13 +142,14 @@ type world struct {
 	panes *fakePanes
 	tabs  *fakeTabs
 	out   *fakeOut
+	mode  *fakeMode
 	d     *sidebar.Daemon
 }
 
 func newWorld(t *testing.T) *world {
 	t.Helper()
-	w := &world{panes: &fakePanes{}, tabs: &fakeTabs{file: &contract.TabsFile{}}, out: &fakeOut{}}
-	w.d = sidebar.New(sidebar.Config{Width: 36}, sidebar.Deps{Panes: w.panes, Tabs: w.tabs, Out: w.out})
+	w := &world{panes: &fakePanes{}, tabs: &fakeTabs{file: &contract.TabsFile{}}, out: &fakeOut{}, mode: &fakeMode{}}
+	w.d = sidebar.New(sidebar.Config{Width: 36}, sidebar.Deps{Panes: w.panes, Tabs: w.tabs, Out: w.out, Mode: w.mode})
 	return w
 }
 
@@ -346,7 +380,7 @@ func startRun(t *testing.T, w *world) *runner {
 	r := &runner{world: w, wake: make(chan struct{}, 1), ticks: make(chan time.Time), done: make(chan error, 1)}
 	w.out.ch = make(chan struct{}, 16)
 	w.d = sidebar.New(sidebar.Config{Width: 36, Debounce: time.Millisecond},
-		sidebar.Deps{Panes: w.panes, Tabs: w.tabs, Out: w.out, Wake: r.wake, Ticks: r.ticks})
+		sidebar.Deps{Panes: w.panes, Tabs: w.tabs, Out: w.out, Mode: w.mode, Wake: r.wake, Ticks: r.ticks})
 	ctx, cancel := context.WithCancel(context.Background())
 	r.cancel = cancel
 	go func() { r.done <- w.d.Run(ctx) }()

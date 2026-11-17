@@ -17,13 +17,14 @@ import (
 // 使用者的預設 tmux server 與 OpenCode 資料完全不涉及。
 
 type env struct {
-	t        *testing.T
-	dir      string
-	in, out  string // 被觀察的 server 與承載 client 的外層 server
-	daemon   *exec.Cmd
-	tabsPath string
-	binDir   string
-	bin      string
+	t         *testing.T
+	dir       string
+	in, out   string // 被觀察的 server 與承載 client 的外層 server
+	daemon    *exec.Cmd
+	tabsPath  string
+	binDir    string
+	bin       string
+	daemonEnv []string
 }
 
 func (e *env) inTmux(args ...string) string {
@@ -44,7 +45,10 @@ func (e *env) outTmux(args ...string) string {
 	return string(b)
 }
 
-func newEnv(t *testing.T) *env {
+func newEnv(t *testing.T) *env { t.Helper(); return newEnvWith(t, nil) }
+
+// newEnvWith 的 daemonEnv 附加到常駐程式的環境變數（用來在 PATH 前面放 tmux 包裝，製造確定性的慢啟動）。
+func newEnvWith(t *testing.T, daemonEnv []string) *env {
 	t.Helper()
 	if testing.Short() {
 		t.Skip("-short")
@@ -85,6 +89,7 @@ func newEnv(t *testing.T) *env {
 		_ = exec.Command("tmux", "-L", e.in, "-f", "/dev/null", "kill-server").Run()
 		_ = exec.Command("tmux", "-L", e.out, "-f", "/dev/null", "kill-server").Run()
 	})
+	e.daemonEnv = daemonEnv
 	e.startDaemon(daemonBin)
 	return e
 }
@@ -92,6 +97,9 @@ func newEnv(t *testing.T) *env {
 func (e *env) startDaemon(bin string) {
 	e.daemon = exec.Command(bin, "-L", e.in, "-f", "/dev/null", "-tabs", e.tabsPath, "-show", "-backstop", "5s")
 	e.daemon.Stderr = os.Stderr
+	if e.daemonEnv != nil {
+		e.daemon.Env = append(os.Environ(), e.daemonEnv...)
+	}
 	must(e.t, e.daemon.Start())
 }
 
@@ -315,4 +323,181 @@ func TestOtherTmuxServerPanesAreNotMixedIn(t *testing.T) {
 	if s := e.sidebar(); strings.Contains(s, "foreign") || strings.Contains(s, "elsewhere") {
 		t.Fatalf("混入其他 server 的資料：\n%s", s)
 	}
+}
+
+// ---- #8 cwd／global 模式與設定重載 ----
+
+const modeOpt = "@opencode-status-mode"
+
+// bothScopesJSON：global 清單含不在任何 TUI 目錄下的 session，cwd 清單另有一份。
+func (e *env) bothScopesJSON(dirs map[string][]string, global []string) string {
+	var gtabs []map[string]string
+	for i, ti := range global {
+		gtabs = append(gtabs, map[string]string{"sessionID": fmt.Sprintf("ses_g%d", i), "title": ti})
+	}
+	var m map[string]any
+	_ = json.Unmarshal([]byte(e.tabsJSON(dirs)), &m)
+	m["global"] = map[string]any{"tabs": gtabs, "unread": map[string]any{}}
+	b, _ := json.Marshal(m)
+	return string(b)
+}
+
+// reload 模擬 `tmux source-file ~/.tmux.conf` 重載含模式選項的設定檔。
+func (e *env) reload(conf string) {
+	e.t.Helper()
+	path := filepath.Join(e.dir, "reload.conf")
+	must(e.t, os.WriteFile(path, []byte(conf), 0o644))
+	e.inTmux("source-file", path)
+}
+
+// daemonCount 數出指向被觀察 server 的常駐程式實例（pgrep 不會算到自己）。
+func (e *env) daemonCount() int {
+	out, _ := exec.Command("pgrep", "-f", "tmux-opencode-status -L "+e.in+" ").Output()
+	return len(strings.Fields(string(out)))
+}
+
+func TestReloadingTmuxConfigSwitchesBetweenCwdAndGlobalWithoutRestart(t *testing.T) {
+	e := newEnv(t)
+	api := filepath.Join(e.dir, "work", "api")
+	web := filepath.Join(e.dir, "work", "web")
+	e.writeTabs(e.bothScopesJSON(map[string][]string{api: {"api tab"}, web: {"web tab"}}, []string{"global one", "其他目錄的工作"}))
+	e.tui(api)
+	e.tui(web, "-c")
+
+	e.eventually(3*time.Second, "預設 cwd", func(s string) bool {
+		return strings.Contains(s, "api tab") && strings.Contains(s, "web tab") && !strings.Contains(s, "GLOBAL")
+	})
+	pid := e.daemon.Process.Pid
+
+	e.reload("set -g " + modeOpt + " global\n")
+	d := e.eventually(time.Second, "重載後 1 秒內切到 global", func(s string) bool {
+		return strings.Contains(s, "GLOBAL") && strings.Contains(s, "其他目錄的工作") && strings.Count(s, "global one") == 1 &&
+			!strings.Contains(s, "api tab") && !strings.Contains(s, "web tab")
+	})
+	t.Logf("cwd → global：%v", d)
+
+	e.reload("set -g " + modeOpt + " cwd\n")
+	e.eventually(time.Second, "重載後切回 cwd，不殘留 global", func(s string) bool {
+		return strings.Contains(s, "api tab") && strings.Contains(s, "web tab") && !strings.Contains(s, "GLOBAL") && !strings.Contains(s, "global one")
+	})
+
+	e.reload("set -gu " + modeOpt + "\nset -g " + modeOpt + " global\nset -gu " + modeOpt + "\n")
+	e.eventually(time.Second, "移除設定回到預設 cwd", func(s string) bool { return strings.Contains(s, "api tab") && !strings.Contains(s, "GLOBAL") })
+
+	if e.daemon.Process.Pid != pid || e.daemonCount() != 1 {
+		t.Fatalf("切換模式不得產生第二個實例（pid %d → %d，實例數 %d）", pid, e.daemon.Process.Pid, e.daemonCount())
+	}
+}
+
+func TestGlobalModeMultipleTUIsAndLastClosedOnARealTmux(t *testing.T) {
+	e := newEnv(t)
+	api := filepath.Join(e.dir, "work", "api")
+	web := filepath.Join(e.dir, "work", "web")
+	e.reload("set -g " + modeOpt + " global\n")
+	e.writeTabs(e.bothScopesJSON(map[string][]string{api: {"api tab"}}, []string{"shared a", "shared b"}))
+	w1 := e.tui(api)
+	w2 := e.tui(api, "-c")
+	w3 := e.tui(web)
+	e.eventually(2*time.Second, "多個 TUI 只列一份共享清單", func(s string) bool { return strings.Contains(s, "shared a") })
+	s := e.sidebar()
+	if strings.Count(s, "shared a") != 1 || strings.Count(s, "GLOBAL") != 1 || strings.Contains(s, "api tab") || strings.Contains(s, "web") {
+		t.Fatalf("global 清單重複或混入 cwd：\n%s", s)
+	}
+	e.inTmux("kill-window", "-t", w1)
+	e.inTmux("kill-window", "-t", w2)
+	time.Sleep(700 * time.Millisecond)
+	if s := e.sidebar(); !strings.Contains(s, "shared a") {
+		t.Fatalf("仍有 TUI 時共享清單應保留：\n%s", s)
+	}
+	e.inTmux("kill-window", "-t", w3)
+	e.eventually(time.Second, "最後一個 TUI 關閉後呈現空畫面", func(s string) bool {
+		return strings.Contains(s, "沒有 OpenCode TUI") && !strings.Contains(s, "shared a") && !strings.Contains(s, "GLOBAL")
+	})
+}
+
+func TestInvalidModeNeverStartsTrackingThenReloadKeepsValidMode(t *testing.T) {
+	// 首次無效：不開始追蹤
+	e := newEnv(t)
+	api := filepath.Join(e.dir, "work", "api")
+	e.inTmux("set", "-g", modeOpt, "globl")
+	e.writeTabs(e.bothScopesJSON(map[string][]string{api: {"api tab"}}, []string{"shared a"}))
+	e.tui(api)
+	e.eventually(2*time.Second, "首次無效值提示且不追蹤", func(s string) bool {
+		return strings.Contains(s, "模式設定無效") && strings.Contains(s, "尚未開始追蹤")
+	})
+	if s := e.sidebar(); strings.Contains(s, "api tab") || strings.Contains(s, "shared a") || strings.Contains(s, "沒有 OpenCode TUI") {
+		t.Fatalf("首次無效設定不得開始追蹤：\n%s", s)
+	}
+	// 修正後開始追蹤
+	e.reload("set -g " + modeOpt + " global\n")
+	e.eventually(time.Second, "改為有效值後開始追蹤", func(s string) bool { return strings.Contains(s, "shared a") })
+	// 重載時無效：保留 global 並提示未套用
+	e.reload("set -g " + modeOpt + " bogus\n")
+	e.eventually(time.Second, "重載無效值保留原模式並回報", func(s string) bool {
+		return strings.Contains(s, "未套用") && strings.Contains(s, "shared a") && !strings.Contains(s, "api tab")
+	})
+	e.reload("set -g " + modeOpt + " cwd\n")
+	e.eventually(time.Second, "修正後套用且提示消失", func(s string) bool { return strings.Contains(s, "api tab") && !strings.Contains(s, "未套用") })
+}
+
+func TestModeSwitchDoesNotForceAHiddenSidebarOpen(t *testing.T) {
+	e := newEnv(t)
+	api := filepath.Join(e.dir, "work", "api")
+	e.writeTabs(e.bothScopesJSON(map[string][]string{api: {"api tab"}}, []string{"shared a"}))
+	e.tui(api)
+	e.eventually(3*time.Second, "已顯示", func(s string) bool { return strings.Contains(s, "api tab") })
+	e.inTmux("set", "-g", "side-status", "off")
+	e.reload("set -g " + modeOpt + " global\n")
+	time.Sleep(1200 * time.Millisecond)
+	if got := strings.TrimSpace(e.inTmux("show", "-gv", "side-status")); got != "off" {
+		t.Fatalf("切換模式不應重新打開側欄，side-status = %q", got)
+	}
+}
+
+func TestModeOptionIsPluginPrefixedAndOtherOptionsStayUntouched(t *testing.T) {
+	e := newEnv(t)
+	e.inTmux("set", "-g", "@oc_side", "user-value")
+	e.reload("set -g " + modeOpt + " global\n")
+	time.Sleep(600 * time.Millisecond)
+	if got := strings.TrimSpace(e.inTmux("show", "-gv", "@oc_side")); got != "user-value" {
+		t.Fatalf("@oc_side 被改：%q", got)
+	}
+	if got := strings.TrimSpace(e.inTmux("show", "-gv", modeOpt)); got != "global" {
+		t.Fatalf("插件不應改寫使用者設定的模式選項：%q", got)
+	}
+}
+
+func TestStoppingDaemonAlsoRemovesTheModeHook(t *testing.T) {
+	e := newEnv(t)
+	e.inTmux("set-hook", "-g", "after-set-option[3]", "display-message user-hook")
+	time.Sleep(500 * time.Millisecond)
+	must(t, e.daemon.Process.Signal(syscall.SIGTERM))
+	_ = e.daemon.Wait()
+	hooks := e.inTmux("show-hooks", "-g")
+	if strings.Contains(hooks, "tos_wake") || !strings.Contains(hooks, "user-hook") {
+		t.Fatalf("結束後只應移除插件自己的 hook：\n%s", hooks)
+	}
+}
+
+// 啟動空窗：hook 還沒裝好時發生的設定變動，不能只靠低頻補漏（5 秒）才發現。
+// 以 tmux 包裝讓安裝模式 hook（最後一個裝的）慢 300ms，確定性地放大空窗而不依賴 -race 的快慢；
+// 在常駐程式首次讀到設定之後、hook 裝好之前重載設定，仍須在 1 秒內套用。
+func TestModeChangeDuringDaemonStartupIsNotLeftToTheBackstop(t *testing.T) {
+	realTmux, err := exec.LookPath("tmux")
+	if err != nil {
+		t.Skip("沒有 tmux")
+	}
+	shim := t.TempDir()
+	script := "#!/bin/sh\ncase \" $* \" in *\" after-set-option[\"*) sleep 0.3;; esac\nexec " + realTmux + " \"$@\"\n"
+	must(t, os.WriteFile(filepath.Join(shim, "tmux"), []byte(script), 0o755))
+
+	e := newEnvWith(t, []string{"PATH=" + shim + ":" + os.Getenv("PATH")})
+	api := filepath.Join(e.dir, "work", "api")
+	e.inTmux("set", "-g", modeOpt, "globl")
+	e.writeTabs(e.bothScopesJSON(map[string][]string{api: {"api tab"}}, []string{"shared a"}))
+	e.tui(api)
+	e.eventually(5*time.Second, "常駐程式首次讀到設定", func(s string) bool { return strings.Contains(s, "模式設定無效") })
+	e.reload("set -g " + modeOpt + " global\n")
+	d := e.eventually(time.Second, "啟動空窗內的重載於 1 秒內套用", func(s string) bool { return strings.Contains(s, "shared a") })
+	t.Logf("重載 → 畫面：%v", d)
 }
