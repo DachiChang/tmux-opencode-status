@@ -162,8 +162,13 @@ func (d *Daemon) render() error {
 			}
 		}
 		d.live.Track(d.ctx, ids)
-		if view.Notice == "" && len(ids) > 0 && d.live.Down() {
-			view.Notice = "無法連線 OpenCode 服務"
+		// 服務斷線與 tab 清單／tmux 讀取失敗是不同問題，各自提示一次（多行）；
+		// 服務斷線的提示不依 tab 數重複。
+		if len(ids) > 0 && d.live.Down() {
+			if view.Notice != "" {
+				view.Notice += "\n"
+			}
+			view.Notice += "無法連線 OpenCode 服務"
 		}
 	}
 	return d.publish(view)

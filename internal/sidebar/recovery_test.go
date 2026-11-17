@@ -31,11 +31,11 @@ func TestSilentDisconnectIsDetectedThenResyncedWithoutAnyReload(t *testing.T) {
 	lw.svc.Finish("ses_1", "succeeded")
 
 	got := lw.eventually(t, "無聲逾時後不再把過期的 ● 當成事實", func(s string) bool { return hasLine(s, "! job") })
-	if strings.Count(got, downNotice) != 1 {
+	if strings.Count(flat(got), flat(downNotice)) != 1 {
 		t.Fatalf("斷線提示應只出現一次：\n%s", got)
 	}
 	lw.eventually(t, "自動重連並完整重讀（遺失的結束事件由 REST 補上）", func(s string) bool {
-		return hasLine(s, "◆ job") && !strings.Contains(s, downNotice)
+		return hasLine(s, "◆ job") && !strings.Contains(flat(s), flat(downNotice))
 	})
 	if lw.svc.Connects() <= before {
 		t.Fatal("沒有重新連線")
@@ -55,7 +55,7 @@ func TestHeartbeatsKeepAnIdleButHealthyConnectionAlive(t *testing.T) {
 		t.Fatalf("健康連線被誤判無聲而重連：連線 %d 次", n)
 	}
 	got := lw.eventually(t, "仍是正常狀態", func(s string) bool { return hasLine(s, "· job") })
-	if strings.Contains(got, downNotice) {
+	if strings.Contains(flat(got), flat(downNotice)) {
 		t.Fatalf("不應有斷線提示：\n%s", got)
 	}
 }
@@ -213,26 +213,30 @@ func TestMissingSessionIsKeptNotPolledAndRecoversWhenItAppears(t *testing.T) {
 
 // ---- 提示：tab 清單不可讀與服務斷線並存 ----
 
+// flat 去掉換行與空白：長提示會依寬度折行，斷言只關心文字內容。
+func flat(s string) string { return strings.Join(strings.Fields(s), "") }
+
 func TestUnreadableTabListAndServiceOutageAreBothReportedOnceEach(t *testing.T) {
 	lw := startLive(t)
 	lw.svc.AddSession("ses_1", "")
 	lw.openTabs(t, "/work/api", [2]string{"ses_1", "job"})
-	lw.eventually(t, "服務尚未開啟", func(s string) bool { return hasLine(s, "! job") && strings.Contains(s, downNotice) })
+	lw.eventually(t, "服務尚未開啟", func(s string) bool { return hasLine(s, "! job") && strings.Contains(flat(s), flat(downNotice)) })
 
 	lw.tabs.fail(errBoom)
 	lw.wake <- struct{}{}
-	got := lw.eventually(t, "兩種提示並存", func(s string) bool { return strings.Contains(s, "tab 清單") && strings.Contains(s, "服務") })
-	if strings.Count(got, "tab 清單") != 1 || strings.Count(got, "連線") > 1 || !hasLine(got, "! job") {
+	tabNotice := flat("無法讀取 tab 清單，顯示最後可用資料")
+	got := lw.eventually(t, "兩種提示並存", func(s string) bool {
+		return strings.Contains(flat(s), tabNotice) && strings.Contains(flat(s), flat(downNotice))
+	})
+	if strings.Count(flat(got), tabNotice) != 1 || strings.Count(flat(got), flat(downNotice)) != 1 || !hasLine(got, "! job") {
 		t.Fatalf("提示應各一次且保留最後清單：\n%s", got)
 	}
 
 	lw.publishService() // 服務恢復：只剩 tab 清單提示
 	got = lw.eventually(t, "服務恢復後只剩 tab 清單提示", func(s string) bool {
-		return hasLine(s, "· job") && strings.Contains(s, "無法讀取 tab 清單，顯示最後可用資料")
+		return hasLine(s, "· job") && strings.Contains(flat(s), tabNotice) && !strings.Contains(flat(s), flat(downNotice))
 	})
-	if strings.Contains(got, "服務") {
-		t.Fatalf("服務提示應消失：\n%s", got)
-	}
+	_ = got
 }
 
 // ---- 交錯與亂序 ----
@@ -312,9 +316,9 @@ func TestServiceRestartedWithNewDiscoveryInfoIsFoundAndFullyResynced(t *testing.
 	next.SeedPermission("per_x", "ses_1")
 	lw.svc.Drop()
 	_ = os.Remove(lw.svcFile)
-	lw.eventually(t, "重啟空窗為 !", func(s string) bool { return hasLine(s, "! job") && strings.Contains(s, downNotice) })
+	lw.eventually(t, "重啟空窗為 !", func(s string) bool { return hasLine(s, "! job") && strings.Contains(flat(s), flat(downNotice)) })
 	next.WriteServiceFile(lw.svcFile)
-	lw.eventually(t, "重新探索並完整同步", func(s string) bool { return hasLine(s, "? job") && !strings.Contains(s, downNotice) })
+	lw.eventually(t, "重新探索並完整同步", func(s string) bool { return hasLine(s, "? job") && !strings.Contains(flat(s), flat(downNotice)) })
 	next.ReplyPermission("per_x")
 	lw.eventually(t, "新服務的事件生效", func(s string) bool { return hasLine(s, "✗ job") })
 	if w := next.Writes(); len(w) != 0 {
@@ -326,8 +330,8 @@ func TestStartupBeforeServiceExistsThenServiceAppearsWithoutReload(t *testing.T)
 	lw := startLive(t)
 	lw.svc.Seed("ses_1", "", "succeeded", 500, 0, false)
 	lw.openTabs(t, "/work/api", [2]string{"ses_1", "job"})
-	lw.eventually(t, "服務未開", func(s string) bool { return hasLine(s, "! job") && strings.Contains(s, downNotice) })
+	lw.eventually(t, "服務未開", func(s string) bool { return hasLine(s, "! job") && strings.Contains(flat(s), flat(downNotice)) })
 	time.Sleep(100 * time.Millisecond)
 	lw.publishService()
-	lw.eventually(t, "服務出現後自動接上", func(s string) bool { return hasLine(s, "◆ job") && !strings.Contains(s, downNotice) })
+	lw.eventually(t, "服務出現後自動接上", func(s string) bool { return hasLine(s, "◆ job") && !strings.Contains(flat(s), flat(downNotice)) })
 }

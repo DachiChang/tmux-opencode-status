@@ -258,3 +258,53 @@ func TestTrackerRequestAskedDuringSyncSurvivesOlderSnapshot(t *testing.T) {
 		t.Fatalf("同步期間出現的請求不得被較舊 snapshot 抹掉：%v", got)
 	}
 }
+
+// 服務關閉造成的中斷不是一次結束（TUI 同樣忽略）；事件單獨不改變狀態。
+func TestTrackerIgnoresShutdownInterruptionButKeepsOtherReasons(t *testing.T) {
+	tr := contract.NewTracker()
+	tr.ApplySnapshot(contract.Snapshot{Sessions: []contract.Session{{ID: "s"}}, Running: map[string]bool{"s": true}})
+	tr.Apply(contract.Event{Type: "session.execution.interrupted", SessionID: "s", Reason: "shutdown", Created: 900})
+	if got := tr.TabStatus("s"); got != contract.Running {
+		t.Fatalf("shutdown 中斷不得結束執行：%v", got)
+	}
+	for _, reason := range []string{"user", "superseded", "inactivity", ""} {
+		tr.Apply(contract.Event{Type: "session.execution.started", SessionID: "s"})
+		tr.Apply(contract.Event{Type: "session.execution.interrupted", SessionID: "s", Reason: reason, Created: 900})
+		if got := tr.TabStatus("s"); got != contract.FinishedUnread {
+			t.Fatalf("reason=%q 的中斷應為結束未讀：%v", reason, got)
+		}
+	}
+}
+
+func TestParseSSEDecodesInterruptionReason(t *testing.T) {
+	in := "data: {\"id\":\"e\",\"type\":\"session.execution.interrupted\",\"created\":5,\"data\":{\"sessionID\":\"s\",\"reason\":\"shutdown\"}}\n\n"
+	events, err := contract.ParseSSE(strings.NewReader(in))
+	if err != nil || len(events) != 1 || events[0].Reason != "shutdown" {
+		t.Fatalf("events=%+v err=%v", events, err)
+	}
+}
+
+// 單一 tab 的讀取只對齊該家族：其他 tab 的狀態不受影響；讀取開始後收到的事件比該次讀取新。
+func TestTrackerApplyFamilyOnlyTouchesThatFamilyAndKeepsNewerEvents(t *testing.T) {
+	tr := contract.NewTracker()
+	tr.ApplySnapshot(contract.Snapshot{
+		Sessions:    []contract.Session{{ID: "A"}, {ID: "B"}},
+		Running:     map[string]bool{"B": true},
+		Permissions: []contract.PermissionRequest{{ID: "pB", SessionID: "B"}},
+	})
+	mark := tr.Mark()
+	tr.Apply(contract.Event{Type: "session.execution.started", SessionID: "A"}) // 讀取期間的事件
+	// A 的較舊讀取（沒看到 started）；同時其中 B 不在範圍內
+	tr.ApplyFamily("A", contract.Snapshot{Sessions: []contract.Session{{ID: "A"}}}, mark)
+	if got := tr.TabStatus("A"); got != contract.Running {
+		t.Fatalf("事件較新，A 不得倒退：%v", got)
+	}
+	if got := tr.TabStatus("B"); got != contract.WaitingApproval {
+		t.Fatalf("A 的讀取不得改動 B：%v", got)
+	}
+	// 之後的新讀取（since 較晚）以資料為準
+	tr.ApplyFamily("A", contract.Snapshot{Sessions: []contract.Session{{ID: "A"}}}, tr.Mark())
+	if got := tr.TabStatus("A"); got != contract.Idle {
+		t.Fatalf("較新的讀取應對齊：%v", got)
+	}
+}

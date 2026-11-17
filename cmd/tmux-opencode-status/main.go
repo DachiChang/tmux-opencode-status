@@ -25,6 +25,8 @@ func main() {
 	servicePath := flag.String("service", ocsrc.DefaultPath(), "OpenCode 服務探索檔 service.json 路徑（唯讀；不啟動或重啟服務）")
 	width := flag.Int("width", 36, "side-status-width")
 	backstop := flag.Duration("backstop", sidebar.DefaultBackstop, "低頻補漏同步週期")
+	idle := flag.Duration("idle-timeout", ocsrc.DefaultIdleTimeout, "SSE 連續無任何位元組多久視為無聲斷線（服務每 15 秒送心跳）")
+	resync := flag.Duration("resync", sidebar.DefaultResync, "家族補漏重讀週期（低頻，不是輪詢）")
 	show := flag.Bool("show", false, "啟動時把 side-status 設為 left")
 	flag.Parse()
 
@@ -63,7 +65,7 @@ func main() {
 	}
 	tick := time.NewTicker(*backstop)
 	defer tick.Stop()
-	d := sidebar.New(sidebar.Config{Width: *width}, sidebar.Deps{Panes: tm, Tabs: tabs, Out: tm, Mode: tm, Wake: wake, Ticks: tick.C, Service: ocsrc.Source{Path: *servicePath}})
+	d := sidebar.New(sidebar.Config{Width: *width, Resync: *resync}, sidebar.Deps{Panes: tm, Tabs: tabs, Out: tm, Mode: tm, Wake: wake, Ticks: tick.C, Service: ocsrc.Source{Path: *servicePath, IdleTimeout: *idle}})
 	_ = d.Run(ctx)
 	stop()
 	<-events // 等 hook 清理完成再退出

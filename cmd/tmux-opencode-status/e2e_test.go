@@ -29,6 +29,7 @@ type env struct {
 	binDir      string
 	bin         string
 	daemonEnv   []string
+	daemonArgs  []string // 附加到常駐程式的命令列旗標（例如縮短無聲逾時）
 }
 
 func (e *env) inTmux(args ...string) string {
@@ -91,7 +92,9 @@ func main() {
 func newEnv(t *testing.T) *env { t.Helper(); return newEnvWith(t, nil) }
 
 // newEnvWith 的 daemonEnv 附加到常駐程式的環境變數（用來在 PATH 前面放 tmux 包裝，製造確定性的慢啟動）。
-func newEnvWith(t *testing.T, daemonEnv []string) *env {
+func newEnvWith(t *testing.T, daemonEnv []string) *env { return newEnvFull(t, daemonEnv, nil) }
+
+func newEnvFull(t *testing.T, daemonEnv, daemonArgs []string) *env {
 	t.Helper()
 	if testing.Short() {
 		t.Skip("-short")
@@ -133,13 +136,14 @@ func newEnvWith(t *testing.T, daemonEnv []string) *env {
 		_ = exec.Command("tmux", "-L", e.in, "-f", "/dev/null", "kill-server").Run()
 		_ = exec.Command("tmux", "-L", e.out, "-f", "/dev/null", "kill-server").Run()
 	})
-	e.daemonEnv = daemonEnv
+	e.daemonEnv, e.daemonArgs = daemonEnv, daemonArgs
 	e.startDaemon(daemonBin)
 	return e
 }
 
 func (e *env) startDaemon(bin string) {
-	e.daemon = exec.Command(bin, "-L", e.in, "-f", "/dev/null", "-tabs", e.tabsPath, "-service", e.servicePath, "-show", "-backstop", "5s")
+	args := append([]string{"-L", e.in, "-f", "/dev/null", "-tabs", e.tabsPath, "-service", e.servicePath, "-show", "-backstop", "5s"}, e.daemonArgs...)
+	e.daemon = exec.Command(bin, args...)
 	e.daemon.Stderr = os.Stderr
 	if e.daemonEnv != nil {
 		e.daemon.Env = append(os.Environ(), e.daemonEnv...)
@@ -854,5 +858,45 @@ func TestFrequentTitleChangesDoNotCauseAWakeStormOrTmuxWrites(t *testing.T) {
 	}
 	if s := e.sidebar(); !strings.Contains(s, "! a") {
 		t.Fatalf("節流後畫面仍須正確：\n%s", s)
+	}
+}
+
+// 無聲斷線、服務重啟與探索資訊改變：全部對假服務注入；常駐程式不需重新載入即可恢復，
+// 且不曾呼叫任何寫入端點。產品預設的 45 秒以旗標縮短，避免真的等待。
+func TestSilentDisconnectAndServiceRestartRecoverOnARealTmuxWithFakeOpenCodeService(t *testing.T) {
+	e := newEnvFull(t, nil, []string{"-idle-timeout", "600ms"})
+	dir := filepath.Join(e.dir, "work", "api")
+	svc := fakeoc.New(t)
+	svc.SetHeartbeat(100 * time.Millisecond)
+	svc.AddSession("ses_0", "")
+	e.writeTabs(e.tabsJSON(map[string][]string{dir: {"修正登入"}}))
+	e.tui(dir, "--server", "http://127.0.0.1:1")
+	svc.WriteServiceFile(e.servicePath)
+	e.eventually(5*time.Second, "接上服務", func(s string) bool { return strings.Contains(s, "· 修正登入") })
+	svc.Start("ses_0")
+	e.eventually(time.Second, "執行中", func(s string) bool { return strings.Contains(s, "● 修正登入") })
+
+	// 無聲斷線：連線沒有 FIN，也不再有心跳；結束事件遺失
+	svc.Stall()
+	svc.Finish("ses_0", "succeeded")
+	d := e.eventually(8*time.Second, "無聲逾時（600ms）＋重試間隔（預設 3s）後自動重連並完整重讀", func(s string) bool { return strings.Contains(s, "◆ 修正登入") })
+	t.Logf("無聲斷線 → 恢復：%v（逾時設定 600ms）", d)
+
+	// 服務重啟：舊服務消失，新服務（不同 port、待處理消失、資料不同）出現
+	next := fakeoc.New(t)
+	next.SetHeartbeat(100 * time.Millisecond)
+	next.Seed("ses_0", "", "failed", 900, 0, false)
+	svc.Drop()
+	_ = os.Remove(e.servicePath)
+	e.eventually(3*time.Second, "重啟空窗為 !", func(s string) bool {
+		return strings.Contains(s, "! 修正登入") && strings.Contains(strings.Join(strings.Fields(s), ""), "無法連線OpenCode服務")
+	})
+	next.WriteServiceFile(e.servicePath)
+	e.eventually(5*time.Second, "重新探索並同步", func(s string) bool { return strings.Contains(s, "✗ 修正登入") })
+
+	for _, x := range []*fakeoc.Server{svc, next} {
+		if w := x.Writes(); len(w) != 0 {
+			t.Fatalf("對 OpenCode 發出了寫入請求：%v", w)
+		}
 	}
 }
