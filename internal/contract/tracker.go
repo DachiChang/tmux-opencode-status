@@ -12,6 +12,10 @@ type Tracker struct {
 	forms       map[string]string // form id → sessionID
 	synced      bool
 	touched     map[string]bool // 本輪同步開始後收到事件的 session
+	// 本輪同步開始後收到事件的請求（權限 "p:<id>"、問題 "f:<id>"）。待處理請求以請求為單位
+	// 對齊：事件較新者保持事件結果，其餘一律以 snapshot 為準。不能用 session 粒度，否則
+	// 同一 session 在同步期間收到任一事件，連線前就存在的其他請求會被遺漏。
+	touchedReq map[string]bool
 }
 
 type tracked struct {
@@ -24,7 +28,7 @@ type tracked struct {
 }
 
 func NewTracker() *Tracker {
-	return &Tracker{sessions: map[string]*tracked{}, permissions: map[string]string{}, forms: map[string]string{}, touched: map[string]bool{}}
+	return &Tracker{sessions: map[string]*tracked{}, permissions: map[string]string{}, forms: map[string]string{}, touched: map[string]bool{}, touchedReq: map[string]bool{}}
 }
 
 func (t *Tracker) get(id string) *tracked {
@@ -51,6 +55,7 @@ func (t *Tracker) Apply(e Event) {
 	if e.Type == EventServerConnected {
 		t.synced = false
 		t.touched = map[string]bool{}
+		t.touchedReq = map[string]bool{}
 		return
 	}
 	if e.SessionID != "" {
@@ -76,12 +81,16 @@ func (t *Tracker) Apply(e Event) {
 	case "session.viewed":
 		t.get(e.SessionID).viewed = e.Idle
 	case "permission.asked":
+		t.touchedReq["p:"+e.RequestID] = true
 		t.permissions[e.RequestID] = e.SessionID
 	case "permission.replied":
+		t.touchedReq["p:"+e.RequestID] = true
 		delete(t.permissions, e.RequestID)
 	case "form.created":
+		t.touchedReq["f:"+e.FormID] = true
 		t.forms[e.FormID] = e.SessionID
 	case "form.replied", "form.cancelled":
+		t.touchedReq["f:"+e.FormID] = true
 		delete(t.forms, e.FormID)
 	}
 }
@@ -113,23 +122,23 @@ func (t *Tracker) ApplySnapshot(s Snapshot) {
 			t.get(id).running = true
 		}
 	}
-	for id, sess := range t.permissions {
-		if !t.touched[sess] {
+	for id := range t.permissions {
+		if !t.touchedReq["p:"+id] {
 			delete(t.permissions, id)
 		}
 	}
 	for _, p := range s.Permissions {
-		if !t.touched[p.SessionID] {
+		if !t.touchedReq["p:"+p.ID] {
 			t.permissions[p.ID] = p.SessionID
 		}
 	}
-	for id, sess := range t.forms {
-		if !t.touched[sess] {
+	for id := range t.forms {
+		if !t.touchedReq["f:"+id] {
 			delete(t.forms, id)
 		}
 	}
 	for _, f := range s.Forms {
-		if !t.touched[f.SessionID] {
+		if !t.touchedReq["f:"+f.ID] {
 			t.forms[f.ID] = f.SessionID
 		}
 	}

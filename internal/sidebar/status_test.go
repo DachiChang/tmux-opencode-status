@@ -306,3 +306,183 @@ func TestInvalidInitialModeDoesNotQueryTheService(t *testing.T) {
 		t.Fatalf("尚未開始追蹤卻連線／查詢服務：%v", lw.svc.Requests())
 	}
 }
+
+// ---- 等你處理：待核准與待回答（issue #6）----
+
+func TestPendingPermissionAndFormExistingAtStartupShowYellowQuestionMark(t *testing.T) {
+	lw := startLive(t)
+	lw.publishService()
+	lw.svc.AddSession("ses_a", "")
+	lw.svc.AddSession("ses_b", "")
+	lw.svc.AddSession("ses_c", "")
+	lw.svc.SeedPermission("per_1", "ses_a") // 啟動前就已存在，不會有任何事件
+	lw.svc.SeedForm("frm_1", "ses_b")
+	lw.openTabs(t, "/work/api", [2]string{"ses_a", "needs approval"}, [2]string{"ses_b", "needs answer"}, [2]string{"ses_c", "calm"})
+	got := lw.eventually(t, "初始化即讀到待處理", func(s string) bool { return hasLine(s, "? needs approval") && hasLine(s, "? needs answer") })
+	if !hasLine(got, "· calm") || !hasLine(got, "◆ OPENCODE                       ?2") {
+		t.Fatalf("摘要或其他 tab 不符：\n%s", got)
+	}
+	// 顏色：黃色 ?，沒有背景色塊，也不是舊 POC 的黃色 !
+	for _, opt := range lw.out.options() {
+		if strings.Contains(opt, "bg=") {
+			t.Fatalf("待處理不得使用背景色塊：%q", opt)
+		}
+		if !strings.Contains(opt, "#[fg=yellow,bold]?#[default] ") {
+			continue
+		}
+		if strings.Contains(opt, "#[fg=yellow,bold]!") {
+			t.Fatalf("不得沿用黃色 !：%q", opt)
+		}
+		return
+	}
+	t.Fatal("輸出中找不到黃色 ?")
+}
+
+func TestPermissionAndFormEventsAfterStartupAndTheirCompletionRestoreTheRightState(t *testing.T) {
+	lw := startLive(t)
+	lw.publishService()
+	lw.svc.AddSession("ses_1", "")
+	lw.openTabs(t, "/work/api", [2]string{"ses_1", "job"})
+	lw.eventually(t, "閒置", func(s string) bool { return hasLine(s, "· job") })
+
+	lw.svc.AskPermission("per_1", "ses_1")
+	lw.eventually(t, "待核准", func(s string) bool { return hasLine(s, "? job") })
+	lw.svc.ReplyPermission("per_1")
+	lw.eventually(t, "回覆後回閒置", func(s string) bool { return hasLine(s, "· job") })
+
+	lw.svc.AskForm("frm_1", "ses_1")
+	lw.eventually(t, "待回答", func(s string) bool { return hasLine(s, "? job") })
+	lw.svc.CancelForm("frm_1")
+	lw.eventually(t, "取消後回閒置", func(s string) bool { return hasLine(s, "· job") })
+
+	lw.svc.AskForm("frm_2", "ses_1")
+	lw.eventually(t, "待回答", func(s string) bool { return hasLine(s, "? job") })
+	lw.svc.AnswerForm("frm_2")
+	lw.eventually(t, "回答後回閒置", func(s string) bool { return hasLine(s, "· job") })
+}
+
+func TestApprovalBeatsAnswerAndBothBeatRunningAndUnread(t *testing.T) {
+	lw := startLive(t)
+	lw.publishService()
+	lw.svc.AddSession("ses_1", "")
+	lw.openTabs(t, "/work/api", [2]string{"ses_1", "job"})
+	lw.eventually(t, "閒置", func(s string) bool { return hasLine(s, "· job") })
+
+	lw.svc.Start("ses_1")
+	lw.eventually(t, "執行中", func(s string) bool { return hasLine(s, "● job") })
+	lw.svc.AskForm("frm_1", "ses_1")
+	got := lw.eventually(t, "待回答蓋過執行中", func(s string) bool { return hasLine(s, "? job") })
+	if strings.Contains(got, "●") {
+		t.Fatalf("同一 tab 只能輸出最高優先狀態：\n%s", got)
+	}
+	lw.svc.AskPermission("per_1", "ses_1")
+	lw.svc.AnswerForm("frm_1") // 核准仍在：維持 ?
+	lw.eventually(t, "仍待核准", func(s string) bool { return hasLine(s, "? job") })
+
+	// 回覆後不猜測閒置：session 仍在執行 → 回到執行中
+	lw.svc.ReplyPermission("per_1")
+	lw.eventually(t, "回覆後回到執行中", func(s string) bool { return hasLine(s, "● job") })
+
+	// 待處理期間執行結束：回覆後是結束未讀，不是閒置
+	lw.svc.AskPermission("per_2", "ses_1")
+	lw.eventually(t, "待核准", func(s string) bool { return hasLine(s, "? job") })
+	lw.svc.Finish("ses_1", "failed")
+	lw.eventually(t, "待處理期間結束仍為 ?", func(s string) bool { return hasLine(s, "? job") })
+	lw.svc.ReplyPermission("per_2")
+	lw.eventually(t, "回覆後是失敗未讀", func(s string) bool { return hasLine(s, "✗ job") })
+}
+
+func TestSummaryCountsTabsNotRequests(t *testing.T) {
+	lw := startLive(t)
+	lw.publishService()
+	lw.svc.AddSession("ses_1", "")
+	lw.svc.AddSession("ses_2", "")
+	lw.svc.AddSession("ses_3", "")
+	lw.svc.SeedPermission("per_1", "ses_1")
+	lw.svc.SeedPermission("per_2", "ses_1")
+	lw.svc.SeedForm("frm_1", "ses_1")
+	lw.svc.SeedForm("frm_2", "ses_2")
+	lw.svc.SeedForm("frm_3", "ses_2")
+	lw.openTabs(t, "/work/api", [2]string{"ses_1", "one"}, [2]string{"ses_2", "two"}, [2]string{"ses_3", "three"})
+	got := lw.eventually(t, "待處理", func(s string) bool { return hasLine(s, "? one") && hasLine(s, "? two") })
+	if !hasLine(got, "◆ OPENCODE                       ?2") || !hasLine(got, "api                              ?2") {
+		t.Fatalf("5 個請求只該算 2 個 tab：\n%s", got)
+	}
+	// 一個請求處理掉，tab 仍有另一個請求：維持 ?，不因單一回覆就當成已處理完
+	lw.svc.ReplyPermission("per_1")
+	lw.svc.AnswerForm("frm_2")
+	lw.eventually(t, "交錯處理", func(s string) bool { return hasLine(s, "? one") && hasLine(s, "? two") })
+	lw.svc.ReplyPermission("per_2")
+	lw.svc.CancelForm("frm_3")
+	lw.svc.AnswerForm("frm_1")
+	got = lw.eventually(t, "全部處理完", func(s string) bool { return hasLine(s, "· one") && hasLine(s, "· two") })
+	if strings.Contains(got, "?") {
+		t.Fatalf("不應殘留 ?：\n%s", got)
+	}
+}
+
+func TestRequestsInterleavedWithSnapshotAreNeitherLostNorResurrected(t *testing.T) {
+	lw := startLive(t)
+	lw.publishService()
+	lw.svc.AddSession("ses_1", "")
+	lw.svc.SeedPermission("per_old", "ses_1")
+	lw.openTabs(t, "/work/api", [2]string{"ses_1", "job"})
+	lw.eventually(t, "初始待核准", func(s string) bool { return hasLine(s, "? job") })
+
+	// 初始請求在事件串流中被回覆，另一個新請求同時出現：不得因為 session 有事件就漏掉其中之一
+	lw.svc.AskPermission("per_new", "ses_1")
+	lw.svc.ReplyPermission("per_old")
+	lw.eventually(t, "仍有一個待核准", func(s string) bool { return hasLine(s, "? job") })
+	lw.svc.ReplyPermission("per_new")
+	lw.eventually(t, "全部回覆", func(s string) bool { return hasLine(s, "· job") })
+}
+
+func TestPendingRequestsAcrossReconnectComeFromTheFreshSnapshotOnly(t *testing.T) {
+	lw := startLive(t)
+	lw.publishService()
+	lw.svc.AddSession("ses_1", "")
+	lw.svc.AddSession("ses_2", "")
+	lw.openTabs(t, "/work/api", [2]string{"ses_1", "one"}, [2]string{"ses_2", "two"})
+	lw.eventually(t, "閒置", func(s string) bool { return hasLine(s, "· one") })
+	lw.svc.AskPermission("per_1", "ses_1")
+	lw.eventually(t, "待核准", func(s string) bool { return hasLine(s, "? one") })
+
+	// 斷線期間：per_1 被處理掉的事件遺失，另有新的問題出現在 ses_2
+	_ = os.Remove(lw.svcFile)
+	lw.svc.Drop()
+	lw.eventually(t, "斷線為 !", func(s string) bool { return hasLine(s, "! one") })
+	lw.svc.ReplyPermission("per_1")
+	lw.svc.AskForm("frm_1", "ses_2")
+	lw.publishService()
+	lw.eventually(t, "重連後以最新資料為準", func(s string) bool { return hasLine(s, "· one") && hasLine(s, "? two") })
+}
+
+func TestPendingRequestsVanishWhenServiceRestartsAndStaleOnesAreNotKept(t *testing.T) {
+	lw := startLive(t)
+	lw.publishService()
+	lw.svc.AddSession("ses_1", "")
+	lw.openTabs(t, "/work/api", [2]string{"ses_1", "one"})
+	lw.svc.AskPermission("per_1", "ses_1")
+	lw.eventually(t, "待核准", func(s string) bool { return hasLine(s, "? one") })
+
+	lw.svc.ForgetPending() // 服務重啟：待處理請求不持久
+	lw.svc.Drop()
+	lw.eventually(t, "重連後不保留舊請求", func(s string) bool { return hasLine(s, "· one") })
+}
+
+func TestPendingRequestIsReadOnlyNothingIsEverReplied(t *testing.T) {
+	lw := startLive(t)
+	lw.publishService()
+	lw.svc.AddSession("ses_1", "")
+	lw.svc.SeedPermission("per_1", "ses_1")
+	lw.svc.SeedForm("frm_1", "ses_1")
+	lw.openTabs(t, "/work/api", [2]string{"ses_1", "one"})
+	lw.eventually(t, "待處理", func(s string) bool { return hasLine(s, "? one") })
+	time.Sleep(100 * time.Millisecond)
+	// 結尾的 Cleanup 斷言所有請求都是 GET 且沒有 reply／view
+	for _, r := range lw.svc.Requests() {
+		if strings.Contains(r, "reply") {
+			t.Fatalf("不得回覆：%s", r)
+		}
+	}
+}
