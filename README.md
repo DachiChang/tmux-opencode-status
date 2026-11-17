@@ -1,0 +1,106 @@
+# tmux-opencode-status
+
+在 tmux 3.9 的原生 **side-status** 顯示同一 tmux server 中所有 OpenCode TUI 的 tab 狀態（等你核准／回答、執行中、失敗未讀、結束未讀、閒置、資料異常）。
+唯讀資訊總覽：不安裝 OpenCode plugin、不修改 OpenCode 設定、不啟動或重啟服務、不新增任何鍵盤或滑鼠綁定。
+
+## 需求
+
+- tmux **3.9**（需要 `side-status`、`side-status-width`、`side-status-format`；缺少時明確失敗，不改用其他顯示方式）。
+- macOS（Apple Silicon `arm64`、Intel `x86_64`）。一般使用者**不需要 Go**。
+- OpenCode 標準 **latest** channel、**預設資料位置**（`$XDG_STATE_HOME` 或 `~/.local/state` 下的 `opencode/`）與本機共用背景服務。
+  不支援其他 release channel、自訂資料位置、遠端或獨立私有服務，也不彙整多套資料環境。
+
+## 安裝（TPM）
+
+```tmux
+set -g @plugin 'DachiChang/tmux-opencode-status'
+# 選用：cwd（預設）或 global
+# set -g @opencode-status-mode global
+```
+
+`prefix + I` 安裝。TPM 會執行插件根目錄的 `tmux-opencode-status.tmux`，它會：
+
+1. 確認 tmux 具備必要能力；
+2. 依插件的 `VERSION` 與 `uname -m` 從 GitHub Release 下載對應架構的 `tmux-opencode-status_<版本>_darwin_<arch>.tar.gz` 與 `SHA256SUMS`；
+3. 驗證 SHA-256、封存內容與執行檔架構，通過才放到插件的 `bin/<版本>-darwin-<arch>/`；
+4. 執行 `tmux-opencode-status start -show`。
+
+已安裝且校驗相符時不再下載。**任何一步失敗（下載失敗、驗證失敗、架構不支援、缺少 tmux 能力）都會明確報錯**：
+訊息寫到 stderr，並以 `tmux display-message` 顯示；**不會靜默改用 `go build`，也不會換用其他架構的執行檔**。
+
+### 預設行為
+
+- 預設放在**左側**，寬 **36 格**（終端格寬，不是字元數）。首次載入打開側欄；之後重載、交接都不會把你已隱藏的側欄重新打開（每個 tmux server 只打開一次）。
+- 重複載入（`tmux source-file`、TPM 更新）是冪等的：每個 tmux socket 只有一個常駐實例；設定或執行檔不同時安全交接。
+- tmux server 結束時常駐程式自動退出並清理本插件資源。
+
+### cwd／global 模式（請與 OpenCode 的 scope 一致）
+
+```tmux
+set -g @opencode-status-mode cwd      # 預設；依 TUI 工作目錄分組，對應 OpenCode 的 cwd scope
+set -g @opencode-status-mode global   # 單一 GLOBAL 群組，對應 OpenCode 的 global scope
+```
+
+重載設定即套用，不需重啟 tmux。**模式必須由你設定成與 OpenCode 實際的 tab scope 一致**：
+插件不偵測、不警告不一致（例如 OpenCode 用 cwd scope 而插件設 global，可能看到空的或過期的清單），也不支援各 TUI 混用不同 scope。
+其他值（含大小寫不同、前後空白）視為無效：首次無效時不開始追蹤並提示，已有有效模式時保留原模式並提示。詳見 `docs/validation/modes.md`。
+
+### 診斷（唯讀）
+
+```sh
+# 在 tmux 內，或帶 -L <name> / -S <path> 指定 server（不會使用預設 server）
+~/.tmux/plugins/tmux-opencode-status/bin/<版本>-darwin-<arch>/tmux-opencode-status diagnose
+```
+
+輸出 tmux 版本與能力、插件模式、常駐實例狀態、發現的 TUI／tab 數、服務連線狀態與最近錯誤。
+只含計數、模式與固定描述；**不含憑證、prompt、對話或 session／tab 標題**，也不連 OpenCode、不寫任何選項。
+
+### Session override
+
+若你曾在某個 tmux session 以 `set -t <session> side-status…` 覆寫，該 session 不會跟隨全域設定，插件也**不會清除**。
+`diagnose` 會列出受影響的 session（只顯示 session id）。要讓它跟隨全域：`tmux set -u -t <session> side-status`（`side-status-width`、`side-status-format` 同理）。
+
+## 開發者自行編譯
+
+```sh
+scripts/build-dev.sh            # → bin/dev/tmux-opencode-status（需要 Go）
+```
+
+```tmux
+set -g @opencode-status-binary "/絕對路徑/bin/dev/tmux-opencode-status"
+```
+
+設定 `@opencode-status-binary` 後入口腳本使用該檔，**完全不下載**；路徑不存在或不可執行時明確報錯，不退回下載。
+沒有設定時絕不自動編譯。
+
+## 發布（維護者）
+
+```sh
+scripts/build-release.sh [版本]   # 預設讀 VERSION；輸出 dist/*.tar.gz 與 dist/SHA256SUMS
+```
+
+建置使用 `CGO_ENABLED=0`、`-trimpath`、固定的封存中繼資料，同一原始碼與 Go 版本得到逐位元組相同的產物。
+`.github/workflows/release.yml` 在推 `v<VERSION>` tag 時建置並建立 Release；**tag 與 Release 是外部動作，需維護者自行執行**。
+
+## 故障處理
+
+| 現象 | 處理 |
+| --- | --- |
+| 載入時 tmux 顯示 `下載失敗` | 確認網路與 Release 是否存在該版本資產（`VERSION` 對應 tag `v<版本>`）。不會自動編譯；開發者可用上節自行編譯路徑 |
+| `完整性驗證失敗`／`校驗碼` | 資產與 `SHA256SUMS` 不符，已拒絕安裝。重試；持續發生請勿使用該版本並回報 |
+| `不支援的架構`／`不支援的平台` | 只提供 macOS arm64 與 x86_64 |
+| `缺少必要能力` | 升級到 tmux 3.9（需 `side-status` 系列選項）；`tmux -V` 查看版本 |
+| 側欄沒出現 | 先跑 `diagnose`：看常駐實例、模式、服務連線；確認 `side-status` 不是 `off`；檢查 session override |
+| 一直是灰色 `!` | 資料異常（服務不可連線／清單不可讀等）；`diagnose` 的「最近錯誤」有固定原因。插件不會啟動 OpenCode 服務 |
+| 模式不對／清單是空的 | 確認 `@opencode-status-mode` 與 OpenCode 的 scope 一致 |
+| 想完全移除 | `tmux-opencode-status stop`（清理本插件資源），再從 `tmux.conf` 移除 `@plugin` 並 `prefix + alt + u` |
+
+常駐程式的錯誤記錄在 `$XDG_RUNTIME_DIR/tmux-opencode-status/`（沒有則 `$TMPDIR/tmux-opencode-status-<uid>/`）下的 `<id>.log`。
+
+## 已驗證與尚未驗證
+
+見 `docs/validation/tpm.md`。**Intel（x86_64）產物尚未在真實 Intel 機器上驗證**。
+
+## 文件
+
+`docs/validation/`（生命週期、模式、cwd tab、高度適配、TPM 封裝）、`docs/adr/`、`GLOSSARY.md`。
