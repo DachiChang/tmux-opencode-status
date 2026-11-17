@@ -52,9 +52,10 @@ type event struct {
 }
 
 type sub struct {
-	ch    chan event
-	types map[string]bool
-	done  chan struct{}
+	ch      chan event
+	types   map[string]bool
+	done    chan struct{}
+	stalled bool // 無聲：連線仍開著，但不再送出任何位元組（事件遺失、心跳停止）
 }
 
 type Server struct {
@@ -74,9 +75,9 @@ type Server struct {
 	connects int
 	eventQs  []string // 每次 /api/event 連線的 query
 	broken   []string // 請求 URI 含其中任一字串的 REST GET 回 500（模擬暫時性失敗）
+	holds    []*hold  // 尚未攔截到請求的 Hold
 
-	// Heartbeat 每隔多久送一次 ": heartbeat"；0 表示不送。
-	Heartbeat time.Duration
+	heartbeat time.Duration // 每隔多久送一次 ": heartbeat"；0 表示不送
 }
 
 func New(t testing.TB) *Server {
@@ -162,6 +163,36 @@ func (s *Server) Break(substr string) {
 	s.broken = append(s.broken, substr)
 }
 
+type hold struct {
+	substr   string
+	arrived  chan struct{}
+	release  chan struct{}
+	captured bool
+}
+
+// Hold 攔截「下一個」URI 含 substr 的 REST GET：服務照常算出回應（內容固定在攔截當下），
+// 但延遲到 release 被呼叫才送出，模擬延遲抵達的舊回應。arrived 在請求被攔住時關閉。
+func (s *Server) Hold(substr string) (arrived <-chan struct{}, release func()) {
+	h := &hold{substr: substr, arrived: make(chan struct{}), release: make(chan struct{})}
+	s.mu.Lock()
+	s.holds = append(s.holds, h)
+	s.mu.Unlock()
+	var once sync.Once
+	return h.arrived, func() { once.Do(func() { close(h.release) }) }
+}
+
+func (s *Server) takeHold(uri string) *hold {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, h := range s.holds {
+		if strings.Contains(uri, h.substr) {
+			s.holds = append(s.holds[:i], s.holds[i+1:]...)
+			return h
+		}
+	}
+	return nil
+}
+
 // Heal 解除所有 Break。
 func (s *Server) Heal() {
 	s.mu.Lock()
@@ -178,6 +209,23 @@ func (s *Server) isBroken(uri string) bool {
 		}
 	}
 	return false
+}
+
+// SetHeartbeat 設定之後新建立的 SSE 連線每隔多久送一次 ": heartbeat"；0 表示不送。
+func (s *Server) SetHeartbeat(d time.Duration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.heartbeat = d
+}
+
+// Stall 讓目前所有 SSE 連線無聲：連線維持開啟（沒有 FIN／RST），但不再送出任何位元組，
+// 之後發生的事件也不補送。模擬半開連線；新建立的連線不受影響。
+func (s *Server) Stall() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for x := range s.subs {
+		x.stalled = true
+	}
 }
 
 // Drop 斷開所有 SSE 連線（模擬連線中斷；斷線期間發生的事件不會補送）。
@@ -207,7 +255,7 @@ func (s *Server) emit(typ string, created int64, data map[string]any) {
 	s.seq++
 	b, _ := json.Marshal(map[string]any{"id": fmt.Sprintf("evt_%d", s.seq), "created": created, "type": typ, "data": data})
 	for x := range s.subs {
-		if x.types != nil && !x.types[typ] {
+		if x.stalled || (x.types != nil && !x.types[typ]) {
 			continue
 		}
 		select {
@@ -219,13 +267,19 @@ func (s *Server) emit(typ string, created int64, data map[string]any) {
 
 // ---- 狀態變化（同時送出對應事件；沒有 SSE 連線時只改變狀態）----
 
-func (s *Server) AddSession(id, parent string) {
+func (s *Server) AddSession(id, parent string) { s.addSession(id, parent, true) }
+
+// AddSessionWithoutParentInEvent 建立後代，但 session.created 事件缺少 parentID
+// （REST 資料仍有父子關係）：事件單獨無法把它歸入家族。
+func (s *Server) AddSessionWithoutParentInEvent(id, parent string) { s.addSession(id, parent, false) }
+
+func (s *Server) addSession(id, parent string, parentInEvent bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	x := s.get(id)
 	x.parent = parent
 	d := map[string]any{"sessionID": id, "title": "t"}
-	if parent != "" {
+	if parent != "" && parentInEvent {
 		d["parentID"] = parent
 	}
 	s.emit("session.created", s.now(), d)
@@ -239,7 +293,21 @@ func (s *Server) Start(id string) {
 }
 
 // Finish 結束一次執行：outcome 為 succeeded | failed | interrupted。
-func (s *Server) Finish(id, outcome string) {
+func (s *Server) Finish(id, outcome string) { s.finish(id, outcome, "user") }
+
+// FinishInterrupted 以指定的 reason（user | shutdown | superseded | inactivity）中斷一次執行，
+// 同時改變服務資料（不再執行、有 idle 與 outcome）。
+func (s *Server) FinishInterrupted(id, reason string) { s.finish(id, "interrupted", reason) }
+
+// EmitInterrupted 只送出 session.execution.interrupted 事件，不改變服務資料：
+// 用來驗證側欄不把事件本身當成事實，而是以重讀的資料為準。
+func (s *Server) EmitInterrupted(id, reason string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.emit("session.execution.interrupted", s.now(), map[string]any{"sessionID": id, "reason": reason})
+}
+
+func (s *Server) finish(id, outcome, reason string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	x := s.get(id)
@@ -249,7 +317,7 @@ func (s *Server) Finish(id, outcome string) {
 	case "failed":
 		d["error"] = map[string]any{"type": "unknown", "message": "x"}
 	case "interrupted":
-		d["reason"] = "user"
+		d["reason"] = reason
 	}
 	s.emit("session.execution."+outcome, x.idle, d)
 }
@@ -359,6 +427,28 @@ func (s *Server) Delete(id string) {
 // ---- HTTP ----
 
 func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet && r.URL.Path != "/api/info" && r.URL.Path != "/api/event" {
+		if h := s.takeHold(r.URL.RequestURI()); h != nil {
+			rec := httptest.NewRecorder()
+			s.serve(rec, r)
+			close(h.arrived)
+			select {
+			case <-h.release:
+			case <-r.Context().Done():
+				return
+			}
+			for k, v := range rec.Header() {
+				w.Header()[k] = v
+			}
+			w.WriteHeader(rec.Code)
+			_, _ = w.Write(rec.Body.Bytes())
+			return
+		}
+	}
+	s.serve(w, r)
+}
+
+func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	s.requests = append(s.requests, r.Method+" "+r.URL.Path)
 	if r.Method != http.MethodGet {
@@ -510,12 +600,13 @@ func (s *Server) serveEvents(w http.ResponseWriter, r *http.Request) {
 	s.connects++
 	s.eventQs = append(s.eventQs, r.URL.RawQuery)
 	s.subs[x] = true
+	heartbeat := s.heartbeat
 	s.mu.Unlock()
 	fmt.Fprint(w, "data: {\"id\":\"evt_0\",\"type\":\"server.connected\",\"data\":{}}\n\n: heartbeat\n\n")
 	fl.Flush()
 	var beat <-chan time.Time
-	if s.Heartbeat > 0 {
-		tk := time.NewTicker(s.Heartbeat)
+	if heartbeat > 0 {
+		tk := time.NewTicker(heartbeat)
 		defer tk.Stop()
 		beat = tk.C
 	}
@@ -529,6 +620,9 @@ func (s *Server) serveEvents(w http.ResponseWriter, r *http.Request) {
 		case <-x.done:
 			return
 		case <-beat:
+			if s.isStalled(x) {
+				continue
+			}
 			fmt.Fprint(w, ": heartbeat\n\n")
 			fl.Flush()
 		case e := <-x.ch:
@@ -536,6 +630,12 @@ func (s *Server) serveEvents(w http.ResponseWriter, r *http.Request) {
 			fl.Flush()
 		}
 	}
+}
+
+func (s *Server) isStalled(x *sub) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return x.stalled
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {

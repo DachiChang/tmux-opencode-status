@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/DachiChang/tmux-opencode-status/internal/contract"
@@ -44,6 +45,13 @@ type Dialer interface {
 	Dial(ctx context.Context) (Service, error)
 }
 
+// DefaultIdleTimeout 是無聲斷線的偵測門檻：服務每 15 秒送一次心跳（`: heartbeat`），
+// 連續 45 秒（三個心跳間隔）沒有任何位元組即視為斷線，符合 spec 的 45 秒目標。
+const DefaultIdleTimeout = 45 * time.Second
+
+// ErrIdleTimeout 表示 SSE 連線仍開著但已無聲過久（半開連線）；呼叫端應重新連線並完整重讀。
+var ErrIdleTimeout = errors.New("OpenCode 事件串流無聲逾時")
+
 // DefaultPath 是標準本機共用服務的探索檔。
 func DefaultPath() string {
 	state := os.Getenv("XDG_STATE_HOME")
@@ -58,6 +66,8 @@ type Source struct {
 	Path string
 	// RequestTimeout 是單一 REST 請求的上限；預設 10 秒。SSE 不受限（由 ctx 控制）。
 	RequestTimeout time.Duration
+	// IdleTimeout 是 SSE 連續沒收到任何位元組就視為無聲斷線的時間；預設 DefaultIdleTimeout。
+	IdleTimeout time.Duration
 }
 
 type serviceFile struct {
@@ -93,7 +103,11 @@ func (s Source) Dial(ctx context.Context) (Service, error) {
 	if timeout == 0 {
 		timeout = 10 * time.Second
 	}
-	svc := &service{base: strings.TrimRight(u.String(), "/"), pw: f.Password, rest: &http.Client{Timeout: timeout}, stream: &http.Client{}}
+	idle := s.IdleTimeout
+	if idle == 0 {
+		idle = DefaultIdleTimeout
+	}
+	svc := &service{base: strings.TrimRight(u.String(), "/"), pw: f.Password, rest: &http.Client{Timeout: timeout}, stream: &http.Client{}, idle: idle}
 	var info struct {
 		Version string `json:"version"`
 		PID     int    `json:"pid"`
@@ -110,6 +124,7 @@ func (s Source) Dial(ctx context.Context) (Service, error) {
 type service struct {
 	base, pw     string
 	rest, stream *http.Client
+	idle         time.Duration
 }
 
 func (s *service) newReq(ctx context.Context, path string) (*http.Request, error) {
@@ -239,6 +254,13 @@ func (s *service) Active() (map[string]bool, error) {
 
 func (s *service) Stream(ctx context.Context, handle func(contract.Event) error) error {
 	q := url.Values{"types": SSETypes}
+	// 無聲偵測：任何位元組（含心跳註解行）都重置計時；逾時就取消這條連線。
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	silent := make(chan struct{})
+	var once sync.Once
+	watchdog := time.AfterFunc(s.idle, func() { once.Do(func() { close(silent) }); cancel() })
+	defer watchdog.Stop()
 	req, err := s.newReq(ctx, "/api/event?"+q.Encode())
 	if err != nil {
 		return err
@@ -246,14 +268,38 @@ func (s *service) Stream(ctx context.Context, handle func(contract.Event) error)
 	req.Header.Set("Accept", "text/event-stream")
 	resp, err := s.stream.Do(req)
 	if err != nil {
-		return redact(err, s.pw)
+		return silentOr(silent, redact(err, s.pw))
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		return &HTTPError{Status: resp.StatusCode, Path: "/api/event"}
 	}
-	if err := contract.StreamSSE(resp.Body, handle); err != nil {
+	body := &beatReader{r: resp.Body, beat: func() { watchdog.Reset(s.idle) }}
+	if err := contract.StreamSSE(body, handle); err != nil {
+		return silentOr(silent, err)
+	}
+	return silentOr(silent, io.EOF) // 伺服器結束串流也是斷線
+}
+
+func silentOr(silent <-chan struct{}, err error) error {
+	select {
+	case <-silent:
+		return ErrIdleTimeout
+	default:
 		return err
 	}
-	return io.EOF // 伺服器結束串流也是斷線
+}
+
+// beatReader 在每次讀到位元組時呼叫 beat（重置無聲計時）。
+type beatReader struct {
+	r    io.Reader
+	beat func()
+}
+
+func (b *beatReader) Read(p []byte) (int, error) {
+	n, err := b.r.Read(p)
+	if n > 0 {
+		b.beat()
+	}
+	return n, err
 }

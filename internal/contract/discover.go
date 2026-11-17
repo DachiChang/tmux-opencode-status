@@ -5,6 +5,15 @@ import (
 	"fmt"
 )
 
+// incomplete 包裝「讀不全家族」的錯誤。只有 tab 本身不存在才是 ErrSessionNotFound；
+// 後代在走訪途中消失只是資料暫時不完整（下次重讀就會一致），不得被當成 tab 不存在。
+func incomplete(err error, format string, args ...any) error {
+	if errors.Is(err, ErrSessionNotFound) {
+		return fmt.Errorf(format+"：%v", append(args, err)...)
+	}
+	return fmt.Errorf(format+"：%w", append(args, err)...)
+}
+
 // ErrSessionNotFound 對應 HTTP 404 `{"_tag":"SessionNotFoundError"}`：OpenCode 明確回報 session 不存在。
 // 與逾時、連線失敗、5xx 等暫時性錯誤必須區分（前者 = tab 保留並標資料異常）。
 var ErrSessionNotFound = errors.New("session 不存在")
@@ -45,7 +54,7 @@ func DiscoverFamily(api API, tab string, pageSize int) (Snapshot, error) {
 		for {
 			page, next, err := api.Children(cur.ID, cursor, pageSize)
 			if err != nil {
-				return Snapshot{}, fmt.Errorf("列出 %s 的子層：%w", cur.ID, err)
+				return Snapshot{}, incomplete(err, "列出 %s 的子層", cur.ID)
 			}
 			for _, c := range page {
 				if !seen[c.ID] {
@@ -61,12 +70,12 @@ func DiscoverFamily(api API, tab string, pageSize int) (Snapshot, error) {
 
 		perms, err := api.Permissions(cur.ID)
 		if err != nil {
-			return Snapshot{}, fmt.Errorf("讀取 %s 的權限請求：%w", cur.ID, err)
+			return Snapshot{}, incomplete(err, "讀取 %s 的權限請求", cur.ID)
 		}
 		snap.Permissions = append(snap.Permissions, perms...)
 		forms, err := api.Forms(cur.ID)
 		if err != nil {
-			return Snapshot{}, fmt.Errorf("讀取 %s 的問題：%w", cur.ID, err)
+			return Snapshot{}, incomplete(err, "讀取 %s 的問題", cur.ID)
 		}
 		snap.Forms = append(snap.Forms, forms...)
 	}
@@ -74,6 +83,11 @@ func DiscoverFamily(api API, tab string, pageSize int) (Snapshot, error) {
 	if err != nil {
 		return Snapshot{}, fmt.Errorf("讀取執行中 session：%w", err)
 	}
-	snap.Running = running
+	// 只保留家族成員：active 是整個服務的清單，其他 session 與這個 tab 無關。
+	for _, x := range snap.Sessions {
+		if running[x.ID] {
+			snap.Running[x.ID] = true
+		}
+	}
 	return snap, nil
 }
