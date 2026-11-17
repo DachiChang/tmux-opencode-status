@@ -1,6 +1,9 @@
 package heightfit
 
-import "strconv"
+import (
+	"strconv"
+	"strings"
+)
 
 type State int
 
@@ -45,11 +48,14 @@ type Row struct {
 	Summary string
 	State   State
 	Hidden  int
+	Indent  int // RowNote 額外縮排格數
 }
 
 // View is everything the sidebar can show: the logical list plus the two
 // non-list lines. Empty is shown when there are no groups at all; Notice is a
 // single banner under the header (data could not be read, list may be stale).
+// A Notice may carry several lines separated by "\n"; PublishView wraps a long
+// notice to the sidebar width that way.
 type View struct {
 	Groups []Group
 	Empty  string
@@ -70,7 +76,9 @@ func FitView(v View, avail int) ([]Row, int) {
 	groups := v.Groups
 	head := []Row{{Kind: RowTitle, Summary: Summary(groups)}, {Kind: RowRule}}
 	if v.Notice != "" {
-		head = append(head, Row{Kind: RowNotice, Text: v.Notice})
+		for _, line := range strings.Split(v.Notice, "\n") {
+			head = append(head, Row{Kind: RowNotice, Text: line})
+		}
 	}
 	if len(groups) == 0 {
 		rows := head
@@ -126,9 +134,9 @@ func layout(groups []Group, n int) []Row {
 		if len(rows) > 0 {
 			rows = append(rows, Row{Kind: RowBlank})
 		}
-		rows = append(rows, Row{Kind: RowGroup, Text: g.Name, Summary: Summary([]Group{g})})
+		rows = append(rows, Row{Kind: RowGroup, Text: g.Name, Summary: groupSummary(g)})
 		if len(g.Tabs) == 0 {
-			rows = append(rows, Row{Kind: RowNote, Text: "  無 tab"})
+			rows = append(rows, Row{Kind: RowNote, Text: "無 tab", Indent: tabIndent})
 			n--
 			continue
 		}
@@ -143,14 +151,21 @@ func layout(groups []Group, n int) []Row {
 	return rows
 }
 
-// Summary counts every tab of the given groups, visible or not, in the order
-// ● ? ◆ ✗ !, omitting zero counts and idle.
-func Summary(groups []Group) string {
+// Summary counts the tabs of the given groups, visible or not, in the order
+// ● ? ◆ ✗ !, omitting zero counts and idle. A session shown by several tabs is
+// counted once: this is the whole-sidebar rule.
+func Summary(groups []Group) string { return summarize(groups, true) }
+
+// groupSummary is the per-group rule: every member tab counts once, even when
+// another group lists the same session.
+func groupSummary(g Group) string { return summarize([]Group{g}, false) }
+
+func summarize(groups []Group, dedupe bool) string {
 	var c [6]int
 	seen := map[string]bool{}
 	for _, g := range groups {
 		for _, t := range g.Tabs {
-			if t.Session != "" {
+			if dedupe && t.Session != "" {
 				if seen[t.Session] {
 					continue
 				}

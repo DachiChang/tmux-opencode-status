@@ -486,10 +486,10 @@ func TestPendingApprovalsAndAnswersOnARealTmuxWithFakeOpenCodeService(t *testing
 	if opts == "" {
 		t.Fatalf("找不到側欄輸出選項：\n%s", opts)
 	}
-	if strings.Contains(opts, "bg=") || strings.Contains(opts, "fg=yellow,bold]!") {
+	if strings.Contains(opts, "bg=") || strings.Contains(opts, "fg=#FACC15,bold]!") {
 		t.Fatalf("待處理不得使用背景色塊或黃色 !：\n%s", opts)
 	}
-	if !strings.Contains(opts, "#[fg=yellow,bold]?#[default]") {
+	if !strings.Contains(opts, "#[fg=#FACC15,bold]?#[default]") {
 		t.Fatalf("側欄輸出找不到黃色 ?：\n%s", opts)
 	}
 

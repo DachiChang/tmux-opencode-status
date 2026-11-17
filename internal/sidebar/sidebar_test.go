@@ -142,14 +142,36 @@ func (f *fakeOut) options() []string {
 	return out
 }
 
-// screen 是 side-status 內容寬度為 35 的 client、可用 avail 列時看到的純文字畫面。
+// screen 是可用 avail 列的 client 看到的純文字畫面。排版的固定邊距（左右各 1 格）與 tab 行
+// 縮排（2 格）是版面常數，由 layout_test.go 的原始畫面測試負責；這裡把它們折回，
+// 讓狀態類測試只比對內容：標題／群組行去掉 1 格邊距，tab 行去掉 2 格縮排。
 func (f *fakeOut) screen(avail int) []string {
+	return foldGeometry(f.rawScreen(avail))
+}
+
+// rawScreen 是不經任何折回的畫面（含邊距與縮排）。
+func (f *fakeOut) rawScreen(avail int) []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if len(f.pubs) == 0 {
 		return nil
 	}
 	return strings.Split(heightfit.StripStyles(f.pubs[len(f.pubs)-1].Select(avail)), "\n")
+}
+
+func foldGeometry(lines []string) []string {
+	out := make([]string, len(lines))
+	for i, l := range lines {
+		switch {
+		case strings.HasPrefix(l, "  "):
+			out[i] = strings.TrimPrefix(l, "  ")
+		case strings.HasPrefix(l, " "):
+			out[i] = strings.TrimPrefix(l, " ")
+		default:
+			out[i] = l
+		}
+	}
+	return out
 }
 
 type world struct {
@@ -183,9 +205,9 @@ func TestShowsRunningTUIDirectoryWithItsTabsAsUnknown(t *testing.T) {
 	}
 	got := w.out.screen(20)
 	want := []string{
-		"◆ OPENCODE                       !2",
-		"───────────────────────────────────",
-		"api                              !2",
+		"◆ OPENCODE                     !2",
+		"─────────────────────────────────",
+		"api                            !2",
 		"! 修正登入",
 		"! write tests",
 	}
@@ -234,7 +256,7 @@ func TestNoTUIShowsEmptyFrameNotAnErrorOrBlank(t *testing.T) {
 	w.sync(t)
 	assertLines(t, w.out.screen(20), []string{
 		"◆ OPENCODE",
-		"───────────────────────────────────",
+		"─────────────────────────────────",
 		"沒有 OpenCode TUI",
 	})
 }
@@ -246,9 +268,9 @@ func TestTUIWithoutTabsKeepsGroupAndSaysNoTab(t *testing.T) {
 	w.sync(t)
 	assertLines(t, w.out.screen(20), []string{
 		"◆ OPENCODE",
-		"───────────────────────────────────",
+		"─────────────────────────────────",
 		"api",
-		"  無 tab",
+		" 無 tab",
 	})
 }
 
@@ -269,9 +291,9 @@ func TestOnlyRunningTUIDirectoriesAreListedAndDuplicatesCollapse(t *testing.T) {
 		"/work/old":{"tabs":[{"sessionID":"ses_9","title":"history"}]}}}`)
 	w.sync(t)
 	assertLines(t, w.out.screen(20), []string{
-		"◆ OPENCODE                       !1",
-		"───────────────────────────────────",
-		"api                              !1",
+		"◆ OPENCODE                     !1",
+		"─────────────────────────────────",
+		"api                            !1",
 		"! one",
 	})
 }
@@ -294,14 +316,9 @@ func TestDirectoriesSortByFullPathAndKeepExactIdentity(t *testing.T) {
 	if strings.Join(tabs, ",") != "a-1,link-1,z-1,z-2" {
 		t.Fatalf("tab 順序 = %v\n%s", tabs, strings.Join(got, "\n"))
 	}
-	groups := 0
-	for _, l := range got {
-		if strings.HasPrefix(l, "api") {
-			groups++
-		}
-	}
-	if groups != 3 { // /a/api、/a/api-link、/z/api 各自獨立，不合併
-		t.Fatalf("群組數 = %d\n%s", groups, strings.Join(got, "\n"))
+	// /a/api、/a/api-link、/z/api 各自獨立不合併；同名的 api 補父目錄，api-link 本來就唯一
+	if names := strings.Join(groupLines(got), ","); names != "a/api,api-link,z/api" {
+		t.Fatalf("群組 = %s\n%s", names, strings.Join(got, "\n"))
 	}
 }
 
@@ -315,10 +332,11 @@ func TestUnreadableTabListKeepsLastGoodListWithNoticeNotEmptyList(t *testing.T) 
 		t.Fatal("讀取失敗必須回報錯誤")
 	}
 	assertLines(t, w.out.screen(20), []string{
-		"◆ OPENCODE                       !1",
-		"───────────────────────────────────",
-		"無法讀取 tab 清單，顯示最後可用資料",
-		"api                              !1",
+		"◆ OPENCODE                     !1",
+		"─────────────────────────────────",
+		"無法讀取 tab 清單，顯示最後可用資",
+		"料",
+		"api                            !1",
 		"! keep me",
 	})
 	w.setTabs(t, `{"global":{"tabs":[]},"cwd":{"/work/api":{"tabs":[{"sessionID":"s1","title":"keep me"}]}}}`)
@@ -488,5 +506,73 @@ func TestTimingBudgetsMatchTheSpec(t *testing.T) {
 	}
 	if sidebar.DefaultBackstop > 10*time.Second-sidebar.DefaultDebounce {
 		t.Fatalf("補漏週期 %v 超過 10 秒目標", sidebar.DefaultBackstop)
+	}
+}
+
+// ---- 目錄顯示名稱：basename，同名逐層補父目錄（issue #10）----
+
+// groupLines 取出畫面上的群組標題行（分隔線之後第一行，或空行之後的行）。
+func groupLines(screen []string) []string {
+	var out []string
+	for i := 2; i < len(screen); i++ {
+		if screen[i] == "" || (i > 2 && screen[i-1] != "") {
+			continue
+		}
+		out = append(out, strings.Fields(screen[i])[0])
+	}
+	return out
+}
+
+func TestUniqueBasenamesStayShort(t *testing.T) {
+	w := newWorld(t)
+	w.panes.set(tui("%1", "/home/me/aicova/api"), tui("%2", "/home/me/profcoo/web"))
+	w.setTabs(t, `{"global":{"tabs":[]},"cwd":{"/home/me/aicova/api":{"tabs":[]},"/home/me/profcoo/web":{"tabs":[]}}}`)
+	w.sync(t)
+	if got := strings.Join(groupLines(w.out.screen(20)), ","); got != "api,web" {
+		t.Fatalf("群組名稱 = %s", got)
+	}
+}
+
+func TestSameBasenameGetsParentPrefixOnlyWhereNeededAndKeepsPathOrder(t *testing.T) {
+	w := newWorld(t)
+	w.panes.set(tui("%1", "/w/profcoo/api"), tui("%2", "/w/aicova/api"), tui("%3", "/w/infra"))
+	w.setTabs(t, `{"global":{"tabs":[]},"cwd":{
+		"/w/profcoo/api":{"tabs":[{"sessionID":"s1","title":"p"}]},
+		"/w/aicova/api":{"tabs":[{"sessionID":"s2","title":"a"}]},
+		"/w/infra":{"tabs":[]}}}`)
+	w.sync(t)
+	// 排序依完整路徑（/w/aicova/api < /w/infra < /w/profcoo/api），顯示名稱不影響排序與身分
+	if got := strings.Join(groupLines(w.out.screen(30)), ","); got != "aicova/api,infra,profcoo/api" {
+		t.Fatalf("群組名稱 = %s", got)
+	}
+}
+
+func TestDeeperCollisionsAddLevelsUntilDistinguishable(t *testing.T) {
+	w := newWorld(t)
+	w.panes.set(tui("%1", "/a/x/api"), tui("%2", "/b/x/api"), tui("%3", "/c/y/api"))
+	w.setTabs(t, `{"global":{"tabs":[]},"cwd":{"/a/x/api":{"tabs":[]},"/b/x/api":{"tabs":[]},"/c/y/api":{"tabs":[]}}}`)
+	w.sync(t)
+	if got := strings.Join(groupLines(w.out.screen(30)), ","); got != "a/x/api,b/x/api,y/api" {
+		t.Fatalf("群組名稱 = %s", got)
+	}
+}
+
+func TestOnlyIncludedDirectoriesAreConsideredForDisambiguation(t *testing.T) {
+	w := newWorld(t)
+	w.panes.set(tui("%1", "/a/api"))
+	w.setTabs(t, `{"global":{"tabs":[]},"cwd":{"/a/api":{"tabs":[]},"/b/api":{"tabs":[{"sessionID":"s","title":"歷史"}]}}}`)
+	w.sync(t)
+	if got := strings.Join(groupLines(w.out.screen(30)), ","); got != "api" {
+		t.Fatalf("沒有 TUI 的目錄不應影響消歧：%s", got)
+	}
+}
+
+func TestRootAndNestedPathsStillGetDistinctNames(t *testing.T) {
+	w := newWorld(t)
+	w.panes.set(tui("%1", "/api"), tui("%2", "/x/api"), tui("%3", "/"))
+	w.setTabs(t, `{"global":{"tabs":[]},"cwd":{"/api":{"tabs":[]},"/x/api":{"tabs":[]},"/":{"tabs":[]}}}`)
+	w.sync(t)
+	if got := strings.Join(groupLines(w.out.screen(30)), ","); got != "/,api,x/api" {
+		t.Fatalf("群組名稱 = %s", got)
 	}
 }

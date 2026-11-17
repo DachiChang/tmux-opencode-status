@@ -1,6 +1,8 @@
 // heightfit-demo publishes a controlled tab list to an isolated tmux server
 // (-L socket only) so docs/validation/height.md can be reproduced. It is a
-// validation tool for issue #3, not the production sidebar.
+// validation tool (issue #3, kept in sync by #10), not the production sidebar:
+// it renders through the same internal/heightfit code and @tos_sb_ options the
+// daemon uses, so what it shows is what the daemon would publish.
 package main
 
 import (
