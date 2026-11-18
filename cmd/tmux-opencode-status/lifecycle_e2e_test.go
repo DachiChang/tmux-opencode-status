@@ -252,7 +252,7 @@ func TestReloadWithChangedSettingsHandsOffToExactlyOneNewInstance(t *testing.T) 
 	e.inTmux("set-option", "-g", "side-status", "left")
 	e.eventually(2*time.Second, "重新顯示不需手動重啟", func(s string) bool { return strings.Contains(s, "! 新增的 tab") })
 	if n := strings.Count(e.allHooks(), "[41700]"); n != 10 {
-		t.Fatalf("交接後本插件 hook 應各只有一份（8 喚醒 + 模式 + 標題 = 10），實際 %d：\n%s", n, e.allHooks())
+		t.Fatalf("交接後本插件 hook 應各只有一份（8 喚醒 + 選項（模式與色票）+ 標題 = 10），實際 %d：\n%s", n, e.allHooks())
 	}
 }
 

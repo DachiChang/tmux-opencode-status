@@ -72,15 +72,15 @@ var wakeHooks = []string{
 	"session-created", "session-closed",
 }
 
-// 模式選項或任何色票選項被設定（含 `set -gu` 與重載設定檔中的 set）時才喚醒，避免常駐程式自己
+// optionHook 在模式選項或任何色票選項被設定（含 `set -gu` 與重載設定檔中的 set）時才喚醒，避免常駐程式自己
 // 寫入側欄選項造成回授。
-var modeHook = "after-set-option"
+var optionHook = "after-set-option"
 
 // titleHook 只用來提早重新掃描（在既有 shell 啟動／結束 TUI 時 tmux 沒有結構事件）；
 // 不讀取標題內容，也不是辨識依據。終端標題關閉時不會觸發，由低頻補漏負責。
 var titleHook = "pane-title-changed"
 
-func modeHookCmd() string {
+func optionHookCmd() string {
 	arg := "#{hook_argument_0}"
 	cond := "#{||:#{==:" + arg + "," + sidebar.ModeOption + "},#{m:" + sidebar.ThemeOptionPrefix + "*," + arg + "}}"
 	return `if-shell -F "` + cond + `" "wait-for -S ` + wakeChannel + `"`
@@ -416,7 +416,7 @@ func (c *Client) WatchEvents(ctx context.Context, wake chan<- struct{}) error {
 			return err
 		}
 	}
-	if _, err := c.tmux("", "set-hook", "-g", modeHook+"["+strconv.Itoa(hookIndex)+"]", modeHookCmd()); err != nil {
+	if _, err := c.tmux("", "set-hook", "-g", optionHook+"["+strconv.Itoa(hookIndex)+"]", optionHookCmd()); err != nil {
 		c.RemoveHooks()
 		return err
 	}
@@ -474,7 +474,7 @@ func (c *Client) waitLoop(ctx context.Context, channel string, minGap time.Durat
 
 // RemoveHooks 只移除本插件安裝的 hook 索引，不動使用者自己的 hook。
 func (c *Client) RemoveHooks() {
-	_, _ = c.tmux("", "set-hook", "-gu", modeHook+"["+strconv.Itoa(hookIndex)+"]")
+	_, _ = c.tmux("", "set-hook", "-gu", optionHook+"["+strconv.Itoa(hookIndex)+"]")
 	_, _ = c.tmux("", "set-hook", "-gu", titleHook+"["+strconv.Itoa(hookIndex)+"]")
 	for _, h := range wakeHooks {
 		_, _ = c.tmux("", "set-hook", "-gu", h+"["+strconv.Itoa(hookIndex)+"]")
