@@ -1,5 +1,7 @@
 package render
 
+import "strings"
+
 // Theme 是側欄的 13 個色票；每個欄位是 tmux 樣式中 fg=／bg= 後面的顏色值。
 type Theme struct {
 	Emphasis      string // OPENCODE 底塊、專案名稱前的 ▎
@@ -71,4 +73,101 @@ func (t Theme) summaryColor(sym string) string {
 		return t.StateFailed
 	}
 	return t.StateProblem
+}
+
+// SwatchNames 是 13 個色票的名稱，順序固定（也是無效清單的順序）。
+var SwatchNames = []string{
+	"emphasis", "title", "split", "project", "active-tab", "inactive-tab",
+	"state-running", "state-ask", "state-finished", "state-failed", "state-problem", "state-idle", "notice",
+}
+
+func (t *Theme) swatch(name string) *string {
+	switch name {
+	case "emphasis":
+		return &t.Emphasis
+	case "title":
+		return &t.Title
+	case "split":
+		return &t.Split
+	case "project":
+		return &t.Project
+	case "active-tab":
+		return &t.ActiveTab
+	case "inactive-tab":
+		return &t.InactiveTab
+	case "state-running":
+		return &t.StateRunning
+	case "state-ask":
+		return &t.StateAsk
+	case "state-finished":
+		return &t.StateFinished
+	case "state-failed":
+		return &t.StateFailed
+	case "state-problem":
+		return &t.StateProblem
+	case "state-idle":
+		return &t.StateIdle
+	case "notice":
+		return &t.Notice
+	}
+	return nil
+}
+
+// ParseTheme 以預設主題為底，套用使用者設定的原始色值（鍵為色票名稱）。
+// 無效的值只讓該項維持預設，並依 SwatchNames 的順序列在回傳的無效清單；未知名稱忽略。
+func ParseTheme(raw map[string]string) (Theme, []string) {
+	th := DefaultTheme()
+	var invalid []string
+	for _, name := range SwatchNames {
+		v, set := raw[name]
+		if !set {
+			continue
+		}
+		if !ValidColour(v) {
+			invalid = append(invalid, name)
+			continue
+		}
+		*th.swatch(name) = v
+	}
+	return th, invalid
+}
+
+var colourNames = map[string]bool{"default": true}
+
+func init() {
+	for _, c := range []string{"black", "red", "green", "yellow", "blue", "magenta", "cyan", "white"} {
+		colourNames[c] = true
+		colourNames["bright"+c] = true
+	}
+}
+
+// ValidColour 判斷色值能否安全放進 tmux 樣式的 fg=／bg=：只接受 #RRGGBB、colourN／colorN（0–255）、
+// 具名色（含 bright 變體）與 default；其餘一律無效，因此值裡不可能出現 ]、,、#{ 等格式字元。
+func ValidColour(v string) bool {
+	if colourNames[v] {
+		return true
+	}
+	if len(v) == 7 && v[0] == '#' {
+		for _, c := range []byte(v[1:]) {
+			if !('0' <= c && c <= '9' || 'a' <= c && c <= 'f' || 'A' <= c && c <= 'F') {
+				return false
+			}
+		}
+		return true
+	}
+	n, ok := strings.CutPrefix(v, "colour")
+	if !ok {
+		n, ok = strings.CutPrefix(v, "color")
+	}
+	if !ok || n == "" || len(n) > 3 {
+		return false
+	}
+	num := 0
+	for _, c := range []byte(n) {
+		if c < '0' || c > '9' {
+			return false
+		}
+		num = num*10 + int(c-'0')
+	}
+	return num <= 255
 }
