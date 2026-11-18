@@ -16,6 +16,8 @@
 set -g @plugin 'DachiChang/tmux-opencode-status'
 # 選用：cwd（預設）或 global
 # set -g @opencode-status-mode global
+# 選用：覆寫配色，見下方「配色」
+# set -g @opencode-status-color-project colour253
 ```
 
 `prefix + I` 安裝。TPM 會執行插件根目錄的 `tmux-opencode-status.tmux`，它會：
@@ -51,6 +53,40 @@ set -g @opencode-status-mode global   # 單一 GLOBAL 群組，對應 OpenCode �
 插件不偵測、不警告不一致（例如 OpenCode 用 cwd scope 而插件設 global，可能看到空的或過期的清單），也不支援各 TUI 混用不同 scope。
 其他值（含大小寫不同、前後空白）視為無效：首次無效時不開始追蹤並提示，已有有效模式時保留原模式並提示。詳見 `docs/validation/modes.md`。
 
+### 配色
+
+側欄有 13 個色票，各對應一個 tmux 全域使用者選項 `@opencode-status-color-<名稱>`。未設定的色票使用預設值；只能改顏色，版面、符號與樣式（全部不粗體）固定。
+
+| 名稱 | 預設 | 對應位置 |
+| --- | --- | --- |
+| `emphasis` | `#A78BFA` | OPENCODE 底塊、專案名稱前的 `▎` |
+| `title` | `#18181B` | 底塊上的 OPENCODE 文字 |
+| `split` | `#404040` | 標題下分隔線 |
+| `project` | `#F2EEE3` | 專案名稱 |
+| `active-tab` | `#cac5b5` | 執行中、等你處理、結束未讀、失敗未讀的 tab 標題 |
+| `inactive-tab` | `#71717A` | 閒置與資料異常的 tab 標題、「無 tab」、「… 還有 N 個 tab」、右側摘要放不下時補的 `…` |
+| `state-running` | `#4ADE80` | `●` 執行中（含右側摘要中的符號與數字） |
+| `state-ask` | `#FACC15` | `?` 等你處理 |
+| `state-finished` | `#60A5FA` | `◆` 結束未讀 |
+| `state-failed` | `#F87171` | `✗` 失敗未讀 |
+| `state-problem` | `#A1A1AA` | `!` 資料異常 |
+| `state-idle` | `#71717A` | `·` 閒置 |
+| `notice` | `#FACC15` | `▲` 讀取錯誤提示的符號與文字 |
+
+```tmux
+set -g @opencode-status-color-emphasis '#7C3AED'     # #RRGGBB
+set -g @opencode-status-color-project colour253      # colourN／colorN（0–255）
+set -g @opencode-status-color-state-running green    # tmux 具名色（含 brightred 等 bright 變體）
+set -g @opencode-status-color-split default          # 終端預設色
+```
+
+合法格式只有四種：`#RRGGBB`、`colourN`／`colorN`（N 為 0–255）、tmux 具名色（`black`、`red`、`green`、`yellow`、`blue`、`magenta`、`cyan`、`white` 與 `bright` 加上述名稱）、`default`。
+其餘值（空字串、前後有空白，或含 `]`、`,`、`#{` 等會破壞 tmux 格式的字元）都視為無效：只有該項退回預設，其他色票照常套用，側欄**不會**顯示錯誤；
+`diagnose` 會列出無效的選項名稱並說明已退回預設。
+
+設定、取消（`set -gu`）或重載 tmux.conf 後側欄立即更新，不需重啟常駐程式。
+插件只讀取這些選項，不會寫入或刪除；停止常駐程式後你的設定仍保留。
+
 ### 診斷（唯讀）
 
 ```sh
@@ -58,7 +94,7 @@ set -g @opencode-status-mode global   # 單一 GLOBAL 群組，對應 OpenCode �
 ~/.tmux/plugins/tmux-opencode-status/bin/<版本>-darwin-<arch>/tmux-opencode-status diagnose
 ```
 
-輸出 tmux 版本與能力、插件模式、常駐實例狀態、發現的 TUI／tab 數、服務連線狀態與最近錯誤。
+輸出 tmux 版本與能力、插件模式、無效的色票選項、常駐實例狀態、發現的 TUI／tab 數、服務連線狀態與最近錯誤。
 只含計數、模式與固定描述；**不含憑證、prompt、對話或 session／tab 標題**，也不連 OpenCode、不寫任何選項。
 
 ### Session override
@@ -98,6 +134,7 @@ scripts/build-release.sh [版本]   # 預設讀 VERSION；輸出 dist/*.tar.gz �
 | `缺少必要能力` | 升級到 tmux 3.9（需 `side-status` 系列選項）；`tmux -V` 查看版本 |
 | 側欄沒出現 | 先跑 `diagnose`：看常駐實例、模式、服務連線；確認 `side-status` 不是 `off`；檢查 session override |
 | 一直是灰色 `!` | 資料異常（服務不可連線／清單不可讀等）；`diagnose` 的「最近錯誤」有固定原因。插件不會啟動 OpenCode 服務 |
+| 配色沒生效 | 跑 `diagnose`：無效的色票值會列出並退回預設（側欄不顯示錯誤）；合法格式見「配色」 |
 | 模式不對／清單是空的 | 確認 `@opencode-status-mode` 與 OpenCode 的 scope 一致 |
 | 想完全移除 | `tmux-opencode-status stop`（清理本插件資源），再從 `tmux.conf` 移除 `@plugin` 並 `prefix + alt + u` |
 

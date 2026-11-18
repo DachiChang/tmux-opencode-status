@@ -91,7 +91,7 @@ func TestInvalidSwatchFallsBackAloneAndTheSidebarShowsNoError(t *testing.T) {
 	// 測試環境沒有服務，先等既有的「無法連線」提示出現並穩定，再取基準畫面。
 	e.eventually(5*time.Second, "服務提示出現", func(s string) bool { return strings.Contains(s, "無法連線 OpenCode 服務") })
 	time.Sleep(300 * time.Millisecond)
-	before := e.sidebar()
+	before := strings.Join(e.clientScreen("hold"), "\n")
 	e.inTmux("set", "-g", colorOpt+"project", "#{pane_id}")
 	e.inTmux("set", "-g", colorOpt+"emphasis", "colour33")
 	e.eventuallyStyled(time.Second, "有效的 emphasis 照常套用", func(s string) bool {
@@ -101,7 +101,7 @@ func TestInvalidSwatchFallsBackAloneAndTheSidebarShowsNoError(t *testing.T) {
 	if l := projectLine(s, name); !strings.Contains(l, defaultProject) {
 		t.Fatalf("無效的 project 應退回預設：%q", l)
 	}
-	if plain := e.sidebar(); plain != before {
+	if plain := strings.Join(e.clientScreen("hold"), "\n"); plain != before {
 		t.Fatalf("無效色票不應改變側欄文字（不顯示錯誤）：\n%s\n---\n%s", before, plain)
 	}
 }
