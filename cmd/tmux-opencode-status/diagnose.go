@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/DachiChang/tmux-opencode-status/internal/instance"
+	"github.com/DachiChang/tmux-opencode-status/internal/render"
 	"github.com/DachiChang/tmux-opencode-status/internal/sidebar"
 )
 
@@ -50,6 +51,14 @@ func diagnose(o *options, w io.Writer) int {
 	} else {
 		problems++
 		p("插件模式設定：無效值（只接受 cwd 或 global）；有效模式前不會開始追蹤，已有有效模式時保留原模式")
+	}
+	if raw, err := tm.Swatches(); err != nil {
+		p("色票設定：無法讀取")
+	} else if _, invalid := render.ParseTheme(raw); len(invalid) > 0 {
+		for _, name := range invalid {
+			problems++
+			p("色票設定：%s%s 的值無效，已退回預設（其餘色票照常套用；側欄不顯示此錯誤）", sidebar.ThemeOptionPrefix, name)
+		}
 	}
 	if v, err := tm.GlobalValue("side-status"); err == nil {
 		p("全域 side-status：%s%s", valueOr(v, "（未設定）"), map[bool]string{true: "（側欄隱藏；常駐程式仍持續追蹤，重新顯示不需重啟）", false: ""}[v == "off" || v == ""])

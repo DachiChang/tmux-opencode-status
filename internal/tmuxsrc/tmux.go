@@ -72,7 +72,7 @@ var wakeHooks = []string{
 	"session-created", "session-closed",
 }
 
-// 模式選項被設定（含 `set -gu` 與重載設定檔中的 set）時才喚醒，避免常駐程式自己
+// 模式選項或任何色票選項被設定（含 `set -gu` 與重載設定檔中的 set）時才喚醒，避免常駐程式自己
 // 寫入側欄選項造成回授。
 var modeHook = "after-set-option"
 
@@ -81,7 +81,9 @@ var modeHook = "after-set-option"
 var titleHook = "pane-title-changed"
 
 func modeHookCmd() string {
-	return `if-shell -F "#{==:#{hook_argument_0},` + sidebar.ModeOption + `}" "wait-for -S ` + wakeChannel + `"`
+	arg := "#{hook_argument_0}"
+	cond := "#{||:#{==:" + arg + "," + sidebar.ModeOption + "},#{m:" + sidebar.ThemeOptionPrefix + "*," + arg + "}}"
+	return `if-shell -F "` + cond + `" "wait-for -S ` + wakeChannel + `"`
 }
 
 func (c *Client) tmux(stdin string, args ...string) ([]byte, error) {
@@ -266,6 +268,32 @@ func (c *Client) Setting() (sidebar.ModeSetting, error) {
 		return sidebar.ModeSetting{}, nil
 	}
 	return sidebar.ModeSetting{Value: strings.TrimSuffix(string(out), "\n"), Set: true}, nil
+}
+
+const (
+	swatchNameSep = "\x1f"
+	swatchEnd     = "\x1e"
+)
+
+// Swatches 以一次 `show-options -g` 唯讀取得所有色票選項的原始值，鍵為去掉前綴的色票名稱。
+// 值原樣回傳（含空字串與格式字元），是否有效由呼叫端判斷；用控制字元分隔而不解析 tmux 的跳脫輸出，
+// 因此含換行或引號的值也不會被誤讀。讀取失敗回報錯誤，不當成全部未設定。
+func (c *Client) Swatches() (map[string]string, error) {
+	out, err := c.tmux("", "show-options", "-g", "-F", "#{option_name}"+swatchNameSep+"#{option_value}"+swatchEnd)
+	if err != nil {
+		return nil, err
+	}
+	res := map[string]string{}
+	for _, rec := range strings.Split(string(out), swatchEnd) {
+		name, val, ok := strings.Cut(strings.TrimPrefix(rec, "\n"), swatchNameSep)
+		if !ok {
+			continue
+		}
+		if swatch, ok := strings.CutPrefix(name, sidebar.ThemeOptionPrefix); ok && swatch != "" {
+			res[swatch] = val
+		}
+	}
+	return res, nil
 }
 
 // MissingCapabilities 列出此 tmux 缺少的必要能力（3.9 的 side-status 相關選項）。
