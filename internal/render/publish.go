@@ -23,14 +23,22 @@ const OptPrefix = "@tos_sb_"
 // MinAvail is the smallest side-status height we lay out (title+rule+footer).
 const MinAvail = 3
 
+// Publish lays out groups with the default theme.
 func Publish(groups []Group, width int) Published {
-	return PublishView(View{Groups: groups}, width)
+	return PublishView(View{Groups: groups}, width, DefaultTheme())
 }
 
-// PublishView is Publish for a full View.
-func PublishView(v View, width int) Published {
+// PublishView is Publish for a full View drawn with th.
+func PublishView(v View, width int, th Theme) Published {
 	if v.Notice != "" {
-		v.Notice = strings.Join(wrap(v.Notice, max(width-2*margin, 1)), "\n")
+		var lines []string
+		for _, para := range strings.Split(v.Notice, "\n") {
+			for i, l := range wrap(para, max(width-2*margin-noticeSym, 1)) {
+				lines = append(lines, l)
+				v.noticeCont = append(v.noticeCont, i > 0)
+			}
+		}
+		v.Notice = strings.Join(lines, "\n")
 	}
 	full, _ := FitView(v, 1<<20)
 	fullAvail := max(len(full), MinAvail)
@@ -38,7 +46,7 @@ func PublishView(v View, width int) Published {
 	prev := ""
 	for avail := MinAvail; avail <= fullAvail; avail++ {
 		rows, _ := FitView(v, avail)
-		cur := strings.Join(Render(rows, width), "\n")
+		cur := strings.Join(Render(rows, width, th), "\n")
 		if cur == prev {
 			continue
 		}

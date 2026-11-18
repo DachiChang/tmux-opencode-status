@@ -143,8 +143,9 @@ func (f *fakeOut) options() []string {
 }
 
 // screen 是可用 avail 列的 client 看到的純文字畫面。排版的固定邊距（左右各 1 格）與 tab 行
-// 縮排（2 格）是版面常數，由 layout_test.go 的原始畫面測試負責；這裡把它們折回，
-// 讓狀態類測試只比對內容：標題／群組行去掉 1 格邊距，tab 行去掉 2 格縮排。
+// 縮排（2 格）、標題底塊的空白與群組前的 ▎ 是版面常數，由 render 與 layout e2e 測試負責；
+// 這裡把它們折回，讓狀態類測試只比對內容：標題行去掉邊距與底塊空白，群組行去掉邊距與 ▎，
+// tab 行去掉 2 格縮排。
 func (f *fakeOut) screen(avail int) []string {
 	return foldGeometry(f.rawScreen(avail))
 }
@@ -165,6 +166,8 @@ func foldGeometry(lines []string) []string {
 		switch {
 		case strings.HasPrefix(l, "  "):
 			out[i] = strings.TrimPrefix(l, "  ")
+		case strings.HasPrefix(l, " ▎"):
+			out[i] = strings.TrimPrefix(l, " ▎")
 		case strings.HasPrefix(l, " "):
 			out[i] = strings.TrimPrefix(l, " ")
 		default:
@@ -205,9 +208,9 @@ func TestShowsRunningTUIDirectoryWithItsTabsAsUnknown(t *testing.T) {
 	}
 	got := w.out.screen(20)
 	want := []string{
-		"◆ OPENCODE                     !2",
+		"OPENCODE                      !2",
 		"─────────────────────────────────",
-		"api                            !2",
+		"api                           !2",
 		"! 修正登入",
 		"! write tests",
 	}
@@ -255,7 +258,7 @@ func TestNoTUIShowsEmptyFrameNotAnErrorOrBlank(t *testing.T) {
 	w.setTabs(t, `{"global":{"tabs":[]},"cwd":{"/work/api":{"tabs":[{"sessionID":"ses_1","title":"歷史目錄不應出現"}]}}}`)
 	w.sync(t)
 	assertLines(t, w.out.screen(20), []string{
-		"◆ OPENCODE",
+		"OPENCODE",
 		"─────────────────────────────────",
 		"沒有 OpenCode TUI",
 	})
@@ -267,10 +270,10 @@ func TestTUIWithoutTabsKeepsGroupAndSaysNoTab(t *testing.T) {
 	w.setTabs(t, `{"global":{"tabs":[]},"cwd":{}}`)
 	w.sync(t)
 	assertLines(t, w.out.screen(20), []string{
-		"◆ OPENCODE",
+		"OPENCODE",
 		"─────────────────────────────────",
 		"api",
-		" 無 tab",
+		"無 tab",
 	})
 }
 
@@ -291,9 +294,9 @@ func TestOnlyRunningTUIDirectoriesAreListedAndDuplicatesCollapse(t *testing.T) {
 		"/work/old":{"tabs":[{"sessionID":"ses_9","title":"history"}]}}}`)
 	w.sync(t)
 	assertLines(t, w.out.screen(20), []string{
-		"◆ OPENCODE                     !1",
+		"OPENCODE                      !1",
 		"─────────────────────────────────",
-		"api                            !1",
+		"api                           !1",
 		"! one",
 	})
 }
@@ -332,11 +335,11 @@ func TestUnreadableTabListKeepsLastGoodListWithNoticeNotEmptyList(t *testing.T) 
 		t.Fatal("讀取失敗必須回報錯誤")
 	}
 	assertLines(t, w.out.screen(20), []string{
-		"◆ OPENCODE                     !1",
+		"OPENCODE                      !1",
 		"─────────────────────────────────",
-		"無法讀取 tab 清單，顯示最後可用資",
-		"料",
-		"api                            !1",
+		"▲ 無法讀取 tab 清單，顯示最後可用",
+		" 資料",
+		"api                           !1",
 		"! keep me",
 	})
 	w.setTabs(t, `{"global":{"tabs":[]},"cwd":{"/work/api":{"tabs":[{"sessionID":"s1","title":"keep me"}]}}}`)

@@ -7,36 +7,12 @@ import (
 	"github.com/DachiChang/tmux-opencode-status/internal/cellwidth"
 )
 
-// 色值取自使用者確認的 POC（@oc_side）：深色文字層次、無底色。
 const (
-	colPurple = "#A78BFA"
-	colBrand  = "#A3A3A3"
-	colRule   = "#404040"
-	colGroup  = "#FAFAFA"
-	colTitle  = "#D4D4D4"
-	colGreen  = "#4ADE80"
-	colYellow = "#FACC15"
-	colBlue   = "#60A5FA"
-	colRed    = "#F87171"
-	colGray   = "#737373"
-)
-
-var stateStyle = map[State]struct{ sym, style string }{
-	Running:        {"●", "fg=" + colGreen + ",bold"},
-	Attention:      {"?", "fg=" + colYellow + ",bold"},
-	FinishedUnread: {"◆", "fg=" + colBlue + ",bold"},
-	FailedUnread:   {"✗", "fg=" + colRed + ",bold"},
-	DataProblem:    {"!", "fg=" + colGray + ",bold"},
-	Idle:           {"·", "fg=" + colGray + ",bold"},
-}
-
-var summaryStyle = map[string]string{
-	"●": "fg=" + colGreen, "?": "fg=" + colYellow, "◆": "fg=" + colBlue, "✗": "fg=" + colRed, "!": "fg=" + colGray,
-}
-
-const (
-	margin    = 1 // 左右各留一格，與 POC 相同
-	tabIndent = 2 // tab 行縮排
+	margin     = 1  // 左右各留一格，與 POC 相同
+	tabIndent  = 2  // tab 行縮排
+	barWidth   = 1  // 專案名稱前的 ▎
+	noticeSym  = 2  // 提示前的 "▲ "
+	titleBlock = 10 // " OPENCODE " 底塊
 )
 
 // Render 把排好的列轉成 tmux side-status 的行。width 是側欄內容寬度（36 格扣掉分隔線）；
@@ -45,54 +21,51 @@ const (
 // 標題與名稱都是資料：每個 # 雙寫，控制字元換成空白，雙向控制字元移除，每份文字依格寬
 // 以群集為單位截斷。輸出存進使用者選項並以 #{@opt} 讀取（絕不用 #{E:@opt}／#{T:@opt}），
 // 因此只展開一次。
-func Render(rows []Row, width int) []string {
+func Render(rows []Row, width int, th Theme) []string {
 	out := make([]string, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, renderRow(r, max(width-margin, 1)))
+		out = append(out, renderRow(r, max(width-margin, 1), th))
 	}
 	return out
 }
 
-func renderRow(r Row, usable int) string {
+func renderRow(r Row, usable int, th Theme) string {
 	pad := strings.Repeat(" ", margin)
 	switch r.Kind {
 	case RowTitle:
-		const used = margin + 2 + 8
-		return pad + styled("fg="+colPurple+",bold", "◆") + " " + styled("fg="+colBrand, "OPENCODE") + rightSummary(used, r.Summary, usable)
+		const used = margin + titleBlock
+		return pad + styled("bg="+th.Emphasis+",fg="+th.Title, " OPENCODE ") + rightSummary(used, r.Summary, usable, th)
 	case RowRule:
-		return pad + styled("fg="+colRule, strings.Repeat("─", max(usable-margin, 0)))
+		return pad + styled("fg="+th.Split, strings.Repeat("─", max(usable-margin, 0)))
 	case RowGroup:
-		room := usable - margin
+		room := usable - margin - barWidth
 		if r.Summary != "" {
 			room -= cellwidth.String(r.Summary) + 1
 		}
 		name := truncate(clean(r.Text), room)
-		return pad + styled("fg="+colGroup+",bold", esc(name)) + rightSummary(margin+cellwidth.String(name), r.Summary, usable)
+		return pad + "#[fg=" + th.Emphasis + "]▎" + styled("fg="+th.Project, esc(name)) + rightSummary(margin+barWidth+cellwidth.String(name), r.Summary, usable, th)
 	case RowTab:
-		s := stateStyle[r.State]
+		sym, color := th.symbol(r.State)
 		title := truncate(clean(r.Text), usable-tabIndent-2)
-		ts := "fg=" + colTitle
-		switch r.State {
-		case Idle:
-			ts = "fg=" + colGray
-		case FinishedUnread, FailedUnread:
-			ts = "fg=" + colTitle + ",bold"
-		}
-		return strings.Repeat(" ", tabIndent) + styled(s.style, s.sym) + " " + styled(ts, esc(title))
+		return strings.Repeat(" ", tabIndent) + styled("fg="+color, sym) + " " + styled("fg="+th.tabTitle(r.State), esc(title))
 	case RowNote:
 		indent := margin + r.Indent
-		return strings.Repeat(" ", indent) + styled("fg="+colGray, esc(truncate(clean(r.Text), usable-indent)))
+		return strings.Repeat(" ", indent) + styled("fg="+th.InactiveTab, esc(truncate(clean(r.Text), usable-indent)))
 	case RowNotice:
-		return pad + styled("fg="+colBrand, esc(truncate(clean(r.Text), usable-margin)))
+		if r.Indent > 0 {
+			indent := margin + r.Indent
+			return strings.Repeat(" ", indent) + styled("fg="+th.Notice, esc(truncate(clean(r.Text), usable-indent)))
+		}
+		return pad + styled("fg="+th.Notice, "▲ "+esc(truncate(clean(r.Text), usable-margin-noticeSym)))
 	case RowMore:
-		return pad + styled("fg="+colGray, esc(truncate("… 還有 "+itoa(r.Hidden)+" 個 tab", usable-margin)))
+		return pad + styled("fg="+th.InactiveTab, esc(truncate("… 還有 "+itoa(r.Hidden)+" 個 tab", usable-margin)))
 	}
 	return ""
 }
 
 // rightSummary 補空白讓摘要的最後一格貼齊 usable；used 是該行已占的格數。
 // 空間不夠（極端大量 tab）時，保留優先順序靠前的符號，其餘以 … 收尾，永不越界。
-func rightSummary(used int, summary string, usable int) string {
+func rightSummary(used int, summary string, usable int, th Theme) string {
 	if summary == "" {
 		return ""
 	}
@@ -120,11 +93,11 @@ func rightSummary(used int, summary string, usable int) string {
 			b.WriteString(" ")
 		}
 		if part == "…" {
-			b.WriteString(styled("fg="+colGray, part))
+			b.WriteString(styled("fg="+th.InactiveTab, part))
 			continue
 		}
 		sym := string([]rune(part)[:1])
-		b.WriteString(styled(summaryStyle[sym], part))
+		b.WriteString(styled("fg="+th.summaryColor(sym), part))
 	}
 	return b.String()
 }

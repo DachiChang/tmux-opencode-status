@@ -112,7 +112,7 @@ func TestNeverOverflowsAndAccountsForEveryTab(t *testing.T) {
 
 func TestRenderTruncatesByCellWidthWithEllipsis(t *testing.T) {
 	rows := []Row{{Kind: RowTab, Text: "中文標題很長很長很長很長很長很長很長很長很長", State: Running}}
-	line := Render(rows, 20)[0]
+	line := Render(rows, 20, DefaultTheme())[0]
 	plain := StripStyles(line)
 	if w := CellWidth(plain); w > 19 {
 		t.Fatalf("width = %d: %q", w, plain)
@@ -124,7 +124,7 @@ func TestRenderTruncatesByCellWidthWithEllipsis(t *testing.T) {
 
 func TestRenderEscapesTmuxFormatCharactersInTitles(t *testing.T) {
 	rows := []Row{{Kind: RowTab, Text: "x #[fg=red] #{pane_id} #(id) , }", State: Idle}}
-	line := Render(rows, 36)[0]
+	line := Render(rows, 36, DefaultTheme())[0]
 	for _, bad := range []string{"#[fg=red]", "#{pane_id}", "#(id)"} {
 		if strings.Contains(strings.ReplaceAll(line, "##", ""), bad) {
 			t.Fatalf("unescaped %q in %q", bad, line)
@@ -134,7 +134,7 @@ func TestRenderEscapesTmuxFormatCharactersInTitles(t *testing.T) {
 
 func TestRenderRightAlignsSummaryWithinWidth(t *testing.T) {
 	rows := []Row{{Kind: RowGroup, Text: "aicova/api", Summary: "●1 ?1"}}
-	plain := StripStyles(Render(rows, 35)[0])
+	plain := StripStyles(Render(rows, 35, DefaultTheme())[0])
 	if w := CellWidth(plain); w != 34 {
 		t.Fatalf("width = %d: %q", w, plain)
 	}
@@ -144,7 +144,7 @@ func TestRenderRightAlignsSummaryWithinWidth(t *testing.T) {
 }
 
 func TestRenderFooterSaysHowManyTabsRemain(t *testing.T) {
-	plain := StripStyles(Render([]Row{{Kind: RowMore, Hidden: 5}}, 35)[0])
+	plain := StripStyles(Render([]Row{{Kind: RowMore, Hidden: 5}}, 35, DefaultTheme())[0])
 	if !strings.Contains(plain, "還有 5 個 tab") {
 		t.Fatalf("footer = %q", plain)
 	}
@@ -152,8 +152,8 @@ func TestRenderFooterSaysHowManyTabsRemain(t *testing.T) {
 
 func TestRenderTitleRowIsExactlyWidthWithSummaryOnTheRight(t *testing.T) {
 	rows, _ := Fit(sample(), 40)
-	plain := StripStyles(Render(rows, 36)[0])
-	if CellWidth(plain) != 35 || !strings.HasPrefix(plain, " ◆ OPENCODE") || !strings.HasSuffix(plain, "●2 ?1 ◆1 ✗1 !1") {
+	plain := StripStyles(Render(rows, 36, DefaultTheme())[0])
+	if CellWidth(plain) != 35 || !strings.HasPrefix(plain, "  OPENCODE ") || !strings.HasSuffix(plain, "●2 ?1 ◆1 ✗1 !1") {
 		t.Fatalf("title = %q (%d cells)", plain, CellWidth(plain))
 	}
 }
@@ -163,7 +163,7 @@ func TestPublishCoversEveryAvailableHeightWithItsOwnLayout(t *testing.T) {
 	// Selecting by avail must reproduce what Fit+Render give for that avail.
 	for avail := 3; avail <= 30; avail++ {
 		rows, _ := Fit(sample(), avail)
-		want := strings.Join(Render(rows, 36), "\n")
+		want := strings.Join(Render(rows, 36, DefaultTheme()), "\n")
 		if got := p.Select(avail); got != want {
 			t.Fatalf("avail %d:\n got %q\nwant %q", avail, got, want)
 		}

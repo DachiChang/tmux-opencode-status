@@ -51,7 +51,7 @@ type Row struct {
 	Summary string
 	State   State
 	Hidden  int
-	Indent  int // RowNote 額外縮排格數
+	Indent  int // RowNote 額外縮排格數；RowNotice 為折行續行的縮排
 }
 
 // View is everything the sidebar can show: the logical list plus the two
@@ -63,6 +63,10 @@ type View struct {
 	Groups []Group
 	Empty  string
 	Notice string
+
+	// noticeCont 標記 Notice 各行是否為前一行折行的續行（PublishView 折行時填入）；
+	// 續行不畫 ▲，縮排與文字對齊。
+	noticeCont []bool
 }
 
 // Fit lays the logical list out for one client. avail is that client's own
@@ -83,8 +87,12 @@ func FitView(v View, avail int) ([]Row, int) {
 	}
 	head := func(noticeLines int) []Row {
 		h := []Row{{Kind: RowTitle, Summary: Summary(groups)}, {Kind: RowRule}}
-		for _, line := range notice[:noticeLines] {
-			h = append(h, Row{Kind: RowNotice, Text: line})
+		for i, line := range notice[:noticeLines] {
+			row := Row{Kind: RowNotice, Text: line}
+			if i < len(v.noticeCont) && v.noticeCont[i] {
+				row.Indent = noticeSym
+			}
+			h = append(h, row)
 		}
 		return h
 	}
@@ -148,7 +156,7 @@ func layout(groups []Group, n int) []Row {
 		}
 		rows = append(rows, Row{Kind: RowGroup, Text: g.Name, Summary: groupSummary(g)})
 		if len(g.Tabs) == 0 {
-			rows = append(rows, Row{Kind: RowNote, Text: "無 tab", Indent: tabIndent})
+			rows = append(rows, Row{Kind: RowNote, Text: "無 tab", Indent: tabIndent - margin})
 			n--
 			continue
 		}
