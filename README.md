@@ -81,6 +81,7 @@ set -g @opencode-status-color-split default          # 終端預設色
 ```
 
 合法格式只有四種：`#RRGGBB`、`colourN`／`colorN`（N 為 0–255）、tmux 具名色（`black`、`red`、`green`、`yellow`、`blue`、`magenta`、`cyan`、`white` 與 `bright` 加上述名稱）、`default`。
+具名色**只**接受上述 8 個基本色與其 `bright` 變體（如 `brightred`）及 `default`；其他 tmux 名稱（例如 `orange`）一律無效，請改用 `#RRGGBB` 或 `colourN`。
 其餘值（空字串、前後有空白，或含 `]`、`,`、`#{` 等會破壞 tmux 格式的字元）都視為無效：只有該項退回預設，其他色票照常套用，側欄**不會**顯示錯誤；
 `diagnose` 會列出無效的選項名稱並說明已退回預設。
 

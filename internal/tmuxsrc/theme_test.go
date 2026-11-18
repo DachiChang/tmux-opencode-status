@@ -96,7 +96,7 @@ func TestSwatchesIsReadOnly(t *testing.T) {
 // （tmux 會記住沒有等待者時的 signal，之後的 wait-for 會立即返回）。
 func TestAfterSetOptionHookWakesForModeAndEverySwatchButNotOtherOptions(t *testing.T) {
 	c := isolated(t)
-	if _, err := c.tmux("", "set-hook", "-g", modeHook+"[41700]", modeHookCmd()); err != nil {
+	if _, err := c.tmux("", "set-hook", "-g", optionHook+"[41700]", optionHookCmd()); err != nil {
 		t.Fatal(err)
 	}
 	woken := func() bool {

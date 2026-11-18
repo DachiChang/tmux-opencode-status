@@ -740,7 +740,7 @@ func TestStoppingDaemonAlsoRemovesTheModeHook(t *testing.T) {
 }
 
 // 啟動空窗：hook 還沒裝好時發生的設定變動，不能只靠低頻補漏（5 秒）才發現。
-// 以 tmux 包裝讓安裝模式 hook（最後一個裝的）慢 300ms，確定性地放大空窗而不依賴 -race 的快慢；
+// 以 tmux 包裝讓安裝 after-set-option hook（模式與色票選項共用，最後一個裝的）慢 300ms，確定性地放大空窗而不依賴 -race 的快慢；
 // 在常駐程式首次讀到設定之後、hook 裝好之前重載設定，仍須在 1 秒內套用。
 func TestModeChangeDuringDaemonStartupIsNotLeftToTheBackstop(t *testing.T) {
 	realTmux, err := exec.LookPath("tmux")

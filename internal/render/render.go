@@ -8,11 +8,11 @@ import (
 )
 
 const (
-	margin     = 1  // 左右各留一格，與 POC 相同
-	tabIndent  = 2  // tab 行縮排
-	barWidth   = 1  // 專案名稱前的 ▎
-	noticeSym  = 2  // 提示前的 "▲ "
-	titleBlock = 10 // " OPENCODE " 底塊
+	margin            = 1  // 左右各留一格，與 POC 相同
+	tabIndent         = 2  // tab 行縮排
+	barWidth          = 1  // 專案名稱前的 ▎
+	noticePrefixWidth = 2  // 提示前 "▲ " 的格寬
+	titleBlock        = 10 // " OPENCODE " 底塊
 )
 
 // Render 把排好的列轉成 tmux side-status 的行。width 是側欄內容寬度（36 格扣掉分隔線）；
@@ -52,11 +52,13 @@ func renderRow(r Row, usable int, th Theme) string {
 		indent := margin + r.Indent
 		return strings.Repeat(" ", indent) + styled("fg="+th.InactiveTab, esc(truncate(clean(r.Text), usable-indent)))
 	case RowNotice:
+		prefix, indent, room := "▲ ", margin, usable-margin-noticePrefixWidth
 		if r.Indent > 0 {
-			indent := margin + r.Indent
-			return strings.Repeat(" ", indent) + styled("fg="+th.Notice, esc(truncate(clean(r.Text), usable-indent)))
+			prefix, indent = "", margin+r.Indent
+			room = usable - indent
 		}
-		return pad + styled("fg="+th.Notice, "▲ "+esc(truncate(clean(r.Text), usable-margin-noticeSym)))
+		text := esc(truncate(clean(r.Text), room))
+		return strings.Repeat(" ", indent) + styled("fg="+th.Notice, prefix+text)
 	case RowMore:
 		return pad + styled("fg="+th.InactiveTab, esc(truncate("… 還有 "+itoa(r.Hidden)+" 個 tab", usable-margin)))
 	}

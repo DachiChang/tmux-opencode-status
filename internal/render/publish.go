@@ -33,9 +33,9 @@ func PublishView(v View, width int, th Theme) Published {
 	if v.Notice != "" {
 		var lines []string
 		for _, para := range strings.Split(v.Notice, "\n") {
-			for i, l := range wrap(para, max(width-2*margin-noticeSym, 1)) {
+			for i, l := range wrap(para, max(width-2*margin-noticePrefixWidth, 1)) {
 				lines = append(lines, l)
-				v.noticeCont = append(v.noticeCont, i > 0)
+				v.noticeContinuation = append(v.noticeContinuation, i > 0)
 			}
 		}
 		v.Notice = strings.Join(lines, "\n")

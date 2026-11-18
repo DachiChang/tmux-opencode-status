@@ -32,6 +32,30 @@ var v3Preview = []string{
 	` #[fg=#71717A]… 還有 3 個 tab#[default]`,
 }
 
+// v3Preview36 是同一份預覽在 36 欄（Render width=36，每行最多 35 格）的逐字輸出：
+// 分隔線多一格、右對齊的摘要多一格空白，其餘不變；同樣手寫，不由程式產生。
+var v3Preview36 = []string{
+	` #[bg=#A78BFA,fg=#18181B] OPENCODE #[default]          #[fg=#4ADE80]●1#[default] #[fg=#FACC15]?1#[default] #[fg=#60A5FA]◆1#[default] #[fg=#F87171]✗1#[default] #[fg=#A1A1AA]!1#[default]`,
+	` #[fg=#404040]──────────────────────────────────#[default]`,
+	` #[fg=#FACC15]▲ 讀取 OpenCode 狀態失敗，重試中#[default]`,
+	` #[fg=#A78BFA]▎#[fg=#F2EEE3]tmux-opencode-status#[default]        #[fg=#4ADE80]●1#[default] #[fg=#FACC15]?1#[default]`,
+	`  #[fg=#4ADE80]●#[default] #[fg=#cac5b5]實作 render 配色#[default]`,
+	`  #[fg=#FACC15]?#[default] #[fg=#cac5b5]等待權限確認#[default]`,
+	`  #[fg=#71717A]·#[default] #[fg=#71717A]查看 active sessions#[default]`,
+	``,
+	` #[fg=#A78BFA]▎#[fg=#F2EEE3]opencode#[default]                    #[fg=#60A5FA]◆1#[default] #[fg=#F87171]✗1#[default]`,
+	`  #[fg=#60A5FA]◆#[default] #[fg=#cac5b5]spec ##1 完成#[default]`,
+	`  #[fg=#F87171]✗#[default] #[fg=#cac5b5]go test 失敗#[default]`,
+	`  #[fg=#A1A1AA]!#[default] #[fg=#71717A]狀態讀取異常#[default]`,
+	``,
+	` #[fg=#A78BFA]▎#[fg=#F2EEE3]dotfiles#[default]                       #[fg=#A1A1AA]!1#[default]`,
+	`  #[fg=#A1A1AA]!#[default] #[fg=#71717A]資料異常（無法解析）#[default]`,
+	``,
+	` #[fg=#A78BFA]▎#[fg=#F2EEE3]empty-project#[default]`,
+	`  #[fg=#71717A]無 tab#[default]`,
+	` #[fg=#71717A]… 還有 3 個 tab#[default]`,
+}
+
 func v3Rows() []render.Row {
 	tab := func(title string, st render.State) render.Row {
 		return render.Row{Kind: render.RowTab, Text: title, State: st}
@@ -67,6 +91,18 @@ func TestDefaultThemeRendersTheApprovedV3PreviewVerbatim(t *testing.T) {
 	for i, l := range got {
 		if w := cellwidthOf(l); w > 34 {
 			t.Errorf("第 %d 行可見寬度 %d 超過 34：%q", i, w, l)
+		}
+	}
+}
+
+func TestDefaultThemeRendersTheApprovedV3PreviewVerbatimAt36Columns(t *testing.T) {
+	got := render.Render(v3Rows(), 36, render.DefaultTheme())
+	if strings.Join(got, "\n") != strings.Join(v3Preview36, "\n") {
+		t.Fatalf("36 欄與預覽不符\n got:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(v3Preview36, "\n"))
+	}
+	for i, l := range got {
+		if w := cellwidthOf(l); w > 35 {
+			t.Errorf("第 %d 行可見寬度 %d 超過 35：%q", i, w, l)
 		}
 	}
 }

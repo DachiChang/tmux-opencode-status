@@ -64,9 +64,9 @@ type View struct {
 	Empty  string
 	Notice string
 
-	// noticeCont 標記 Notice 各行是否為前一行折行的續行（PublishView 折行時填入）；
+	// noticeContinuation 標記 Notice 各行是否為前一行折行的續行（PublishView 折行時填入）；
 	// 續行不畫 ▲，縮排與文字對齊。
-	noticeCont []bool
+	noticeContinuation []bool
 }
 
 // Fit lays the logical list out for one client. avail is that client's own
@@ -89,8 +89,8 @@ func FitView(v View, avail int) ([]Row, int) {
 		h := []Row{{Kind: RowTitle, Summary: Summary(groups)}, {Kind: RowRule}}
 		for i, line := range notice[:noticeLines] {
 			row := Row{Kind: RowNotice, Text: line}
-			if i < len(v.noticeCont) && v.noticeCont[i] {
-				row.Indent = noticeSym
+			if i < len(v.noticeContinuation) && v.noticeContinuation[i] {
+				row.Indent = noticePrefixWidth
 			}
 			h = append(h, row)
 		}

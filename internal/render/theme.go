@@ -38,18 +38,53 @@ func DefaultTheme() Theme {
 	}
 }
 
+// swatches 是色票名稱與 Theme 欄位的唯一對照表，順序固定（也是無效清單的順序）；新增色票只需改這裡與 Theme。
+var swatches = []struct {
+	name  string
+	field func(*Theme) *string
+}{
+	{"emphasis", func(t *Theme) *string { return &t.Emphasis }},
+	{"title", func(t *Theme) *string { return &t.Title }},
+	{"split", func(t *Theme) *string { return &t.Split }},
+	{"project", func(t *Theme) *string { return &t.Project }},
+	{"active-tab", func(t *Theme) *string { return &t.ActiveTab }},
+	{"inactive-tab", func(t *Theme) *string { return &t.InactiveTab }},
+	{"state-running", func(t *Theme) *string { return &t.StateRunning }},
+	{"state-ask", func(t *Theme) *string { return &t.StateAsk }},
+	{"state-finished", func(t *Theme) *string { return &t.StateFinished }},
+	{"state-failed", func(t *Theme) *string { return &t.StateFailed }},
+	{"state-problem", func(t *Theme) *string { return &t.StateProblem }},
+	{"state-idle", func(t *Theme) *string { return &t.StateIdle }},
+	{"notice", func(t *Theme) *string { return &t.Notice }},
+}
+
+// SwatchNames 是 13 個色票的名稱，順序同 swatches。
+var SwatchNames = func() []string {
+	names := make([]string, len(swatches))
+	for i, sw := range swatches {
+		names[i] = sw.name
+	}
+	return names
+}()
+
+// stateMarks 是狀態、符號與色票的唯一對照表；閒置不在表中，走預設列（· 與 state-idle）。
+var stateMarks = []struct {
+	state State
+	sym   string
+	color func(*Theme) *string
+}{
+	{Running, "●", func(t *Theme) *string { return &t.StateRunning }},
+	{Attention, "?", func(t *Theme) *string { return &t.StateAsk }},
+	{FinishedUnread, "◆", func(t *Theme) *string { return &t.StateFinished }},
+	{FailedUnread, "✗", func(t *Theme) *string { return &t.StateFailed }},
+	{DataProblem, "!", func(t *Theme) *string { return &t.StateProblem }},
+}
+
 func (t Theme) symbol(s State) (sym, color string) {
-	switch s {
-	case Running:
-		return "●", t.StateRunning
-	case Attention:
-		return "?", t.StateAsk
-	case FinishedUnread:
-		return "◆", t.StateFinished
-	case FailedUnread:
-		return "✗", t.StateFailed
-	case DataProblem:
-		return "!", t.StateProblem
+	for _, m := range stateMarks {
+		if m.state == s {
+			return m.sym, *m.color(&t)
+		}
 	}
 	return "·", t.StateIdle
 }
@@ -61,73 +96,31 @@ func (t Theme) tabTitle(s State) string {
 	return t.ActiveTab
 }
 
+// summaryColor 依摘要裡的符號取色；摘要不含閒置，未知符號一律用 state-problem。
 func (t Theme) summaryColor(sym string) string {
-	switch sym {
-	case "●":
-		return t.StateRunning
-	case "?":
-		return t.StateAsk
-	case "◆":
-		return t.StateFinished
-	case "✗":
-		return t.StateFailed
+	for _, m := range stateMarks {
+		if m.sym == sym {
+			return *m.color(&t)
+		}
 	}
 	return t.StateProblem
 }
 
-// SwatchNames 是 13 個色票的名稱，順序固定（也是無效清單的順序）。
-var SwatchNames = []string{
-	"emphasis", "title", "split", "project", "active-tab", "inactive-tab",
-	"state-running", "state-ask", "state-finished", "state-failed", "state-problem", "state-idle", "notice",
-}
-
-func (t *Theme) swatch(name string) *string {
-	switch name {
-	case "emphasis":
-		return &t.Emphasis
-	case "title":
-		return &t.Title
-	case "split":
-		return &t.Split
-	case "project":
-		return &t.Project
-	case "active-tab":
-		return &t.ActiveTab
-	case "inactive-tab":
-		return &t.InactiveTab
-	case "state-running":
-		return &t.StateRunning
-	case "state-ask":
-		return &t.StateAsk
-	case "state-finished":
-		return &t.StateFinished
-	case "state-failed":
-		return &t.StateFailed
-	case "state-problem":
-		return &t.StateProblem
-	case "state-idle":
-		return &t.StateIdle
-	case "notice":
-		return &t.Notice
-	}
-	return nil
-}
-
 // ParseTheme 以預設主題為底，套用使用者設定的原始色值（鍵為色票名稱）。
-// 無效的值只讓該項維持預設，並依 SwatchNames 的順序列在回傳的無效清單；未知名稱忽略。
+// 無效的值只讓該項維持預設，並依 swatches 的順序列在回傳的無效清單；未知名稱忽略。
 func ParseTheme(raw map[string]string) (Theme, []string) {
 	th := DefaultTheme()
 	var invalid []string
-	for _, name := range SwatchNames {
-		v, set := raw[name]
+	for _, sw := range swatches {
+		v, set := raw[sw.name]
 		if !set {
 			continue
 		}
 		if !ValidColour(v) {
-			invalid = append(invalid, name)
+			invalid = append(invalid, sw.name)
 			continue
 		}
-		*th.swatch(name) = v
+		*sw.field(&th) = v
 	}
 	return th, invalid
 }
