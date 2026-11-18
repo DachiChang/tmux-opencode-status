@@ -182,6 +182,7 @@ type world struct {
 	tabs  *fakeTabs
 	out   *fakeOut
 	mode  *fakeMode
+	theme sidebar.ThemeSource // nil：不接主題來源
 	d     *sidebar.Daemon
 }
 
@@ -415,7 +416,7 @@ func startRun(t *testing.T, w *world) *runner {
 	r := &runner{world: w, wake: make(chan struct{}, 1), ticks: make(chan time.Time), done: make(chan error, 1)}
 	w.out.ch = make(chan struct{}, 16)
 	w.d = sidebar.New(sidebar.Config{Width: 36, Debounce: time.Millisecond},
-		sidebar.Deps{Panes: w.panes, Tabs: w.tabs, Out: w.out, Mode: w.mode, Wake: r.wake, Ticks: r.ticks})
+		sidebar.Deps{Panes: w.panes, Tabs: w.tabs, Out: w.out, Mode: w.mode, Theme: w.theme, Wake: r.wake, Ticks: r.ticks})
 	ctx, cancel := context.WithCancel(context.Background())
 	r.cancel = cancel
 	go func() { r.done <- w.d.Run(ctx) }()
