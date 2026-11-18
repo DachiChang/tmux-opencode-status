@@ -14,7 +14,7 @@ const contentWidth = 35
 
 func lines(groups []render.Group, avail int) []string {
 	rows, _ := render.Fit(groups, avail)
-	return render.Render(rows, contentWidth)
+	return render.Render(rows, contentWidth, render.DefaultTheme())
 }
 
 func plain(ls []string) []string {
@@ -41,19 +41,19 @@ func TestLayoutMatchesThePOCGeometryAt36Cells(t *testing.T) {
 		{Name: "asgard", Tabs: []render.Tab{{Title: "InfluxDB 磁碟用量持續上升", State: render.Attention, SessionID: "d"}}},
 	}
 	want := []string{
-		" ◆ OPENCODE               ●1 ?1 ◆1",
+		"  OPENCODE                ●1 ?1 ◆1",
 		" ─────────────────────────────────",
-		" opencode                    ●1 ◆1",
+		" ▎opencode                   ●1 ◆1",
 		"  ● 桃園搜尋爬取與分類",
 		"  ◆ protal-prod-eks202606 reloade…",
 		"  · opencode 2.3.0 更新內容",
 		"",
-		" asgard                         ?1",
+		" ▎asgard                        ?1",
 		"  ? InfluxDB 磁碟用量持續上升",
 	}
 	got := plain(lines(groups, 30))
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
-		t.Fatalf("與 POC 幾何不符\n got:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+		t.Fatalf("與定案幾何不符\n got:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
 	for i, l := range got {
 		if w := cellwidth.String(l); w > 34 {
@@ -62,7 +62,7 @@ func TestLayoutMatchesThePOCGeometryAt36Cells(t *testing.T) {
 	}
 }
 
-// ---- 顏色語意：●綠 ?黃 ◆藍 ✗紅 !灰 ·灰；未讀粗體、閒置壓暗、無底色 ----
+// ---- 顏色語意：色票語意由 theme_test.go 逐項鎖定；這裡保留共用的樣式查詢工具 ----
 
 var styleRe = regexp.MustCompile(`#\[([^\]]*)\]([^#]*)`)
 
@@ -94,67 +94,45 @@ func TestStateSymbolsUseTheSpecColours(t *testing.T) {
 		{render.Attention, "?", "#FACC15"},
 		{render.FinishedUnread, "◆", "#60A5FA"},
 		{render.FailedUnread, "✗", "#F87171"},
-		{render.DataProblem, "!", "#737373"},
-		{render.Idle, "·", "#737373"},
+		{render.DataProblem, "!", "#A1A1AA"},
+		{render.Idle, "·", "#71717A"},
 	}
 	for _, c := range cases {
 		st := styleOf(t, tabLine(t, c.st, "x"), c.sym)
-		if !strings.Contains(st, "fg="+c.colour) {
-			t.Errorf("%s 的樣式 = %q，要 %s", c.sym, st, c.colour)
+		if st != "fg="+c.colour {
+			t.Errorf("%s 的樣式 = %q，要 fg=%s", c.sym, st, c.colour)
 		}
 	}
 }
 
-func TestTitleEmphasisFollowsSpec(t *testing.T) {
-	bold := func(st render.State) bool {
-		s := styleOf(t, tabLine(t, st, "TITLE"), "TITLE")
-		return strings.Contains(s, "bold") && !strings.Contains(s, "nobold")
+func TestTabTitlesUseActiveOrInactiveColour(t *testing.T) {
+	cases := map[render.State]string{
+		render.Running: "#cac5b5", render.Attention: "#cac5b5", render.FinishedUnread: "#cac5b5", render.FailedUnread: "#cac5b5",
+		render.Idle: "#71717A", render.DataProblem: "#71717A",
 	}
-	dim := func(st render.State) bool {
-		return strings.Contains(styleOf(t, tabLine(t, st, "TITLE"), "TITLE"), "fg=#737373")
-	}
-	if !bold(render.FinishedUnread) || !bold(render.FailedUnread) {
-		t.Error("未讀（◆ ✗）標題應粗體")
-	}
-	if bold(render.Running) || bold(render.Idle) || bold(render.Attention) {
-		t.Error("只有未讀標題粗體")
-	}
-	if !dim(render.Idle) {
-		t.Error("閒置標題應壓暗")
-	}
-	if dim(render.Running) || dim(render.FinishedUnread) {
-		t.Error("非閒置標題不得壓暗")
-	}
-}
-
-func TestNoBackgroundColoursAnywhere(t *testing.T) {
-	groups := []render.Group{{Name: "api", Tabs: []render.Tab{
-		{Title: "a", State: render.Attention, SessionID: "1"}, {Title: "b", State: render.DataProblem, SessionID: "2"},
-		{Title: "c", State: render.FailedUnread, SessionID: "3"}, {Title: "d", State: render.Idle, SessionID: "4"}}}, {Name: "empty"}}
-	rows, _ := render.FitView(render.View{Groups: groups, Notice: "n"}, 30)
-	for _, l := range render.Render(rows, contentWidth) {
-		if strings.Contains(l, "bg=") || strings.Contains(l, "reverse") {
-			t.Fatalf("不得有底色或反白：%q", l)
+	for st, colour := range cases {
+		if got := styleOf(t, tabLine(t, st, "TITLE"), "TITLE"); got != "fg="+colour {
+			t.Errorf("狀態 %d 的標題樣式 = %q，要 fg=%s", st, got, colour)
 		}
 	}
 }
 
-func TestChromeColoursFollowThePOC(t *testing.T) {
+func TestChromeColours(t *testing.T) {
 	ls := lines(one("x", render.Running), 20)
-	if st := styleOf(t, ls[0], "◆"); !strings.Contains(st, "fg=#A78BFA") || !strings.Contains(st, "bold") {
-		t.Errorf("◆ 應為紫色粗體：%q", st)
+	if st := styleOf(t, ls[0], "OPENCODE"); st != "bg=#A78BFA,fg=#18181B" {
+		t.Errorf("OPENCODE 應為紫底深字：%q", st)
 	}
-	if st := styleOf(t, ls[0], "OPENCODE"); !strings.Contains(st, "fg=#A3A3A3") || strings.Contains(st, "bold") {
-		t.Errorf("OPENCODE 應為淺灰、不粗體：%q", st)
-	}
-	if st := styleOf(t, ls[1], "─"); !strings.Contains(st, "fg=#404040") {
+	if st := styleOf(t, ls[1], "─"); st != "fg=#404040" {
 		t.Errorf("分隔線樣式：%q", st)
 	}
-	if st := styleOf(t, ls[2], "api"); !strings.Contains(st, "fg=#FAFAFA") || !strings.Contains(st, "bold") {
-		t.Errorf("群組名稱應為亮色粗體：%q", st)
+	if st := styleOf(t, ls[2], "▎"); st != "fg=#A78BFA" {
+		t.Errorf("▎ 應為紫色：%q", st)
 	}
-	if st := styleOf(t, ls[2], "●1"); !strings.Contains(st, "fg=#4ADE80") || strings.Contains(st, "bold") {
-		t.Errorf("群組摘要符號應為對應顏色、不粗體：%q", st)
+	if st := styleOf(t, ls[2], "api"); st != "fg=#F2EEE3" {
+		t.Errorf("專案名稱樣式：%q", st)
+	}
+	if st := styleOf(t, ls[2], "●1"); st != "fg=#4ADE80" {
+		t.Errorf("群組摘要符號應為對應顏色：%q", st)
 	}
 }
 
@@ -164,7 +142,7 @@ func TestSummarySymbolsAreColouredIndividually(t *testing.T) {
 		{Title: "3", State: render.FinishedUnread, SessionID: "3"}, {Title: "4", State: render.FailedUnread, SessionID: "4"},
 		{Title: "5", State: render.DataProblem, SessionID: "5"}}}}
 	ls := lines(groups, 20)
-	for sym, colour := range map[string]string{"●1": "#4ADE80", "?1": "#FACC15", "◆1": "#60A5FA", "✗1": "#F87171", "!1": "#737373"} {
+	for sym, colour := range map[string]string{"●1": "#4ADE80", "?1": "#FACC15", "◆1": "#60A5FA", "✗1": "#F87171", "!1": "#A1A1AA"} {
 		if st := styleOf(t, ls[0], sym); !strings.Contains(st, "fg="+colour) {
 			t.Errorf("頂部摘要 %s 樣式 = %q，要 %s", sym, st, colour)
 		}
@@ -190,7 +168,7 @@ func TestTopSummaryDedupesBySessionButGroupSummariesCountTheirMembers(t *testing
 	}
 	var gb string
 	for _, l := range got {
-		if strings.HasPrefix(l, " b") {
+		if strings.HasPrefix(l, " ▎b") {
 			gb = l
 		}
 	}
@@ -210,7 +188,7 @@ func TestGroupSummaryCountsEveryMemberTabOncePerTab(t *testing.T) {
 
 func TestAllIdleStillShowsTitleAndGroupWithoutCounts(t *testing.T) {
 	got := plain(lines(one("quiet", render.Idle), 20))
-	want := []string{" ◆ OPENCODE", " ─────────────────────────────────", " api", "  · quiet"}
+	want := []string{"  OPENCODE", " ─────────────────────────────────", " ▎api", "  · quiet"}
 	for i := range want {
 		if strings.TrimRight(got[i], " ") != want[i] {
 			t.Fatalf("got %q want %q", got[i], want[i])
@@ -298,7 +276,7 @@ func TestHostileTextIsRenderedLiterallyAndStaysOnOneLine(t *testing.T) {
 	for _, title := range hostile {
 		groups := []render.Group{{Name: title, Tabs: []render.Tab{{Title: title, State: render.Running, SessionID: "s"}}}}
 		rows, _ := render.FitView(render.View{Groups: groups, Notice: title, Empty: title}, 30)
-		ls := render.Render(rows, contentWidth)
+		ls := render.Render(rows, contentWidth, render.DefaultTheme())
 		for _, l := range ls {
 			if strings.ContainsAny(l, "\n\r\x00\x1b\x07\x7f\u2028\u2029\u0085") {
 				t.Errorf("%q → 輸出含控制字元：%q", title, l)
@@ -327,7 +305,7 @@ func TestLiteralHashesSurviveInTitles(t *testing.T) {
 }
 
 // unescapedHash 以 tmux 的讀法掃描一行：## 是字面 #，#[...] 只允許是本插件的樣式標記
-// （內容只含 fg= / bold / default 這類值）；其他任何 # 都代表資料可能被當成格式。
+// （內容只含 fg= / bg= / default 這類值）；其他任何 # 都代表資料可能被當成格式。
 func unescapedHash(line string) string {
 	for i := 0; i < len(line); i++ {
 		if line[i] != '#' {
@@ -344,7 +322,7 @@ func unescapedHash(line string) string {
 			if j < 0 {
 				return "未結束的 #["
 			}
-			if !regexp.MustCompile(`^(fg=#[0-9A-Fa-f]{6}|bold|default)(,(fg=#[0-9A-Fa-f]{6}|bold))*$`).MatchString(line[i+2 : i+j]) {
+			if !regexp.MustCompile(`^(fg=#[0-9A-Fa-f]{6}|bg=#[0-9A-Fa-f]{6},fg=#[0-9A-Fa-f]{6}|default)$`).MatchString(line[i+2 : i+j]) {
 				return "非本插件的樣式標記 " + line[i:i+j+1]
 			}
 			i += j
@@ -379,7 +357,7 @@ func TestAbsurdlyLargeCountsNeverPushASummaryPastTheEdge(t *testing.T) {
 	}
 	groups := []render.Group{{Name: "一個很長很長的群組名稱", Tabs: tabs}}
 	rows, _ := render.Fit(groups, 12)
-	for _, l := range plain(render.Render(rows, contentWidth)) {
+	for _, l := range plain(render.Render(rows, contentWidth, render.DefaultTheme())) {
 		if w := cellwidth.String(l); w > 34 {
 			t.Errorf("寬 %d 越界：%q", w, l)
 		}
@@ -387,7 +365,7 @@ func TestAbsurdlyLargeCountsNeverPushASummaryPastTheEdge(t *testing.T) {
 }
 
 func TestLongNoticeWrapsInsteadOfOverflowing(t *testing.T) {
-	p := render.PublishView(render.View{Notice: strings.Repeat("無法讀取資料", 8), Empty: "沒有 OpenCode TUI"}, contentWidth)
+	p := render.PublishView(render.View{Notice: strings.Repeat("無法讀取資料", 8), Empty: "沒有 OpenCode TUI"}, contentWidth, render.DefaultTheme())
 	for _, l := range plain(strings.Split(p.Select(20), "\n")) {
 		if w := cellwidth.String(l); w > 34 {
 			t.Errorf("寬 %d 越界：%q", w, l)
@@ -397,3 +375,5 @@ func TestLongNoticeWrapsInsteadOfOverflowing(t *testing.T) {
 		t.Errorf("長提示應折成多行，實際 %d 行", n)
 	}
 }
+
+func cellwidthOf(line string) int { return cellwidth.String(render.StripStyles(line)) }

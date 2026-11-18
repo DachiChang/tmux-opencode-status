@@ -31,7 +31,7 @@ func TestGrandchildRunningShowsOnRootTabAndOnlyTabIsListed(t *testing.T) {
 	if strings.Contains(got, "ses_") || strings.Count(got, "●") != 3 { // tab 一個、群組摘要一個、全體摘要一個
 		t.Fatalf("後代不得另列為項目：\n%s", got)
 	}
-	if !hasLine(got, "◆ OPENCODE                     ●1") {
+	if !hasLine(got, "OPENCODE                      ●1") {
 		t.Fatalf("摘要不符：\n%s", got)
 	}
 	lw.svc.Finish("ses_G", "succeeded")
@@ -95,7 +95,7 @@ func TestPreexistingDescendantBlockersAreFoundWithoutAnyCreatedEvent(t *testing.
 	got := lw.eventually(t, "既有後代的阻塞", func(s string) bool {
 		return hasLine(s, "? approve") && hasLine(s, "? answer") && hasLine(s, "· calm")
 	})
-	if !hasLine(got, "◆ OPENCODE                     ?2") {
+	if !hasLine(got, "OPENCODE                      ?2") {
 		t.Fatalf("摘要不符：\n%s", got)
 	}
 	lw.svc.ReplyPermission("per_1")
@@ -146,7 +146,7 @@ func TestUnrelatedFamiliesAncestorsAndSiblingsDoNotLeakIntoATab(t *testing.T) {
 
 	lw.svc.Start("ses_X1") // 無關家族只影響自己的 tab
 	got = lw.eventually(t, "無關家族各自獨立", func(s string) bool { return hasLine(s, "· child tab") && hasLine(s, "● other") })
-	if !hasLine(got, "◆ OPENCODE                     ●1") {
+	if !hasLine(got, "OPENCODE                      ●1") {
 		t.Fatalf("摘要不符：\n%s", got)
 	}
 }
@@ -213,10 +213,10 @@ func TestSameSessionInManyTabsAndSourcesCountsOnceInSummaries(t *testing.T) {
 		return hasLine(s, "? root") && hasLine(s, "? inner") && hasLine(s, "? root-again")
 	})
 	// 全體摘要按 session 去重：ses_R 與 ses_C 兩個 session = ?2；群組各按自己的 tab
-	if !hasLine(got, "◆ OPENCODE                     ?2") {
+	if !hasLine(got, "OPENCODE                      ?2") {
 		t.Fatalf("全體摘要未按 session 去重：\n%s", got)
 	}
-	if !hasLine(got, "api                            ?2") || !hasLine(got, "web                            ?1") {
+	if !hasLine(got, "api                           ?2") || !hasLine(got, "web                           ?1") {
 		t.Fatalf("群組摘要不符：\n%s", got)
 	}
 	// 重複的請求（同一個請求經多個 tab 的家族都讀到）處理一次就解除
@@ -224,7 +224,7 @@ func TestSameSessionInManyTabsAndSourcesCountsOnceInSummaries(t *testing.T) {
 	got = lw.eventually(t, "一次回覆解除所有重疊 tab", func(s string) bool {
 		return hasLine(s, "● root") && hasLine(s, "● inner") && hasLine(s, "● root-again")
 	})
-	if !hasLine(got, "◆ OPENCODE                     ●2") {
+	if !hasLine(got, "OPENCODE                      ●2") {
 		t.Fatalf("摘要不符：\n%s", got)
 	}
 }

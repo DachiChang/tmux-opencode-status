@@ -338,7 +338,7 @@ func (d *Daemon) view(mode contract.Mode) render.View {
 }
 
 func (d *Daemon) publish(v render.View) error {
-	p := render.PublishView(v, d.cfg.Width-1)
+	p := render.PublishView(v, d.cfg.Width-1, render.DefaultTheme())
 	fp := fingerprint(p)
 	if d.havePub && fp == d.last {
 		return nil

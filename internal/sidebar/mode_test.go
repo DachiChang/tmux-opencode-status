@@ -16,9 +16,9 @@ func TestGlobalModeListsOneSharedListUnderASingleGlobalGroupInSourceOrder(t *tes
 	w.setTabs(t, bothScopes)
 	w.sync(t)
 	assertLines(t, w.out.screen(20), []string{
-		"◆ OPENCODE                     !3",
+		"OPENCODE                      !3",
 		"─────────────────────────────────",
-		"GLOBAL                         !3",
+		"GLOBAL                        !3",
 		"! global one",
 		"! 其他目錄的工作",
 		"! global three",
@@ -51,7 +51,7 @@ func TestGlobalModeStopsIncludingTheListOnceTheLastTUIIsGone(t *testing.T) {
 	w.panes.set()
 	w.sync(t)
 	assertLines(t, w.out.screen(20), []string{
-		"◆ OPENCODE",
+		"OPENCODE",
 		"─────────────────────────────────",
 		"沒有 OpenCode TUI",
 	})
@@ -64,10 +64,10 @@ func TestGlobalModeWithTUIButNoSharedTabsKeepsTheGlobalGroup(t *testing.T) {
 	w.setTabs(t, `{"global":{"tabs":[]},"cwd":{"/work/api":{"tabs":[{"sessionID":"c1","title":"cwd only"}]}}}`)
 	w.sync(t)
 	assertLines(t, w.out.screen(20), []string{
-		"◆ OPENCODE",
+		"OPENCODE",
 		"─────────────────────────────────",
 		"GLOBAL",
-		" 無 tab",
+		"無 tab",
 	})
 }
 
@@ -162,7 +162,7 @@ func TestInvalidModeAfterAValidOneKeepsTheValidModeAndReportsNotApplied(t *testi
 		t.Fatal("重載時無效設定必須回報錯誤")
 	}
 	got := strings.Join(w.out.screen(20), "\n")
-	if !strings.Contains(got, "未套用，仍用 global") || !strings.Contains(got, "global one") || strings.Contains(got, "api tab") {
+	if !strings.Contains(flat(got), flat("未套用，仍用 global")) || !strings.Contains(got, "global one") || strings.Contains(got, "api tab") {
 		t.Fatalf("應保留 global 並提示未套用：\n%s", got)
 	}
 

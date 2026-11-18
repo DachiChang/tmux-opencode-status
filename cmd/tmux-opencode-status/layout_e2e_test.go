@@ -127,7 +127,7 @@ func TestLayoutOnRealClientsDisambiguationSummaryTruncationAndPerClientHeight(t 
 	t.Logf("c40（完整）：\n%s", trimRight(full))
 
 	whole := trimRight(full)
-	if !contains(full, " aicova/api") || !contains(full, " profcoo/api") || !contains(full, " infra") {
+	if !contains(full, " ▎aicova/api") || !contains(full, " ▎profcoo/api") || !contains(full, " ▎infra") {
 		t.Fatalf("目錄名稱不符：\n%s", whole)
 	}
 	if !(strings.Index(whole, "aicova/api") < strings.Index(whole, "infra") && strings.Index(whole, "infra") < strings.Index(whole, "profcoo/api")) {
@@ -155,14 +155,14 @@ func TestLayoutOnRealClientsDisambiguationSummaryTruncationAndPerClientHeight(t 
 	mid := e.clientScreen("c14")
 	t.Logf("c9（可用 8 列）：\n%s\n\nc14（可用 13 列）：\n%s", trimRight(small), trimRight(mid))
 	summary := func(ls []string) string {
-		return strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(ls[0]), "◆ OPENCODE"))
+		return strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(ls[0]), "OPENCODE"))
 	}
 	for name, scr := range map[string][]string{"c9": small, "c14": mid} {
 		if summary(scr) != summary(full) {
 			t.Fatalf("%s 頂部摘要 %q 應與完整 client 相同 %q（含畫面外 tabs）", name, summary(scr), summary(full))
 		}
 		shown, hidden := 0, 0
-		for _, l := range scr {
+		for _, l := range scr[1:] { // 第一行是 OPENCODE 底塊
 			if strings.HasPrefix(l, "  ") && strings.TrimSpace(l) != "" {
 				shown++
 			}
@@ -244,7 +244,7 @@ func TestHostileTitlesStayInsideTheirRowOnARealClient(t *testing.T) {
 		t.Fatal("標題中的 #() 被執行了")
 	}
 	var tabRows []string
-	for _, l := range got {
+	for _, l := range got[1:] { // 第一行是 OPENCODE 底塊
 		if strings.HasPrefix(l, "  ") && strings.TrimSpace(l) != "" {
 			tabRows = append(tabRows, l)
 		}
