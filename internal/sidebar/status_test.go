@@ -181,15 +181,15 @@ func TestUnreadStateBeforeStartupComesFromSnapshotAndSharedReadState(t *testing.
 	lw.svc.Seed("ses_e", "", "", 0, 0, true)               // 啟動前已在執行
 	lw.openTabs(t, "/work/api",
 		[2]string{"ses_a", "A"}, [2]string{"ses_b", "B"}, [2]string{"ses_c", "C"}, [2]string{"ses_d", "D"}, [2]string{"ses_e", "E"})
-	got := lw.eventually(t, "snapshot 狀態", func(s string) bool { return hasLine(s, "✗ A") })
-	for _, want := range []string{"◆ B", "· C", "◆ D", "● E"} {
-		if !hasLine(got, want) {
-			t.Fatalf("缺 %q：\n%s", want, got)
+	// 各 tab 的 snapshot 陸續讀完，中途畫面會暫時有 !：等全部到位再判定。
+	lw.eventually(t, "snapshot 狀態與摘要", func(s string) bool {
+		for _, want := range []string{"✗ A", "◆ B", "· C", "◆ D", "● E", "OPENCODE                ●1 ◆2 ✗1"} {
+			if !hasLine(s, want) {
+				return false
+			}
 		}
-	}
-	if !hasLine(got, "OPENCODE                ●1 ◆2 ✗1") {
-		t.Fatalf("摘要不符：\n%s", got)
-	}
+		return true
+	})
 }
 
 func TestStateChangesNeverReorderTabsAndSummaryDedupesBySession(t *testing.T) {
@@ -419,10 +419,11 @@ func TestSummaryCountsTabsNotRequests(t *testing.T) {
 	lw.svc.SeedForm("frm_2", "ses_2")
 	lw.svc.SeedForm("frm_3", "ses_2")
 	lw.openTabs(t, "/work/api", [2]string{"ses_1", "one"}, [2]string{"ses_2", "two"}, [2]string{"ses_3", "three"})
-	got := lw.eventually(t, "待處理", func(s string) bool { return hasLine(s, "? one") && hasLine(s, "? two") })
-	if !hasLine(got, "OPENCODE                      ?2") || !hasLine(got, "api                           ?2") {
-		t.Fatalf("5 個請求只該算 2 個 tab：\n%s", got)
-	}
+	// 等 three 的 snapshot 也讀完（中途摘要會暫時多一個 !1），再判定 5 個請求只算 2 個 tab。
+	lw.eventually(t, "5 個請求只該算 2 個 tab", func(s string) bool {
+		return hasLine(s, "? one") && hasLine(s, "? two") && hasLine(s, "· three") &&
+			hasLine(s, "OPENCODE                      ?2") && hasLine(s, "api                           ?2")
+	})
 	// 一個請求處理掉，tab 仍有另一個請求：維持 ?，不因單一回覆就當成已處理完
 	lw.svc.ReplyPermission("per_1")
 	lw.svc.AnswerForm("frm_2")
@@ -430,7 +431,7 @@ func TestSummaryCountsTabsNotRequests(t *testing.T) {
 	lw.svc.ReplyPermission("per_2")
 	lw.svc.CancelForm("frm_3")
 	lw.svc.AnswerForm("frm_1")
-	got = lw.eventually(t, "全部處理完", func(s string) bool { return hasLine(s, "· one") && hasLine(s, "· two") })
+	got := lw.eventually(t, "全部處理完", func(s string) bool { return hasLine(s, "· one") && hasLine(s, "· two") })
 	if strings.Contains(got, "?") {
 		t.Fatalf("不應殘留 ?：\n%s", got)
 	}
