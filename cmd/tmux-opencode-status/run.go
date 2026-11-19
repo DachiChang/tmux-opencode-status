@@ -136,7 +136,7 @@ func runDaemon(o *options) int {
 	}
 	tick := time.NewTicker(o.backstop)
 	defer tick.Stop()
-	d := sidebar.New(sidebar.Config{Width: o.width, Resync: o.resync}, sidebar.Deps{Panes: tm, Tabs: tabs, Out: tm, Mode: tm, Wake: wake,
+	d := sidebar.New(sidebar.Config{Width: o.width, Resync: o.resync}, sidebar.Deps{Panes: tm, Tabs: tabs, Out: tm, Mode: tm, Theme: tm, Wake: wake,
 		Ticks: tick.C, Service: ocsrc.Source{Path: o.service, IdleTimeout: o.idle}, Report: report})
 	done := make(chan struct{})
 	go func() { defer close(done); _ = d.Run(ctx) }()

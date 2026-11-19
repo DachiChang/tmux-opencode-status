@@ -405,7 +405,7 @@ func TestSessionLifecycleOnARealTmuxWithFakeOpenCodeService(t *testing.T) {
 
 	svc.Start("ses_0")
 	d := e.eventually(time.Second, "執行中 1 秒內出現", func(s string) bool {
-		return strings.Contains(s, "● 修正登入") && strings.Contains(s, "◆ OPENCODE") && strings.Contains(s, "●1")
+		return strings.Contains(s, "● 修正登入") && strings.Contains(s, " OPENCODE ") && strings.Contains(s, "●1")
 	})
 	t.Logf("執行中 → 畫面：%v", d)
 	svc.Finish("ses_0", "failed")
@@ -501,10 +501,10 @@ func TestPendingApprovalsAndAnswersOnARealTmuxWithFakeOpenCodeService(t *testing
 	if opts == "" {
 		t.Fatalf("找不到側欄輸出選項：\n%s", opts)
 	}
-	if strings.Contains(opts, "bg=") || strings.Contains(opts, "fg=#FACC15,bold]!") {
-		t.Fatalf("待處理不得使用背景色塊或黃色 !：\n%s", opts)
+	if strings.Contains(strings.ReplaceAll(opts, "#[bg=#A78BFA,fg=#18181B] OPENCODE ", ""), "bg=") || strings.Contains(opts, "fg=#FACC15]!") {
+		t.Fatalf("待處理不得使用標題以外的背景色塊或黃色 !：\n%s", opts)
 	}
-	if !strings.Contains(opts, "#[fg=#FACC15,bold]?#[default]") {
+	if !strings.Contains(opts, "#[fg=#FACC15]?#[default]") {
 		t.Fatalf("側欄輸出找不到黃色 ?：\n%s", opts)
 	}
 
@@ -740,7 +740,7 @@ func TestStoppingDaemonAlsoRemovesTheModeHook(t *testing.T) {
 }
 
 // 啟動空窗：hook 還沒裝好時發生的設定變動，不能只靠低頻補漏（5 秒）才發現。
-// 以 tmux 包裝讓安裝模式 hook（最後一個裝的）慢 300ms，確定性地放大空窗而不依賴 -race 的快慢；
+// 以 tmux 包裝讓安裝 after-set-option hook（模式與色票選項共用，最後一個裝的）慢 300ms，確定性地放大空窗而不依賴 -race 的快慢；
 // 在常駐程式首次讀到設定之後、hook 裝好之前重載設定，仍須在 1 秒內套用。
 func TestModeChangeDuringDaemonStartupIsNotLeftToTheBackstop(t *testing.T) {
 	realTmux, err := exec.LookPath("tmux")

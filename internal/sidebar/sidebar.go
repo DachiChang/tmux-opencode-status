@@ -44,6 +44,8 @@ type Deps struct {
 	Out   Output
 	// Mode 讀取插件模式選項；nil 等同未設定（預設 cwd）。
 	Mode ModeSource
+	// Theme 讀取色票選項；nil 等同全部未設定（預設主題）。
+	Theme ThemeSource
 
 	// Wake 是事件通知（tmux hook、tab 檔變動）；Ticks 是低頻補漏。兩者皆可為 nil，
 	// 時間由呼叫端注入，測試因此不需等待真實時間。
@@ -83,7 +85,7 @@ type Status struct {
 // ErrorRecord 是一筆最近發生的問題：只有來源與固定描述。
 type ErrorRecord struct {
 	At      time.Time
-	Source  string // tmux／tabs／mode／service／output
+	Source  string // tmux／tabs／mode／theme／service／output
 	Message string
 }
 
@@ -108,6 +110,7 @@ type Daemon struct {
 
 	panes     []PaneFact // 最後一次成功讀到的資料；讀取失敗時沿用並提示
 	tabs      *contract.TabsFile
+	theme     render.Theme  // 最後一次讀取成功的主題；從未成功時為預設
 	mode      contract.Mode // 最後一次生效的有效模式
 	haveMode  bool
 	havePanes bool
@@ -138,7 +141,10 @@ func New(cfg Config, deps Deps) *Daemon {
 	if deps.Mode == nil {
 		deps.Mode = unsetMode{}
 	}
-	d := &Daemon{cfg: cfg, deps: deps, liveWake: make(chan struct{}, 1)}
+	if deps.Theme == nil {
+		deps.Theme = unsetTheme{}
+	}
+	d := &Daemon{cfg: cfg, deps: deps, theme: render.DefaultTheme(), liveWake: make(chan struct{}, 1)}
 	if deps.Service != nil {
 		d.live = newLive(deps.Service, cfg.Retry, cfg.Resync, func() {
 			select {
@@ -168,6 +174,10 @@ func (d *Daemon) Sync() error {
 		}
 	}
 	defer func() { d.lastRecv = active; d.report() }()
+	if err := d.resolveTheme(); err != nil {
+		errs = append(errs, err)
+		note("theme", "無法讀取色票設定，沿用上次有效配色")
+	}
 	_, tracking, modeNotice, modeErr := d.resolveMode()
 	d.modeIssue = ""
 	if modeErr != nil {
@@ -338,7 +348,7 @@ func (d *Daemon) view(mode contract.Mode) render.View {
 }
 
 func (d *Daemon) publish(v render.View) error {
-	p := render.PublishView(v, d.cfg.Width-1)
+	p := render.PublishView(v, d.cfg.Width-1, d.theme)
 	fp := fingerprint(p)
 	if d.havePub && fp == d.last {
 		return nil
