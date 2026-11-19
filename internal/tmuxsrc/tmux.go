@@ -255,12 +255,12 @@ func (c *Client) ClearDisplay() {
 // JumpKey 是側欄點擊跳轉接管的 root 鍵表按鍵（tmux 對 side-status 的滑鼠左鍵按下事件）。
 const JumpKey = "MouseDown1SideStatus"
 
-// jumpBinding 只在 tmux 內執行（不開 shell、不呼叫插件執行檔）：range 字串符合 oc<N> 時切到 pane %N
+// jumpBinding 只在 tmux 內執行（不開 shell、不呼叫插件執行檔）：range 字串符合 oc<N>（前綴見 render.JumpRangePrefix）時切到 pane %N
 // （session、window、pane 一次到位，可跨 session），否則維持 tmux 預設的 switch-client -t =。
 // 不用 range=pane：見 ADR-0002。
 const jumpBinding = `bind -T root ` + JumpKey + ` {
-  if -F "#{m/r:^oc[0-9]+$,#{mouse_status_range}}" {
-    run-shell -C "switch-client -t '%#{s/^oc//:mouse_status_range}'"
+  if -F "#{m/r:^` + render.JumpRangePrefix + `[0-9]+$,#{mouse_status_range}}" {
+    run-shell -C "switch-client -t '%#{s/^` + render.JumpRangePrefix + `//:mouse_status_range}'"
   } {
     switch-client -t =
   }

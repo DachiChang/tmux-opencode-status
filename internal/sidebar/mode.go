@@ -55,23 +55,23 @@ func (d *Daemon) resolveMode() (mode contract.Mode, ok bool, notice string, err 
 
 type tabGroup struct {
 	name string
-	dir  string // cwd 群組的目錄；global 群組為空（跳轉目標取全部 TUI）
+	jump string // 跳轉目標（pane 編號的十進位字串）；空字串表示沒有
 	tabs []contract.Tab
 }
 
 // groupsFor 依模式把執行中 TUI 的資料轉成群組：cwd 每個 TUI 目錄一組；
 // global 只有一個 GLOBAL 群組（有 TUI 才納入），兩種來源從不合併。
-func (d *Daemon) groupsFor(mode contract.Mode, tuiDirs []string) []tabGroup {
+func (d *Daemon) groupsFor(mode contract.Mode, tuiDirs []string, jumps jumpTargets) []tabGroup {
 	if len(tuiDirs) == 0 {
 		return nil
 	}
 	if mode == contract.ModeGlobal {
-		return []tabGroup{{name: "GLOBAL", tabs: d.tabs.Select(contract.ModeGlobal, "")}}
+		return []tabGroup{{name: "GLOBAL", jump: jumps.global(), tabs: d.tabs.Select(contract.ModeGlobal, "")}}
 	}
 	names := displayNames(tuiDirs)
 	groups := make([]tabGroup, 0, len(tuiDirs))
 	for i, dir := range tuiDirs {
-		groups = append(groups, tabGroup{name: names[i], dir: dir, tabs: d.tabs.Select(contract.ModeCwd, dir)})
+		groups = append(groups, tabGroup{name: names[i], jump: jumps.forDir(dir), tabs: d.tabs.Select(contract.ModeCwd, dir)})
 	}
 	return groups
 }
@@ -118,25 +118,56 @@ func displayNames(dirs []string) []string {
 	return out
 }
 
-// jumpTarget 是群組的跳轉目標：cwd 群組取該目錄 TUI 中 pane 編號最小者，global 群組（dir 為空）取全部 TUI 中最小者。
-// 編號以數字比較（%3 先於 %13）；無法解析成編號的 pane id 不參與，全部無法解析時回傳空字串（不加 range）。
-func jumpTarget(dir string, byDir map[string][]string, all []string) string {
-	ids := all
-	if dir != "" {
-		ids = byDir[dir]
+// jumpTargets 收集 TUI 所在的 pane 編號，算出各群組的跳轉目標：cwd 群組取該目錄 TUI 中編號最小者，
+// global 群組取全部 TUI 中最小者。編號以數字比較（%3 先於 %13）；無法解析成編號的 pane id 不參與。
+type jumpTargets struct {
+	byDir map[string]uint64
+	all   uint64
+	any   bool
+}
+
+func (j *jumpTargets) add(dir, paneID string) {
+	n, ok := paneNumber(paneID)
+	if !ok {
+		return
 	}
-	best := -1
-	for _, id := range ids {
-		n, err := strconv.Atoi(strings.TrimPrefix(id, "%"))
-		if err != nil || n < 0 || !strings.HasPrefix(id, "%") {
-			continue
+	if j.byDir == nil {
+		j.byDir = map[string]uint64{}
+	}
+	if cur, seen := j.byDir[dir]; !seen || n < cur {
+		j.byDir[dir] = n
+	}
+	if !j.any || n < j.all {
+		j.all, j.any = n, true
+	}
+}
+
+// forDir 是該目錄群組的跳轉目標；沒有可解析的 pane 編號時回傳空字串（不加 range）。
+func (j jumpTargets) forDir(dir string) string {
+	if n, ok := j.byDir[dir]; ok {
+		return strconv.FormatUint(n, 10)
+	}
+	return ""
+}
+
+func (j jumpTargets) global() string {
+	if j.any {
+		return strconv.FormatUint(j.all, 10)
+	}
+	return ""
+}
+
+// paneNumber 解析 tmux pane id（%N）：必須是 % 加純十進位數字，不接受正負號、空白或其他字元。
+func paneNumber(id string) (uint64, bool) {
+	digits, ok := strings.CutPrefix(id, "%")
+	if !ok || digits == "" {
+		return 0, false
+	}
+	for _, r := range digits {
+		if r < '0' || r > '9' {
+			return 0, false
 		}
-		if best < 0 || n < best {
-			best = n
-		}
 	}
-	if best < 0 {
-		return ""
-	}
-	return strconv.Itoa(best)
+	n, err := strconv.ParseUint(digits, 10, 64)
+	return n, err == nil
 }

@@ -1,4 +1,4 @@
-# 點擊側欄群組跳到 TUI pane：固定開啟、接管 `MouseDown1SideStatus`
+# 點擊側欄群組跳到跳轉目標：固定開啟、接管 `MouseDown1SideStatus`
 
 點擊狀態側欄中某個目錄群組的任一列，client 切換到該群組的**跳轉目標**（TUI client 所在的 tmux pane，可跨 session）。功能固定開啟，不提供開關。
 

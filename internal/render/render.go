@@ -24,10 +24,14 @@ const (
 func Render(rows []Row, width int, th Theme) []string {
 	out := make([]string, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, jumpRange(r.Jump, renderRow(r, max(width-margin, 1), th)))
+		out = append(out, jumpRange(r.JumpTarget, renderRow(r, max(width-margin, 1), th)))
 	}
 	return out
 }
+
+// JumpRangePrefix 是點擊範圍字串中 pane 編號之前的固定前綴（range 字串為 oc<N>）。
+// 寫入端（jumpRange）與 tmux 的 MouseDown1SideStatus 綁定共用這個常數。
+const JumpRangePrefix = "oc"
 
 // jumpRange 把整行包成點擊範圍：tmux 的 MouseDown1SideStatus 綁定從 range 字串 oc<N> 取出 pane 編號。
 // 每行各自開始與結束，不依賴 range 跨換行延續；標記不占格寬。參數只由固定前綴加十進位數字組成，
@@ -36,7 +40,7 @@ func jumpRange(target, line string) string {
 	if target == "" {
 		return line
 	}
-	return "#[range=user|oc" + target + "]" + line + "#[norange]"
+	return "#[range=user|" + JumpRangePrefix + target + "]" + line + "#[norange]"
 }
 
 func renderRow(r Row, usable int, th Theme) string {

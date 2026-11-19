@@ -55,8 +55,8 @@ type Row struct {
 	State   State
 	Hidden  int
 	Indent  int // RowNote 額外縮排格數；RowNotice 為折行續行的縮排
-	// Jump 是所屬群組的跳轉目標（群組列、tab 列與群組內的「無 tab」列才會有）；空字串表示不加 range。
-	Jump string
+	// JumpTarget 是所屬群組的跳轉目標（群組列、tab 列與群組內的「無 tab」列才會有）；空字串表示不加 range。
+	JumpTarget string
 }
 
 // View is everything the sidebar can show: the logical list plus the two
@@ -159,9 +159,9 @@ func layout(groups []Group, n int) []Row {
 		if len(rows) > 0 {
 			rows = append(rows, Row{Kind: RowBlank})
 		}
-		rows = append(rows, Row{Kind: RowGroup, Text: g.Name, Summary: groupSummary(g), Jump: g.JumpTarget})
+		rows = append(rows, Row{Kind: RowGroup, Text: g.Name, Summary: groupSummary(g), JumpTarget: g.JumpTarget})
 		if len(g.Tabs) == 0 {
-			rows = append(rows, Row{Kind: RowNote, Text: "無 tab", Indent: tabIndent - margin, Jump: g.JumpTarget})
+			rows = append(rows, Row{Kind: RowNote, Text: "無 tab", Indent: tabIndent - margin, JumpTarget: g.JumpTarget})
 			n--
 			continue
 		}
@@ -169,7 +169,7 @@ func layout(groups []Group, n int) []Row {
 			if n == 0 {
 				break
 			}
-			rows = append(rows, Row{Kind: RowTab, Text: t.Title, State: t.State, Jump: g.JumpTarget})
+			rows = append(rows, Row{Kind: RowTab, Text: t.Title, State: t.State, JumpTarget: g.JumpTarget})
 			n--
 		}
 	}
