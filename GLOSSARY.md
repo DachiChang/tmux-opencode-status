@@ -24,6 +24,9 @@ OpenCode 的一份對話與執行紀錄，可以是 tab 對應的 session，也�
 **目錄身分**:
 OpenCode 保存 tab 清單時使用的目錄識別；不因 symlink 指向相同位置或屬於同一 Git repository 而自行合併，不同 worktree 也保持獨立。
 
+**跳轉目標**:
+點擊目錄群組時切換到的 TUI client 所在 tmux pane；同一目錄群組有多個 TUI client 時取 pane 編號（`%N` 的 N）最小者，以數字比較；global 模式取全部 TUI client 中最小者。跳轉單位是 pane，不涉及 TUI 內的 tab。
+
 **狀態側欄**:
 同一 tmux server 內跨 tmux session 共用的 OpenCode 工作狀態總覽；不同 tmux server 的總覽互相獨立。
 

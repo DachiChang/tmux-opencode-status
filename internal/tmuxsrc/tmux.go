@@ -252,6 +252,35 @@ func (c *Client) ClearDisplay() {
 	_, _ = c.tmux(b.String(), "source-file", "-")
 }
 
+// JumpKey 是側欄點擊跳轉接管的 root 鍵表按鍵（tmux 對 side-status 的滑鼠左鍵按下事件）。
+const JumpKey = "MouseDown1SideStatus"
+
+// jumpBinding 只在 tmux 內執行（不開 shell、不呼叫插件執行檔）：range 字串符合 oc<N> 時切到 pane %N
+// （session、window、pane 一次到位，可跨 session），否則維持 tmux 預設的 switch-client -t =。
+// 不用 range=pane：見 ADR-0002。
+const jumpBinding = `bind -T root ` + JumpKey + ` {
+  if -F "#{m/r:^oc[0-9]+$,#{mouse_status_range}}" {
+    run-shell -C "switch-client -t '%#{s/^oc//:mouse_status_range}'"
+  } {
+    switch-client -t =
+  }
+}
+`
+
+// BindJump 接管 MouseDown1SideStatus。與 Publish 相同以 source-file 寫入，避免引號跳脫問題；
+// 重複寫入同一內容是冪等的（交接時由新實例再寫一次）。
+func (c *Client) BindJump() error {
+	_, err := c.tmux(jumpBinding, "source-file", "-")
+	return err
+}
+
+// ResetJump 在明確停止時把 MouseDown1SideStatus 寫回 tmux 預設。不 unbind：停止後
+// side-status-format 回到 tmux 預設，預設格式的 session／window 點擊切換依賴這條預設綁定。
+// 不保存或還原使用者原有的自訂綁定。
+func (c *Client) ResetJump() {
+	_, _ = c.tmux("", "bind-key", "-T", "root", JumpKey, "switch-client", "-t", "=")
+}
+
 // quote 轉成 tmux 設定檔的雙引號字串。
 func quote(v string) string {
 	return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`, "$", `\$`, "\n", `\n`).Replace(v) + `"`

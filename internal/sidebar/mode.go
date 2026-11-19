@@ -2,6 +2,7 @@ package sidebar
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/DachiChang/tmux-opencode-status/internal/contract"
@@ -54,6 +55,7 @@ func (d *Daemon) resolveMode() (mode contract.Mode, ok bool, notice string, err 
 
 type tabGroup struct {
 	name string
+	dir  string // cwd 群組的目錄；global 群組為空（跳轉目標取全部 TUI）
 	tabs []contract.Tab
 }
 
@@ -69,7 +71,7 @@ func (d *Daemon) groupsFor(mode contract.Mode, tuiDirs []string) []tabGroup {
 	names := displayNames(tuiDirs)
 	groups := make([]tabGroup, 0, len(tuiDirs))
 	for i, dir := range tuiDirs {
-		groups = append(groups, tabGroup{name: names[i], tabs: d.tabs.Select(contract.ModeCwd, dir)})
+		groups = append(groups, tabGroup{name: names[i], dir: dir, tabs: d.tabs.Select(contract.ModeCwd, dir)})
 	}
 	return groups
 }
@@ -114,4 +116,27 @@ func displayNames(dirs []string) []string {
 		out[i] = name(i)
 	}
 	return out
+}
+
+// jumpTarget 是群組的跳轉目標：cwd 群組取該目錄 TUI 中 pane 編號最小者，global 群組（dir 為空）取全部 TUI 中最小者。
+// 編號以數字比較（%3 先於 %13）；無法解析成編號的 pane id 不參與，全部無法解析時回傳空字串（不加 range）。
+func jumpTarget(dir string, byDir map[string][]string, all []string) string {
+	ids := all
+	if dir != "" {
+		ids = byDir[dir]
+	}
+	best := -1
+	for _, id := range ids {
+		n, err := strconv.Atoi(strings.TrimPrefix(id, "%"))
+		if err != nil || n < 0 || !strings.HasPrefix(id, "%") {
+			continue
+		}
+		if best < 0 || n < best {
+			best = n
+		}
+	}
+	if best < 0 {
+		return ""
+	}
+	return strconv.Itoa(best)
 }

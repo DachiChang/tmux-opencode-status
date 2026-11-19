@@ -23,8 +23,8 @@ const defaultServerCheck = 2 * time.Second
 type exitKind int
 
 const (
-	exitStop       exitKind = iota // 明確停止：清掉 hook、版面選項、side-status-format
-	exitHandoff                    // 交接給新實例：只移除 hook，畫面保持不動等新實例接手
+	exitStop       exitKind = iota // 明確停止：清掉 hook、版面選項、side-status-format，點擊跳轉綁定寫回 tmux 預設
+	exitHandoff                    // 交接給新實例：只移除 hook，畫面與跳轉綁定保持不動等新實例接手
 	exitServerGone                 // server 已結束：tmux 內的資源已隨 server 消失，只清本機檔案
 )
 
@@ -129,6 +129,9 @@ func runDaemon(o *options) int {
 			fmt.Fprintln(os.Stderr, "tmux 事件通知：", err)
 		}
 	}()
+	if err := tm.BindJump(); err != nil {
+		fmt.Fprintln(os.Stderr, "點擊跳轉綁定：", err)
+	}
 	if o.show {
 		if err := tm.Show(); err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -148,6 +151,7 @@ func runDaemon(o *options) int {
 	case exitStop:
 		tm.ClearDisplay()
 		tm.ClearShownMarker()
+		tm.ResetJump()
 	case exitHandoff:
 		// 畫面維持原樣，由新實例第一次同步接手；hook 已由 WatchEvents 移除。
 	case exitServerGone:

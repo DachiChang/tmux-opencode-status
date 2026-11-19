@@ -335,7 +335,7 @@ func TestUserTmuxOptionsAndBindingsAreUntouched(t *testing.T) {
 	e := newEnv(t)
 	e.inTmux("set", "-g", "@oc_side", "user-value")
 	e.inTmux("set", "-g", "@oc_side_bak", "user-bak")
-	before := e.inTmux("list-keys")
+	before := keysWithoutJump(e.inTmux("list-keys"))
 	dir := filepath.Join(e.dir, "work", "api")
 	e.tui(dir)
 	e.writeTabs(e.tabsJSON(map[string][]string{dir: {"a"}}))
@@ -346,8 +346,8 @@ func TestUserTmuxOptionsAndBindingsAreUntouched(t *testing.T) {
 	if got := strings.TrimSpace(e.inTmux("show", "-gv", "@oc_side_bak")); got != "user-bak" {
 		t.Fatalf("@oc_side_bak 被改：%q", got)
 	}
-	if after := e.inTmux("list-keys"); after != before {
-		t.Fatal("鍵盤綁定被改變")
+	if after := keysWithoutJump(e.inTmux("list-keys")); after != before {
+		t.Fatal("除了 MouseDown1SideStatus 外，鍵盤綁定被改變")
 	}
 	if strings.Contains(e.inTmux("show-options", "-g"), "@sb_") {
 		t.Fatal("不應使用舊 POC 前綴 @sb_")

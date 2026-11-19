@@ -1,7 +1,7 @@
 # tmux-opencode-status
 
 在 tmux 3.9 的原生 **side-status** 顯示同一 tmux server 中所有 OpenCode TUI 的 tab 狀態（等你核准／回答、執行中、失敗未讀、結束未讀、閒置、資料異常）。
-唯讀資訊總覽：不安裝 OpenCode plugin、不修改 OpenCode 設定、不啟動或重啟服務、不新增任何鍵盤或滑鼠綁定。
+唯讀資訊總覽：不安裝 OpenCode plugin、不修改 OpenCode 設定、不啟動或重啟服務。唯一的 tmux 綁定是接管 `MouseDown1SideStatus`（見「點擊跳轉」），不新增任何鍵盤綁定。
 
 ## 需求
 
@@ -41,6 +41,22 @@ set -g @plugin 'DachiChang/tmux-opencode-status'
   不要使用 `-show`（例如在 TPM 以外自行呼叫 `start`，不帶 `-show`），再用 `tmux set -g side-status left` 自行顯示。
 - 重複載入（`tmux source-file`、TPM 更新）是冪等的：每個 tmux socket 只有一個常駐實例；設定或執行檔不同時安全交接。
 - tmux server 結束時常駐程式自動退出並清理本插件資源。
+
+### 點擊跳轉
+
+點擊側欄中某個**目錄群組**的任一列（目錄列、其下的 tab 列、「無 tab」列），client 立即切到該群組 **TUI client 所在的 pane**：
+session、window、pane 一次到位，可跨 tmux session，目標 pane 不是該 window 的 active pane 時也一樣。功能固定開啟，不需設定。
+
+- **多個 TUI client**：同一目錄有多個 TUI 時，跳到 pane 編號（`%N` 的 N，以數字比較，`%3` 先於 `%13`）最小者；global 模式的 GLOBAL 群組取全部 TUI 中最小者。
+  編號最小代表 pane 最早建立，不代表 OpenCode 最早啟動。
+- **只到 pane**：插件唯讀，無法切換到 TUI 內的特定 tab。
+- **其他位置**：點標題、分隔線、讀取錯誤提示、「… 還有 N 個 tab」、「沒有 OpenCode TUI」或空白處，以及其他非插件的 range，行為與 tmux 預設（`switch-client -t =`）相同。
+- **跳轉目標會隨側欄更新**：TUI 開啟、關閉或移動 pane 後，下一次側欄更新就指向新的 pane。
+
+**這會覆寫你的 `MouseDown1SideStatus` 綁定。** 常駐程式啟動時（含交接給新實例）把 root 鍵表的 `MouseDown1SideStatus` 設成插件的綁定；
+明確停止（`stop`）時**只會寫回 tmux 預設** `switch-client -t =`，不保存、不還原你原本自訂的綁定。
+tmux server 結束時綁定隨之消失；常駐程式被強制終止（`kill -9`）時綁定會殘留，但非插件的 range 仍走 `switch-client -t =`，下次啟動會重寫。
+綁定完全在 tmux 內執行，不開 shell、不呼叫插件執行檔。設計理由見 `docs/adr/0002-click-to-jump.md`。
 
 ### cwd／global 模式（請與 OpenCode 的 scope 一致）
 
@@ -137,6 +153,7 @@ scripts/build-release.sh [版本]   # 預設讀 VERSION；輸出 dist/*.tar.gz �
 | 一直是灰色 `!` | 資料異常（服務不可連線／清單不可讀等）；`diagnose` 的「最近錯誤」有固定原因。插件不會啟動 OpenCode 服務 |
 | 配色沒生效 | 跑 `diagnose`：無效的色票值會列出並退回預設（側欄不顯示錯誤）；合法格式見「配色」 |
 | 模式不對／清單是空的 | 確認 `@opencode-status-mode` 與 OpenCode 的 scope 一致 |
+| 點側欄沒有跳轉 | 只有目錄群組的列可點；用 `tmux list-keys -T root \| grep MouseDown1SideStatus` 確認綁定是插件的（內容含 `mouse_status_range`），並確認 `mouse` 選項為 `on` |
 | 想完全移除 | `tmux-opencode-status stop`（清理本插件資源），再從 `tmux.conf` 移除 `@plugin` 並 `prefix + alt + u` |
 
 常駐程式的錯誤記錄在 `$XDG_RUNTIME_DIR/tmux-opencode-status/`（沒有則 `$TMPDIR/tmux-opencode-status-<uid>/`）下的 `<id>.log`。

@@ -200,7 +200,7 @@ func TestReloadWithChangedSettingsHandsOffToExactlyOneNewInstance(t *testing.T) 
 	e.inTmux("new-session", "-d", "-s", "other")
 	e.inTmux("set-option", "-t", "other", "side-status-width", "20")
 	e.inTmux("set-option", "-g", "side-status", "off")
-	keys := e.inTmux("list-keys")
+	keys := keysWithoutJump(e.inTmux("list-keys"))
 
 	// 設定改變（-resync）：交接
 	var peak int
@@ -246,7 +246,7 @@ func TestReloadWithChangedSettingsHandsOffToExactlyOneNewInstance(t *testing.T) 
 	if got := strings.TrimSpace(e.inTmux("show", "-t", "other", "-v", "side-status-width")); got != "20" {
 		t.Fatalf("session 層級 override 被清除：%q", got)
 	}
-	if after := e.inTmux("list-keys"); after != keys {
+	if after := keysWithoutJump(e.inTmux("list-keys")); after != keys {
 		t.Fatal("新增或改變了鍵盤綁定")
 	}
 	e.inTmux("set-option", "-g", "side-status", "left")
@@ -488,7 +488,7 @@ func TestStopCleansOnlyThePluginsOwnResources(t *testing.T) {
 	e.inTmux("set-hook", "-g", "pane-exited[3]", "display-message user-hook")
 	e.inTmux("new-session", "-d", "-s", "other")
 	e.inTmux("set-option", "-t", "other", "side-status-width", "20")
-	keys := e.inTmux("list-keys")
+	keys := keysWithoutJump(e.inTmux("list-keys"))
 	if out, err := e.start(e.in, "-show"); err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
@@ -515,7 +515,7 @@ func TestStopCleansOnlyThePluginsOwnResources(t *testing.T) {
 	if got := strings.TrimSpace(e.inTmux("show", "-t", "other", "-v", "side-status-width")); got != "20" {
 		t.Fatalf("session override 被清除：%q", got)
 	}
-	if e.inTmux("list-keys") != keys {
+	if keysWithoutJump(e.inTmux("list-keys")) != keys {
 		t.Fatal("綁定被改變")
 	}
 	if files := e.runtimeFiles(); len(files) != 0 {

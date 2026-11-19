@@ -326,9 +326,13 @@ func (d *Daemon) view(mode contract.Mode) render.View {
 		return render.View{}
 	}
 	dirs := map[string]bool{}
+	panes := map[string][]string{} // 目錄 → 該目錄 TUI 的 pane id
+	var all []string
 	for _, p := range d.panes {
 		if contract.IsTUICandidate(p.Pane) {
 			dirs[p.ForegroundCwd] = true
+			panes[p.ForegroundCwd] = append(panes[p.ForegroundCwd], p.PaneID)
+			all = append(all, p.PaneID)
 		}
 	}
 	var names []string
@@ -338,7 +342,7 @@ func (d *Daemon) view(mode contract.Mode) render.View {
 	sort.Strings(names)
 	view := render.View{Empty: "沒有 OpenCode TUI"}
 	for _, tg := range d.groupsFor(mode, names) {
-		g := render.Group{Name: tg.name}
+		g := render.Group{Name: tg.name, JumpTarget: jumpTarget(tg.dir, panes, all)}
 		for _, t := range tg.tabs {
 			g.Tabs = append(g.Tabs, render.Tab{Title: d.titleOf(t), SessionID: t.SessionID, State: d.stateOf(t.SessionID)})
 		}

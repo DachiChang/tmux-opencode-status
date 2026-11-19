@@ -290,7 +290,17 @@ func (e *env) sideStatus() string {
 	return strings.TrimSpace(e.rawTmux("show-options", "-gv", "side-status"))
 }
 
-func (e *env) keys() string { return e.rawTmux("list-keys") }
+// keys 是 list-keys 去掉 MouseDown1SideStatus：那是插件唯一接管的綁定（見 ADR-0002）。
+func (e *env) keys() string {
+	var out []string
+	for _, l := range strings.Split(e.rawTmux("list-keys"), "\n") {
+		if f := strings.Fields(l); len(f) >= 4 && f[3] == "MouseDown1SideStatus" {
+			continue
+		}
+		out = append(out, l)
+	}
+	return strings.Join(out, "\n")
+}
 
 // --- 發布封裝 ---
 
@@ -377,7 +387,7 @@ func TestInstallsTheHostArchitectureVerifiesItAndStartsTheSidebarWithoutGo(t *te
 		t.Fatalf("預設寬度應為 36 格，實際 %q", w)
 	}
 	if e.keys() != keysBefore {
-		t.Fatal("載入不得新增或改動任何按鍵綁定")
+		t.Fatal("載入除了 MouseDown1SideStatus 外不得新增或改動任何按鍵綁定")
 	}
 	e.assertGoNeverCalled()
 }
