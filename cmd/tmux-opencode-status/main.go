@@ -1,5 +1,5 @@
 // tmux-opencode-status 是常駐程式：把同一 tmux server 中執行中 OpenCode TUI 的 tab 清單
-// 寫進原生 side-status。嚴格唯讀：不呼叫 OpenCode 寫入 API、不啟動服務、不新增任何按鍵綁定。
+// 寫進原生 side-status。嚴格唯讀：不呼叫 OpenCode 寫入 API、不啟動服務；tmux 綁定只有點擊跳轉、prefix 觸發鍵與 opencode-status-jump 按鍵表。
 //
 // 子指令（省略時等同 run，維持既有旗標用法）：
 //

@@ -391,17 +391,25 @@ func manyGroups(n int) []render.Group {
 	return groups
 }
 
-func TestPublishWritesOneLayoutOptionAndAFixedFormat(t *testing.T) {
+func TestPublishWritesTheTwoLayoutsAndOneKeyPerLetteredGroupWithAFixedFormat(t *testing.T) {
 	for _, n := range []int{0, 1, 30} {
-		p := render.Publish(manyGroups(n), contentWidth)
-		if len(p.Options) != 1 {
-			t.Fatalf("%d 個群組：應只有一個版面選項，實際 %d 個", n, len(p.Options))
+		groups := manyGroups(n)
+		for i := range groups {
+			groups[i].JumpTarget = fmt.Sprint(i + 1)
 		}
-		if _, ok := p.Options["@tos_layout_main"]; !ok {
-			t.Fatalf("%d 個群組：選項應為 @tos_layout_main：%v", n, p.Options)
+		p := render.Publish(groups, contentWidth)
+		letters := min(n, 26)
+		if len(p.Options) != 2+letters {
+			t.Fatalf("%d 個群組：應有兩份版面加 %d 個字母，實際 %d 個選項", n, letters, len(p.Options))
 		}
-		if got := p.Format(); got != "#{@tos_layout_main}" {
-			t.Fatalf("%d 個群組：format = %q，要固定為 #{@tos_layout_main}", n, got)
+		for _, name := range []string{"@tos_layout_main", "@tos_layout_jump"} {
+			if _, ok := p.Options[name]; !ok {
+				t.Fatalf("%d 個群組：缺少 %s：%v", n, name, p.Options)
+			}
+		}
+		const want = "#{?#{==:#{client_key_table},opencode-status-jump},#{@tos_layout_jump},#{@tos_layout_main}}"
+		if got := p.Format(); got != want {
+			t.Fatalf("%d 個群組：format = %q，要固定為 %q", n, got, want)
 		}
 	}
 }

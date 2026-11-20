@@ -30,6 +30,8 @@ type Client struct {
 	// lastFormat 是本實例最後寫入的 side-status-format；停止時只有內容仍相同才移除，
 	// 不覆蓋使用者之後自己設定的值。
 	lastFormat string
+	// jumpTrigger 是本實例實際綁定成功的觸發鍵；空字串表示沒有綁（無效或失敗）。每次發布一起寫入 @tos_jump_trigger。
+	jumpTrigger string
 	// proc 是讀取前景行程事實的來源；nil 使用本機實作（測試以受控實作替換）。
 	proc procReader
 }
@@ -194,8 +196,16 @@ func foregroundProcs() (map[string]int, error) {
 func (c *Client) Publish(p render.Published) error {
 	var s strings.Builder
 	s.WriteString("set-option -g side-status-width " + strconv.Itoa(c.Width) + "\n")
-	names := make([]string, 0, len(p.Options))
-	for n := range p.Options {
+	opts := make(map[string]string, len(p.Options)+1)
+	for n, v := range p.Options {
+		opts[n] = v
+	}
+	if c.jumpTrigger != "" {
+		// 實際綁定的觸發鍵與版面一起寫入：交接的新實例與 stop 都從這裡知道要 unbind 哪個鍵。
+		opts[render.JumpTriggerOption] = c.jumpTrigger
+	}
+	names := make([]string, 0, len(opts))
+	for n := range opts {
 		names = append(names, n)
 	}
 	sort.Strings(names)
@@ -206,7 +216,7 @@ func (c *Client) Publish(p render.Published) error {
 	next := map[string]bool{}
 	for _, n := range names {
 		next[n] = true
-		s.WriteString("set-option -g " + n + " " + quote(p.Options[n]) + "\n")
+		s.WriteString("set-option -g " + n + " " + quote(opts[n]) + "\n")
 	}
 	s.WriteString("set-option -g side-status-format " + quote(p.Format()) + "\n")
 	for old := range c.published {
@@ -279,6 +289,145 @@ func (c *Client) BindJump() error {
 // 不保存或還原使用者原有的自訂綁定。
 func (c *Client) ResetJump() {
 	_, _ = c.tmux("", "bind-key", "-T", "root", JumpKey, "switch-client", "-t", "=")
+}
+
+// JumpTriggerOption 是使用者設定觸發鍵的選項（插件只讀）；值只寫鍵名，一律綁在 prefix 表。
+// DefaultJumpTrigger 是選項未設定時的觸發鍵。
+const (
+	JumpTriggerOption  = "@opencode-status-jump-trigger"
+	DefaultJumpTrigger = "A"
+)
+
+// JumpTrigger 是使用者對觸發鍵的設定。選項不存在（Set=false）與存在但值為空字串是兩種狀態：
+// 前者用預設鍵，後者是無效設定。
+type JumpTrigger struct {
+	Value string
+	Set   bool
+}
+
+// Key 是生效的觸發鍵名：未設定為預設 A；空字串（無效）回傳空字串。
+func (t JumpTrigger) Key() string {
+	if !t.Set {
+		return DefaultJumpTrigger
+	}
+	return t.Value
+}
+
+// String 是設定的穩定文字（含未設定與空字串的區別），供 start 的指紋使用。
+func (t JumpTrigger) String() string {
+	if !t.Set {
+		return "unset"
+	}
+	return "set:" + t.Value
+}
+
+// JumpTriggerSetting 唯讀取得觸發鍵設定。以輸出長度區分未設定（空輸出）與空字串（單一換行）。
+func (c *Client) JumpTriggerSetting() (JumpTrigger, error) {
+	out, err := c.tmux("", "show-options", "-gqv", JumpTriggerOption)
+	if err != nil {
+		return JumpTrigger{}, err
+	}
+	if len(out) == 0 {
+		return JumpTrigger{}, nil
+	}
+	return JumpTrigger{Value: strings.TrimSuffix(string(out), "\n"), Set: true}, nil
+}
+
+// ActualJumpTrigger 讀取實際綁定的觸發鍵（@tos_jump_trigger）；沒有為空字串。
+func (c *Client) ActualJumpTrigger() string {
+	v, _ := c.GlobalValue(render.JumpTriggerOption)
+	return v
+}
+
+// 綁定跳轉模式失敗的固定描述（寫進最近錯誤；不含原始錯誤或鍵名）。
+const (
+	JumpTriggerInvalidMessage = "觸發鍵設定無效，未綁定任何觸發鍵"
+	JumpTriggerFailedMessage  = "觸發鍵綁定失敗，未綁定任何觸發鍵"
+)
+
+// jumpTableBinding 是跳轉按鍵表 a–z 的綁定：只在 tmux 內執行（不開 shell、不呼叫插件執行檔），
+// 讀取 @tos_jump_key_<字母>（%N）切到該 pane；選項為空時不動作。
+func jumpTableBinding() string {
+	var b strings.Builder
+	for l := byte('a'); l <= 'z'; l++ {
+		opt := render.JumpKeyOption(l)
+		b.WriteString("bind-key -T " + render.JumpTable + " " + string(l) + " if-shell -F \"#{" + opt + "}\" { run-shell -C \"switch-client -t '#{" + opt + "}'\" }\n")
+	}
+	return b.String()
+}
+
+// keyQuote 把鍵名轉成設定檔的雙引號字串：除了 quote 的跳脫，開頭的 ~ 會被 tmux 展開成家目錄，要跳脫。
+func keyQuote(k string) string {
+	return strings.Replace(quote(k), `"~`, `"\~`, 1)
+}
+
+// keyArg 是以 exec 引數傳給 tmux 指令的鍵名：結尾的 ; 會被當成指令分隔符，要跳脫。
+func keyArg(k string) string {
+	if strings.HasSuffix(k, ";") && !strings.HasSuffix(k, `\;`) {
+		return strings.TrimSuffix(k, ";") + `\;`
+	}
+	return k
+}
+
+// JumpKeyInvalid 回報 tmux 是否認為這個鍵名無效（唯讀：查一個不存在的按鍵表）。
+func (c *Client) JumpKeyInvalid(key string) bool {
+	if key == "" {
+		return true
+	}
+	_, err := c.tmux("", "list-keys", "-T", "tos-probe-none", "--", keyArg(key))
+	return err != nil && strings.Contains(err.Error(), "invalid key")
+}
+
+// BindJumpMode 在第一次發布前建立鍵盤跳轉的綁定，回傳要記入最近錯誤的固定描述（成功為空）：
+//  1. 依設定（由呼叫端讀取；未設定 → A；空字串或 tmux 不接受的鍵名無效）。
+//  2. 上一實例留下的 @tos_jump_trigger 與新鍵不同（或新鍵無效）時先 unbind 舊鍵。
+//  3. 新鍵有效時綁定 prefix <鍵> → switch-client -T opencode-status-jump，成功才記為實際綁定的鍵；
+//     無效或失敗時不綁、不退回預設。
+//  4. 跳轉按鍵表 a–z 一律綁定（使用者的 root 別名可能用得到）。
+func (c *Client) BindJumpMode(set JumpTrigger, readErr error) string {
+	c.jumpTrigger = ""
+	var problem string
+	err := readErr
+	key := set.Key()
+	if err != nil {
+		key, problem = "", JumpTriggerFailedMessage
+	} else if key == "" || c.JumpKeyInvalid(key) {
+		key, problem = "", JumpTriggerInvalidMessage
+	}
+	if old := c.ActualJumpTrigger(); old != "" && old != key {
+		c.unbindPrefix(old)
+	}
+	if key != "" {
+		cmd := "bind-key -T prefix -- " + keyQuote(key) + " switch-client -T " + render.JumpTable + "\n"
+		if _, err := c.tmux(cmd, "source-file", "-"); err != nil {
+			problem = JumpTriggerFailedMessage
+		} else {
+			c.jumpTrigger = key
+		}
+	}
+	if _, err := c.tmux(jumpTableBinding(), "source-file", "-"); err != nil && problem == "" {
+		problem = JumpTriggerFailedMessage
+	}
+	return problem
+}
+
+func (c *Client) unbindPrefix(key string) {
+	_, _ = c.tmux("unbind-key -T prefix -- "+keyQuote(key)+"\n", "source-file", "-")
+}
+
+// ClearJumpMode 在明確停止時移除觸發鍵綁定並清空跳轉按鍵表；不寫回、不還原任何綁定。
+// 必須先於 ClearDisplay：後者會清掉 @tos_jump_trigger，之後就不知道要 unbind 哪個鍵。
+func (c *Client) ClearJumpMode() {
+	if key := c.ActualJumpTrigger(); key != "" {
+		c.unbindPrefix(key)
+	}
+	_, _ = c.tmux("", "unbind-key", "-a", "-T", render.JumpTable) // 表不存在時 tmux 回錯，忽略
+}
+
+// PrefixBindingIsJump 回報 prefix 表的 key 是否仍是切到跳轉按鍵表的綁定（唯讀）。
+func (c *Client) PrefixBindingIsJump(key string) bool {
+	out, err := c.tmux("", "list-keys", "-F", "#{key_command}", "-T", "prefix", "--", keyArg(key))
+	return err == nil && strings.TrimSpace(string(out)) == "switch-client -T "+render.JumpTable
 }
 
 // quote 轉成 tmux 設定檔的雙引號字串。

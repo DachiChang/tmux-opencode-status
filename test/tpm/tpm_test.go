@@ -290,14 +290,18 @@ func (e *env) sideStatus() string {
 	return strings.TrimSpace(e.rawTmux("show-options", "-gv", "side-status"))
 }
 
-// keys 是 list-keys 去掉 MouseDown1SideStatus：那是插件唯一接管的綁定（見 ADR-0002）。
+// keys 是 list-keys 去掉插件接管的綁定：MouseDown1SideStatus（ADR-0002）、鍵盤跳轉的觸發鍵與
+// opencode-status-jump 按鍵表（ADR-0005）。
 func (e *env) keys() string {
 	var out []string
 	for _, l := range strings.Split(e.rawTmux("list-keys"), "\n") {
 		if f := strings.Fields(l); len(f) >= 4 && f[3] == "MouseDown1SideStatus" {
 			continue
 		}
-		out = append(out, l)
+		if strings.Contains(l, "-T opencode-status-jump ") || strings.HasSuffix(strings.TrimSpace(l), "switch-client -T opencode-status-jump") {
+			continue
+		}
+		out = append(out, strings.Join(strings.Fields(l), " ")) // 欄寬會依最長表名重排
 	}
 	return strings.Join(out, "\n")
 }

@@ -71,7 +71,8 @@ func startInstance(o *options) int {
 		fmt.Fprintln(os.Stderr, "tmux 未回報 socket 路徑")
 		return 1
 	}
-	want := o.fingerprint(info.PID)
+	trigger, triggerErr := tm.JumpTriggerSetting()
+	want := o.fingerprint(info.PID, triggerFingerprint(trigger, triggerErr))
 
 	if pid, held := instance.Holder(paths.Lock); held {
 		got := waitContent(paths.Lock)

@@ -36,9 +36,9 @@ tmux-opencode-status run -L <name> | -S <path> …                           # �
 | --- | --- |
 | 沒有實例 | 啟動新實例，等它持有鎖且寫好指紋才返回 |
 | 有實例、指紋相同 | 什麼都不做（冪等） |
-| 有實例、指紋不同（旗標、執行檔，或同 socket 上換了新 tmux server） | 對舊實例送 `SIGUSR1`：它只移除自己的 hook 就退出，**畫面維持原樣**；鎖釋放後才啟動新實例。5 秒內沒讓位才改送 `SIGTERM`，再 5 秒仍沒有就失敗。新舊從不同時運作 |
+| 有實例、指紋不同（旗標、執行檔、`@opencode-status-jump-trigger` 的設定值，或同 socket 上換了新 tmux server） | 對舊實例送 `SIGUSR1`：它只移除自己的 hook 就退出，**畫面維持原樣**；鎖釋放後才啟動新實例。5 秒內沒讓位才改送 `SIGTERM`，再 5 秒仍沒有就失敗。新舊從不同時運作 |
 
-- 交接不呼叫 `side-status`（不強制打開已隱藏的側欄）、不清除 session 層級 override、不新增任何綁定。
+- 交接不呼叫 `side-status`（不強制打開已隱藏的側欄）、不清除 session 層級 override；觸發鍵與跳轉按鍵表保持不動，由新實例重新綁定（舊的觸發鍵與新鍵不同時先 unbind）。
 - **`-show` 每個 tmux server 只生效一次**：第一次成功後在全域設 `@opencode-status-shown`（插件專屬；隨 server 結束消失，
   `stop` 會移除以便重新啟動後再次顯示）。之後重載、交接、崩潰後重啟，只要使用者把側欄隱藏就不會被重新打開。
 - 新實例第一次寫入時會順便清掉前一個實例（例如被 `kill -9`）留下的 `@tos_*` 孤兒選項。
@@ -48,7 +48,7 @@ tmux-opencode-status run -L <name> | -S <path> …                           # �
 
 | 結束原因 | 清理 |
 | --- | --- |
-| `stop`／SIGTERM／SIGINT | 移除自己的 hook（索引 41700）、`@tos_*`、`@opencode-status-shown`；`side-status-format` **只在仍等於本實例最後寫入的內容時**才移除（連同 `side-status-width`）；刪除鎖檔與狀態檔 |
+| `stop`／SIGTERM／SIGINT | 移除自己的 hook（索引 41700）、unbind 觸發鍵（依 `@tos_jump_trigger`）並清空 `opencode-status-jump` 表（先於清 `@tos_*`）、`@tos_*`、`@opencode-status-shown`；`side-status-format` **只在仍等於本實例最後寫入的內容時**才移除（連同 `side-status-width`）；刪除鎖檔與狀態檔 |
 | 交接（SIGUSR1） | 只移除 hook、刪除鎖檔與狀態檔；畫面選項保留給新實例接手 |
 | tmux server 結束 | 本機鎖檔與狀態檔；tmux 內的資源已隨 server 消失 |
 
@@ -60,8 +60,8 @@ tmux-opencode-status run -L <name> | -S <path> …                           # �
 
 ## 診斷（唯讀）
 
-`diagnose` 只查 tmux（`display-message`、`show-options`、`list-sessions`）與本機狀態檔，**不連 OpenCode**、不寫任何選項、不啟動／停止任何程序。
-輸出項目：tmux 版本與 pid；必要能力（`side-status`、`side-status-width`、`side-status-format` 可用）；插件模式設定與生效模式；
+`diagnose` 只查 tmux（`display-message`、`show-options`、`list-sessions`、`list-keys`）與本機狀態檔，**不連 OpenCode**、不寫任何選項、不啟動／停止任何程序。
+輸出項目：tmux 版本與 pid；必要能力（`side-status`、`side-status-width`、`side-status-format` 可用）；插件模式設定與生效模式；鍵盤跳轉（設定的觸發鍵、實際綁定的鍵與已綁定／無效設定／綁定失敗／已被覆寫，後三者計入問題數）；
 全域 side-status（隱藏時說明仍在追蹤）；常駐實例狀態；發現的 TUI 數與追蹤的 tab 數；服務連線（已連線／連線中／待命／無法連線＋固定原因）；
 目前問題與最近錯誤（最多 8 筆，邊緣觸發，只有來源與固定描述）；session 層級覆寫與影響；結論。
 

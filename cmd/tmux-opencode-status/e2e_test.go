@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"syscall"
 	"testing"
@@ -501,7 +502,9 @@ func TestPendingApprovalsAndAnswersOnARealTmuxWithFakeOpenCodeService(t *testing
 	if opts == "" {
 		t.Fatalf("找不到側欄輸出選項：\n%s", opts)
 	}
-	if strings.Contains(strings.ReplaceAll(opts, "#[bg=#A78BFA,fg=#18181B] OPENCODE ", ""), "bg=") || strings.Contains(opts, "fg=#FACC15]!") {
+	noBlocks := strings.ReplaceAll(opts, "#[bg=#A78BFA,fg=#18181B] OPENCODE ", "")
+	noBlocks = regexp.MustCompile(`#\[bg=#A78BFA,fg=#18181B\] [a-z] `).ReplaceAllString(noBlocks, "") // 跳轉標籤
+	if strings.Contains(noBlocks, "bg=") || strings.Contains(opts, "fg=#FACC15]!") {
 		t.Fatalf("待處理不得使用標題以外的背景色塊或黃色 !：\n%s", opts)
 	}
 	if !strings.Contains(opts, "#[fg=#FACC15]?#[default]") {

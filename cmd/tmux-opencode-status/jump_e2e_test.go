@@ -17,16 +17,26 @@ const (
 	jumpKey            = "MouseDown1SideStatus"
 )
 
+// isKeyJumpLine 判斷 list-keys 的一行是否屬於鍵盤跳轉：跳轉按鍵表本身，或任何切到它的綁定
+// （prefix 觸發鍵、使用者的 root 別名）。
+func isKeyJumpLine(l string) bool {
+	return strings.Contains(l, "-T opencode-status-jump ") || strings.HasSuffix(strings.TrimSpace(l), "switch-client -T opencode-status-jump")
+}
+
 // splitJumpBinding 把 list-keys 輸出拆成 MouseDown1SideStatus 的綁定內容（不含前綴；沒有則 found=false）
-// 與去掉那一行後的其餘輸出；插件只接管那一個綁定。
+// 與去掉那一行與鍵盤跳轉相關綁定後的其餘輸出；插件只接管點擊跳轉那一個綁定與自己的鍵盤跳轉綁定。
 func splitJumpBinding(keys string) (binding, others string, found bool) {
 	var rest []string
 	for _, l := range strings.Split(keys, "\n") {
+		if isKeyJumpLine(l) {
+			continue
+		}
 		if f := strings.Fields(l); len(f) >= 4 && f[3] == jumpKey {
 			binding, found = strings.TrimSpace(strings.TrimPrefix(l[strings.Index(l, jumpKey)+len(jumpKey):], " ")), true
 			continue
 		}
-		rest = append(rest, l)
+		// 新增跳轉按鍵表後 list-keys 會依最長表名重排欄寬，逐行正規化空白再比較。
+		rest = append(rest, strings.Join(strings.Fields(l), " "))
 	}
 	return binding, strings.Join(rest, "\n"), found
 }

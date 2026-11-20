@@ -23,21 +23,24 @@ const defaultServerCheck = 2 * time.Second
 type exitKind int
 
 const (
-	exitStop       exitKind = iota // 明確停止：清掉 hook、版面選項、side-status-format，點擊跳轉綁定寫回 tmux 預設
-	exitHandoff                    // 交接給新實例：只移除 hook，畫面與跳轉綁定保持不動等新實例接手
+	exitStop       exitKind = iota // 明確停止：清掉 hook、@tos_* 選項、side-status-format，unbind 觸發鍵並清空跳轉按鍵表，點擊跳轉綁定寫回 tmux 預設
+	exitHandoff                    // 交接給新實例：只移除 hook，畫面與跳轉綁定（含觸發鍵）保持不動等新實例接手
 	exitServerGone                 // server 已結束：tmux 內的資源已隨 server 消失，只清本機檔案
 )
 
 // fingerprint 描述一個實例的有效設定與執行檔；start 以它判斷「已有同設定的實例」或「需要交接」。
-func (o *options) fingerprint(serverPID int) string {
+//
+// trigger 是 @opencode-status-jump-trigger 的設定（含未設定與空字串的區別）：改了觸發鍵並重載 tmux.conf
+// 時指紋改變，start 因此交接，新實例綁新鍵、unbind 舊鍵。只改選項值而不重載不會生效。
+func (o *options) fingerprint(serverPID int, trigger string) string {
 	exe, _ := os.Executable()
 	var stamp string
 	if fi, err := os.Stat(exe); err == nil {
 		stamp = fmt.Sprintf("%d:%d", fi.Size(), fi.ModTime().UnixNano())
 	}
 	// 納入 tmux server 的 pid：同一個 socket 路徑上換了新的 server，舊實例（即使還沒偵測到 server 已結束）也必須交接。
-	return fmt.Sprintf("v1|%d|%s|%s|%s|%s|%d|%s|%s|%s|%s|%v|%s|%s", serverPID, o.socketName, o.socketPath, o.config, o.tabs+"|"+o.service,
-		o.width, o.backstop, o.idle, o.resync, o.serverCheck, o.show, exe, stamp)
+	return fmt.Sprintf("v2|%d|%s|%s|%s|%s|%d|%s|%s|%s|%s|%v|%s|%s|%q", serverPID, o.socketName, o.socketPath, o.config, o.tabs+"|"+o.service,
+		o.width, o.backstop, o.idle, o.resync, o.serverCheck, o.show, exe, stamp, trigger)
 }
 
 func runDaemon(o *options) int {
@@ -79,7 +82,8 @@ func runDaemon(o *options) int {
 		return 0
 	}
 	defer lock.Release()
-	_ = lock.SetContent(o.fingerprint(info.PID))
+	trigger, triggerErr := tm.JumpTriggerSetting()
+	_ = lock.SetContent(o.fingerprint(info.PID, triggerFingerprint(trigger, triggerErr)))
 
 	started := time.Now()
 	state := instance.State{PID: os.Getpid(), ServerPID: info.PID, Started: started, Service: sidebar.ServiceNone}
@@ -132,6 +136,11 @@ func runDaemon(o *options) int {
 	if err := tm.BindJump(); err != nil {
 		fmt.Fprintln(os.Stderr, "點擊跳轉綁定：", err)
 	}
+	var startup []sidebar.ErrorRecord
+	if msg := tm.BindJumpMode(trigger, triggerErr); msg != "" {
+		fmt.Fprintln(os.Stderr, "鍵盤跳轉綁定：", msg)
+		startup = append(startup, sidebar.ErrorRecord{At: time.Now(), Source: "jump", Message: msg})
+	}
 	if o.show {
 		if err := tm.Show(); err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -140,7 +149,7 @@ func runDaemon(o *options) int {
 	tick := time.NewTicker(o.backstop)
 	defer tick.Stop()
 	d := sidebar.New(sidebar.Config{Width: o.width, Resync: o.resync}, sidebar.Deps{Panes: tm, Tabs: tabs, Out: tm, Mode: tm, Theme: tm, Wake: wake,
-		Ticks: tick.C, Service: ocsrc.Source{Path: o.service, IdleTimeout: o.idle}, Report: report})
+		Ticks: tick.C, Service: ocsrc.Source{Path: o.service, IdleTimeout: o.idle}, Report: report, Startup: startup})
 	done := make(chan struct{})
 	go func() { defer close(done); _ = d.Run(ctx) }()
 	kind = <-exited
@@ -149,6 +158,7 @@ func runDaemon(o *options) int {
 	<-events // 等 hook 清理完成再退出
 	switch kind {
 	case exitStop:
+		tm.ClearJumpMode() // 先於 ClearDisplay：後者會清掉 @tos_jump_trigger
 		tm.ClearDisplay()
 		tm.ClearShownMarker()
 		tm.ResetJump()
@@ -157,4 +167,12 @@ func runDaemon(o *options) int {
 	case exitServerGone:
 	}
 	return 0
+}
+
+// triggerFingerprint 是觸發鍵設定在指紋中的文字；讀取失敗與任何設定值都不同。
+func triggerFingerprint(t tmuxsrc.JumpTrigger, err error) string {
+	if err != nil {
+		return "unreadable"
+	}
+	return t.String()
 }
