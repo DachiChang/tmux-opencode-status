@@ -9,7 +9,7 @@ type Theme struct {
 	Split         string // 標題下分隔線
 	Project       string // 專案名稱
 	ActiveTab     string // 有狀態（執行中／等你處理／未讀）的 tab 標題
-	InactiveTab   string // 閒置與資料異常的 tab 標題、無 tab、還有 N 個 tab、摘要的 …
+	InactiveTab   string // 閒置與資料異常的 tab 標題、無 tab、摘要的 …
 	StateRunning  string // ●
 	StateAsk      string // ?（內部狀態為 Attention）
 	StateFinished string // ◆

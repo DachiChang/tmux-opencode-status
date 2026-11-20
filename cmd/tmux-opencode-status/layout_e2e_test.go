@@ -84,7 +84,7 @@ func trimRight(ls []string) string {
 
 func contains(ls []string, s string) bool { return strings.Contains(strings.Join(ls, "\n"), s) }
 
-func TestLayoutOnRealClientsDisambiguationSummaryTruncationAndPerClientHeight(t *testing.T) {
+func TestLayoutOnRealClientsDisambiguationSummarySingleLayoutAndTmuxTruncation(t *testing.T) {
 	e := newEnv(t)
 	svc := fakeoc.New(t)
 	for i := 0; i < 12; i++ {
@@ -157,30 +157,36 @@ func TestLayoutOnRealClientsDisambiguationSummaryTruncationAndPerClientHeight(t 
 	summary := func(ls []string) string {
 		return strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(ls[0]), "OPENCODE"))
 	}
+	var layouts []string
+	for _, l := range strings.Split(e.inTmux("show-options", "-g"), "\n") {
+		if strings.HasPrefix(l, "@tos_sb_") {
+			layouts = append(layouts, l)
+		}
+	}
+	if len(layouts) != 1 || !strings.HasPrefix(layouts[0], "@tos_sb_main ") {
+		t.Fatalf("全域應只有一個版面選項 @tos_sb_main：%q", layouts)
+	}
+	if got := strings.TrimSpace(e.inTmux("show-options", "-gv", "side-status-format")); got != "#{@tos_sb_main}" {
+		t.Fatalf("side-status-format 應固定為 #{@tos_sb_main}：%q", got)
+	}
+
 	for name, scr := range map[string][]string{"c9": small, "c14": mid} {
 		if summary(scr) != summary(full) {
 			t.Fatalf("%s 頂部摘要 %q 應與完整 client 相同 %q（含畫面外 tabs）", name, summary(scr), summary(full))
 		}
-		shown, hidden := 0, 0
-		for _, l := range scr[1:] { // 第一行是 OPENCODE 底塊
-			if strings.HasPrefix(l, "  ") && strings.TrimSpace(l) != "" {
-				shown++
-			}
-			if strings.Contains(l, "… 還有") {
-				fmt.Sscanf(strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(l), "… 還有")), "%d", &hidden)
+		if len(scr) >= len(full) {
+			t.Fatalf("%s 應比完整 client 短（由 tmux 從底部截斷）：%d vs %d 列", name, len(scr), len(full))
+		}
+		for i, l := range scr {
+			if strings.TrimRight(l, " ") != strings.TrimRight(full[i], " ") {
+				t.Fatalf("%s 第 %d 列應與完整版面相同（只從底部截斷）：\n%q\n%q", name, i, l, full[i])
 			}
 		}
-		if hidden == 0 || shown+hidden != 12 {
-			t.Fatalf("%s：可見 %d + 未呈現 %d 應等於 12 個 tab 且有「… 還有 N 個 tab」：\n%s", name, shown, hidden, trimRight(scr))
-		}
-	}
-	if contains(full, "… 還有") {
-		t.Fatalf("完整 client 不應有「… 還有」：\n%s", whole)
 	}
 
 	beforeMid := trimRight(mid)
 	e.outTmux("resize-window", "-t", "c9", "-y", "40")
-	got := e.clientWaits("c9", 3*time.Second, "c9 放大後完整顯示", func(s []string) bool { return !contains(s, "… 還有") && contains(s, "· last") })
+	got := e.clientWaits("c9", 3*time.Second, "c9 放大後完整顯示", func(s []string) bool { return contains(s, "· last") })
 	t.Logf("c9 resize 為 40 列：\n%s", trimRight(got))
 	if after := trimRight(e.clientScreen("c14")); after != beforeMid {
 		t.Fatalf("resize c9 不得影響 c14：\n%s\n---\n%s", beforeMid, after)

@@ -1,6 +1,7 @@
 package render_test
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 	"testing"
@@ -12,8 +13,8 @@ import (
 // 側欄內容寬度 35（36 格扣掉分隔線）；POC 另留右邊距 1，實際繪製寬度 34。
 const contentWidth = 35
 
-func lines(groups []render.Group, avail int) []string {
-	rows, _ := render.Fit(groups, avail)
+func lines(groups []render.Group) []string {
+	rows := render.Fit(groups)
 	return render.Render(rows, contentWidth, render.DefaultTheme())
 }
 
@@ -51,7 +52,7 @@ func TestLayoutMatchesThePOCGeometryAt36Cells(t *testing.T) {
 		" ▎asgard                        ?1",
 		"  ? InfluxDB 磁碟用量持續上升",
 	}
-	got := plain(lines(groups, 30))
+	got := plain(lines(groups))
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("與定案幾何不符\n got:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
@@ -80,7 +81,7 @@ func styleOf(t *testing.T, line, text string) string {
 
 func tabLine(t *testing.T, st render.State, title string) string {
 	t.Helper()
-	ls := lines(one(title, st), 20)
+	ls := lines(one(title, st))
 	return ls[len(ls)-1]
 }
 
@@ -118,7 +119,7 @@ func TestTabTitlesUseActiveOrInactiveColour(t *testing.T) {
 }
 
 func TestChromeColours(t *testing.T) {
-	ls := lines(one("x", render.Running), 20)
+	ls := lines(one("x", render.Running))
 	if st := styleOf(t, ls[0], "OPENCODE"); st != "bg=#A78BFA,fg=#18181B" {
 		t.Errorf("OPENCODE 應為紫底深字：%q", st)
 	}
@@ -141,7 +142,7 @@ func TestSummarySymbolsAreColouredIndividually(t *testing.T) {
 		{Title: "1", State: render.Running, SessionID: "1"}, {Title: "2", State: render.Attention, SessionID: "2"},
 		{Title: "3", State: render.FinishedUnread, SessionID: "3"}, {Title: "4", State: render.FailedUnread, SessionID: "4"},
 		{Title: "5", State: render.DataProblem, SessionID: "5"}}}}
-	ls := lines(groups, 20)
+	ls := lines(groups)
 	for sym, colour := range map[string]string{"●1": "#4ADE80", "?1": "#FACC15", "◆1": "#60A5FA", "✗1": "#F87171", "!1": "#A1A1AA"} {
 		if st := styleOf(t, ls[0], sym); !strings.Contains(st, "fg="+colour) {
 			t.Errorf("頂部摘要 %s 樣式 = %q，要 %s", sym, st, colour)
@@ -159,7 +160,7 @@ func TestTopSummaryDedupesBySessionButGroupSummariesCountTheirMembers(t *testing
 		{Name: "a", Tabs: []render.Tab{{Title: "x", State: render.Running, SessionID: "shared"}}},
 		{Name: "b", Tabs: []render.Tab{{Title: "x", State: render.Running, SessionID: "shared"}, {Title: "y", State: render.Running, SessionID: "other"}}},
 	}
-	got := plain(lines(groups, 30))
+	got := plain(lines(groups))
 	if !strings.HasSuffix(got[0], "●2") {
 		t.Errorf("全體應按 session 去重為 ●2：%q", got[0])
 	}
@@ -180,14 +181,14 @@ func TestTopSummaryDedupesBySessionButGroupSummariesCountTheirMembers(t *testing
 func TestGroupSummaryCountsEveryMemberTabOncePerTab(t *testing.T) {
 	groups := []render.Group{{Name: "a", Tabs: []render.Tab{
 		{Title: "x", State: render.Attention, SessionID: "s"}, {Title: "y", State: render.Attention, SessionID: "s"}}}}
-	got := plain(lines(groups, 30))
+	got := plain(lines(groups))
 	if !strings.HasSuffix(got[2], "?2") || !strings.HasSuffix(got[0], "?1") {
 		t.Fatalf("群組按成員 ?2、全體按 session ?1：\n%s", strings.Join(got, "\n"))
 	}
 }
 
 func TestAllIdleStillShowsTitleAndGroupWithoutCounts(t *testing.T) {
-	got := plain(lines(one("quiet", render.Idle), 20))
+	got := plain(lines(one("quiet", render.Idle)))
 	want := []string{"  OPENCODE", " ─────────────────────────────────", " ▎api", "  · quiet"}
 	for i := range want {
 		if strings.TrimRight(got[i], " ") != want[i] {
@@ -214,12 +215,12 @@ func TestTruncationNeverSplitsAClusterAndNeverOverflows(t *testing.T) {
 		strings.Repeat("😀\u200d", 30),
 	}
 	for _, title := range titles {
-		for _, line := range plain(lines(one(title, render.Running), 20)) {
+		for _, line := range plain(lines(one(title, render.Running))) {
 			if w := cellwidth.String(line); w > 34 {
 				t.Errorf("%q → 寬 %d 超過 34：%q", title, w, line)
 			}
 		}
-		tab := plain(lines(one(title, render.Running), 20))[3]
+		tab := plain(lines(one(title, render.Running)))[3]
 		body := strings.TrimPrefix(tab, "  ● ")
 		if cellwidth.String(title) > 30 {
 			if !strings.HasSuffix(body, "…") {
@@ -241,7 +242,7 @@ func TestTruncationNeverSplitsAClusterAndNeverOverflows(t *testing.T) {
 
 func TestShortTitlesAreNotTruncated(t *testing.T) {
 	for _, title := range []string{"短", "write tests", "修正登入逻辑 bug", strings.Repeat("a", 30), strings.Repeat("中", 15)} {
-		got := plain(lines(one(title, render.Idle), 20))[3]
+		got := plain(lines(one(title, render.Idle)))[3]
 		if got != "  · "+title {
 			t.Errorf("%q 被改動：%q", title, got)
 		}
@@ -250,7 +251,7 @@ func TestShortTitlesAreNotTruncated(t *testing.T) {
 
 func TestLongGroupNameIsTruncatedLeavingRoomForItsSummary(t *testing.T) {
 	groups := []render.Group{{Name: strings.Repeat("很長的目錄名稱", 6), Tabs: []render.Tab{{Title: "x", State: render.Running, SessionID: "1"}}}}
-	got := plain(lines(groups, 20))[2]
+	got := plain(lines(groups))[2]
 	if w := cellwidth.String(got); w != 34 {
 		t.Fatalf("群組列寬 = %d，摘要應貼齊右邊界：%q", w, got)
 	}
@@ -275,7 +276,7 @@ func TestHostileTextIsRenderedLiterallyAndStaysOnOneLine(t *testing.T) {
 	}
 	for _, title := range hostile {
 		groups := []render.Group{{Name: title, Tabs: []render.Tab{{Title: title, State: render.Running, SessionID: "s"}}}}
-		rows, _ := render.FitView(render.View{Groups: groups, Notice: title, Empty: title}, 30)
+		rows := render.FitView(render.View{Groups: groups, Notice: title, Empty: title})
 		ls := render.Render(rows, contentWidth, render.DefaultTheme())
 		for _, l := range ls {
 			if strings.ContainsAny(l, "\n\r\x00\x1b\x07\x7f\u2028\u2029\u0085") {
@@ -298,7 +299,7 @@ func TestHostileTextIsRenderedLiterallyAndStaysOnOneLine(t *testing.T) {
 }
 
 func TestLiteralHashesSurviveInTitles(t *testing.T) {
-	got := plain(lines(one("Issue #459 解決方案", render.Idle), 20))[3]
+	got := plain(lines(one("Issue #459 解決方案", render.Idle)))[3]
 	if got != "  · Issue #459 解決方案" {
 		t.Fatalf("%q", got)
 	}
@@ -337,11 +338,11 @@ func TestLeadingInvisibleCharactersCannotWidenTheirNeighbours(t *testing.T) {
 	// 開頭的 VS16／ZWJ／組合字元／孤立中聲會併進前面的空白，tmux 因此把空白畫成 2 格。
 	for _, lead := range []string{"\ufe0f", "\u200d", "\u0301", "\u1161", "\u3164", "\u200b"} {
 		title := lead + "abc"
-		tab := plain(lines(one(title, render.Idle), 20))[3]
+		tab := plain(lines(one(title, render.Idle)))[3]
 		if w := cellwidth.String(tab); w != cellwidth.String("  · abc") {
 			t.Errorf("開頭 %U 使 tab 行寬變成 %d：%q", []rune(lead)[0], w, tab)
 		}
-		group := plain(lines([]render.Group{{Name: title, Tabs: []render.Tab{{Title: "x", State: render.Running, SessionID: "1"}}}}, 20))[2]
+		group := plain(lines([]render.Group{{Name: title, Tabs: []render.Tab{{Title: "x", State: render.Running, SessionID: "1"}}}}))[2]
 		if w := cellwidth.String(group); w != 34 {
 			t.Errorf("開頭 %U 使群組行寬變成 %d：%q", []rune(lead)[0], w, group)
 		}
@@ -356,7 +357,7 @@ func TestAbsurdlyLargeCountsNeverPushASummaryPastTheEdge(t *testing.T) {
 		}
 	}
 	groups := []render.Group{{Name: "一個很長很長的群組名稱", Tabs: tabs}}
-	rows, _ := render.Fit(groups, 12)
+	rows := render.Fit(groups)
 	for _, l := range plain(render.Render(rows, contentWidth, render.DefaultTheme())) {
 		if w := cellwidth.String(l); w > 34 {
 			t.Errorf("寬 %d 越界：%q", w, l)
@@ -366,13 +367,61 @@ func TestAbsurdlyLargeCountsNeverPushASummaryPastTheEdge(t *testing.T) {
 
 func TestLongNoticeWrapsInsteadOfOverflowing(t *testing.T) {
 	p := render.PublishView(render.View{Notice: strings.Repeat("無法讀取資料", 8), Empty: "沒有 OpenCode TUI"}, contentWidth, render.DefaultTheme())
-	for _, l := range plain(strings.Split(p.Select(20), "\n")) {
+	for _, l := range plain(strings.Split(p.Options[render.MainOption], "\n")) {
 		if w := cellwidth.String(l); w > 34 {
 			t.Errorf("寬 %d 越界：%q", w, l)
 		}
 	}
-	if n := len(strings.Split(p.Select(20), "\n")); n < 4 {
+	if n := len(strings.Split(p.Options[render.MainOption], "\n")); n < 4 {
 		t.Errorf("長提示應折成多行，實際 %d 行", n)
+	}
+}
+
+// ---- 單一完整版面：高度不足時由 tmux 從底部截斷，插件不排多份、不加提示 ----
+
+func manyGroups(n int) []render.Group {
+	var groups []render.Group
+	for i := 0; i < n; i++ {
+		var tabs []render.Tab
+		for j := 0; j < 4; j++ {
+			tabs = append(tabs, render.Tab{Title: fmt.Sprintf("tab-%02d-%d", i, j), State: render.Idle, SessionID: fmt.Sprintf("s%d-%d", i, j)})
+		}
+		groups = append(groups, render.Group{Name: fmt.Sprintf("dir-%02d", i), Tabs: tabs})
+	}
+	return groups
+}
+
+func TestPublishWritesOneLayoutOptionAndAFixedFormat(t *testing.T) {
+	for _, n := range []int{0, 1, 30} {
+		p := render.Publish(manyGroups(n), contentWidth)
+		if len(p.Options) != 1 {
+			t.Fatalf("%d 個群組：應只有一個版面選項，實際 %d 個", n, len(p.Options))
+		}
+		if _, ok := p.Options["@tos_sb_main"]; !ok {
+			t.Fatalf("%d 個群組：選項應為 @tos_sb_main：%v", n, p.Options)
+		}
+		if got := p.Format(); got != "#{@tos_sb_main}" {
+			t.Fatalf("%d 個群組：format = %q，要固定為 #{@tos_sb_main}", n, got)
+		}
+	}
+}
+
+func TestLongContentIsPublishedWholeWithTheLastTabOnTheLastRow(t *testing.T) {
+	groups := manyGroups(30)
+	groups[29].Tabs[3].State = render.Attention
+	groups[28].Tabs[0].State = render.FinishedUnread
+	p := render.Publish(groups, contentWidth)
+	ls := plain(strings.Split(p.Options["@tos_sb_main"], "\n"))
+
+	// 標題 + 分隔線 + 30 個群組列 + 29 個空行 + 120 個 tab 列
+	if want := 2 + 30 + 29 + 120; len(ls) != want {
+		t.Fatalf("版面應完整 %d 列，實際 %d 列", want, len(ls))
+	}
+	if last := ls[len(ls)-1]; !strings.Contains(last, "tab-29-3") {
+		t.Fatalf("最後一列應是最後一個 tab：%q", last)
+	}
+	if got := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(ls[0]), "OPENCODE")); got != "?1 ◆1" {
+		t.Fatalf("頂部摘要應計入畫面外的 tab：%q", got)
 	}
 }
 

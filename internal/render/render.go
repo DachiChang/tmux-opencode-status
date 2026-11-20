@@ -73,8 +73,6 @@ func renderRow(r Row, usable int, th Theme) string {
 		}
 		text := esc(truncate(clean(r.Text), room))
 		return strings.Repeat(" ", indent) + styled("fg="+th.Notice, prefix+text)
-	case RowMore:
-		return pad + styled("fg="+th.InactiveTab, esc(truncate("… 還有 "+itoa(r.Hidden)+" 個 tab", usable-margin)))
 	}
 	return ""
 }

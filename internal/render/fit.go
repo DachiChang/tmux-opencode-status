@@ -1,4 +1,4 @@
-// Package render 把側欄的邏輯內容（群組、tab、狀態、提示）依各 client 的可用高度排版、
+// Package render 把側欄的邏輯內容（群組、tab、狀態、提示）排成一份完整版面、
 // 依終端格寬渲染成 tmux 樣式字串，並發布為全域使用者選項與 side-status-format。
 
 package render
@@ -43,7 +43,6 @@ const (
 	RowGroup
 	RowTab
 	RowBlank
-	RowMore
 	RowNote   // dim informational line, e.g. 沒有 OpenCode TUI / 無 tab
 	RowNotice // read-error banner, drawn in warning colour
 )
@@ -53,7 +52,6 @@ type Row struct {
 	Text    string
 	Summary string
 	State   State
-	Hidden  int
 	Indent  int // RowNote 額外縮排格數；RowNotice 為折行續行的縮排
 	// JumpTarget 是所屬群組的跳轉目標（群組列、tab 列與群組內的「無 tab」列才會有）；空字串表示不加 range。
 	JumpTarget string
@@ -74,103 +72,50 @@ type View struct {
 	noticeContinuation []bool
 }
 
-// Fit lays the logical list out for one client. avail is that client's own
-// side-status row count. Only whole tab rows are kept, in source order; when
-// anything is hidden the last row is a footer carrying the number of hidden
-// tabs (not groups, not text rows).
-func Fit(groups []Group, avail int) ([]Row, int) {
-	return FitView(View{Groups: groups}, avail)
+// Fit lays the logical list out in full: every group and every tab, in source
+// order. Cutting to a client's height is left to tmux, which truncates from the
+// bottom.
+func Fit(groups []Group) []Row {
+	return FitView(View{Groups: groups})
 }
 
 // FitView is Fit for a full View. A group without tabs is kept and shows a
-// "無 tab" note; that note is not a tab and is not counted as hidden.
-func FitView(v View, avail int) ([]Row, int) {
+// "無 tab" note.
+func FitView(v View) []Row {
 	groups := v.Groups
-	var notice []string
+	rows := []Row{{Kind: RowTitle, Summary: Summary(groups)}, {Kind: RowRule}}
 	if v.Notice != "" {
-		notice = strings.Split(v.Notice, "\n")
-	}
-	head := func(noticeLines int) []Row {
-		h := []Row{{Kind: RowTitle, Summary: Summary(groups)}, {Kind: RowRule}}
-		for i, line := range notice[:noticeLines] {
+		for i, line := range strings.Split(v.Notice, "\n") {
 			row := Row{Kind: RowNotice, Text: line}
 			if i < len(v.noticeContinuation) && v.noticeContinuation[i] {
 				row.Indent = noticePrefixWidth
 			}
-			h = append(h, row)
+			rows = append(rows, row)
 		}
-		return h
 	}
 	if len(groups) == 0 {
-		rows := head(len(notice))
 		if v.Empty != "" {
 			rows = append(rows, Row{Kind: RowNote, Text: v.Empty})
 		}
-		return clip(rows, avail), 0
+		return rows
 	}
-	total, units := 0, 0
-	for _, g := range groups {
-		total += len(g.Tabs)
-		units += max(len(g.Tabs), 1)
-	}
-
-	if full := layout(groups, units); len(head(len(notice)))+len(full) <= avail {
-		return append(head(len(notice)), full...), 0
-	}
-	// Something has to be hidden, so the summary row, the rule and the footer are
-	// not negotiable: notice lines are the ones that give way.
-	lines := min(len(notice), max(avail-3, 0))
-	h := head(lines)
-	budget := avail - len(h) - 1 // one row reserved for the footer
-	shown := 0
-	for shown < units && len(layout(groups, shown+1)) <= budget {
-		shown++
-	}
-	body := layout(groups, shown)
-	visible := 0
-	for _, r := range body {
-		if r.Kind == RowTab {
-			visible++
-		}
-	}
-	rows := append(h, body...)
-	if visible == total {
-		return clip(rows, avail), 0
-	}
-	rows = append(rows, Row{Kind: RowMore, Hidden: total - visible})
-	return clip(rows, avail), total - visible
+	return append(rows, layout(groups)...)
 }
 
-func clip(rows []Row, avail int) []Row {
-	if len(rows) > avail {
-		rows = rows[:max(avail, 0)]
-	}
-	return rows
-}
-
-// layout renders the first n units (in order) with group headers and blanks.
-// A unit is one tab, or the "無 tab" note of a group that has none.
-func layout(groups []Group, n int) []Row {
+// layout renders every group (in order) with group headers and blanks.
+func layout(groups []Group) []Row {
 	var rows []Row
 	for _, g := range groups {
-		if n == 0 {
-			break
-		}
 		if len(rows) > 0 {
 			rows = append(rows, Row{Kind: RowBlank})
 		}
 		rows = append(rows, Row{Kind: RowGroup, Text: g.Name, Summary: groupSummary(g), JumpTarget: g.JumpTarget})
 		if len(g.Tabs) == 0 {
 			rows = append(rows, Row{Kind: RowNote, Text: "無 tab", Indent: tabIndent - margin, JumpTarget: g.JumpTarget})
-			n--
 			continue
 		}
 		for _, t := range g.Tabs {
-			if n == 0 {
-				break
-			}
 			rows = append(rows, Row{Kind: RowTab, Text: t.Title, State: t.State, JumpTarget: g.JumpTarget})
-			n--
 		}
 	}
 	return rows
