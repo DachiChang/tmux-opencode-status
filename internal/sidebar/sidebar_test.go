@@ -157,7 +157,14 @@ func (f *fakeOut) rawScreen(avail int) []string {
 	if len(f.pubs) == 0 {
 		return nil
 	}
-	return strings.Split(render.StripStyles(f.pubs[len(f.pubs)-1].Select(avail)), "\n")
+	return strings.Split(render.StripStyles(f.truncatedLayoutLocked(avail)), "\n")
+}
+
+// truncatedLayoutLocked 是最近一次發布的版面只留前 avail 列：
+// 模擬 tmux 對可用高度為 avail 的 client 從底部截斷。呼叫端須持有 f.mu。
+func (f *fakeOut) truncatedLayoutLocked(avail int) string {
+	rows := strings.Split(f.pubs[len(f.pubs)-1].Options[render.MainOption], "\n")
+	return strings.Join(rows[:min(avail, len(rows))], "\n")
 }
 
 func foldGeometry(lines []string) []string {
@@ -391,7 +398,7 @@ func TestTitlesAreDataNotTmuxFormat(t *testing.T) {
 	w.setTabs(t, "{\"global\":{\"tabs\":[]},\"cwd\":{\"/work/#{pane_id}\":{\"tabs\":[{\"sessionID\":\"s1\",\"title\":\"x #[fg=red] #(id)\\nline2\"}]}}}")
 	w.sync(t)
 	w.out.mu.Lock()
-	raw := w.out.pubs[0].Select(20)
+	raw := w.out.pubs[0].Options[render.MainOption]
 	w.out.mu.Unlock()
 	for _, bad := range []string{"#[fg=red]", "#(id)", "#{pane_id}"} {
 		if strings.Contains(strings.ReplaceAll(raw, "##", ""), bad) {

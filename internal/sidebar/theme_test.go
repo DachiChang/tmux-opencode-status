@@ -5,6 +5,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/DachiChang/tmux-opencode-status/internal/render"
 	"github.com/DachiChang/tmux-opencode-status/internal/sidebar"
 )
 
@@ -56,11 +57,11 @@ func newThemeWorld(t *testing.T) (*world, *fakeTheme) {
 	return w, th
 }
 
-// styled 是最近一次發布、可用 20 列的 client 看到的帶樣式畫面。
+// styled 是最近一次發布的完整版面（帶樣式）。
 func (f *fakeOut) styled() string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.pubs[len(f.pubs)-1].Select(20)
+	return f.pubs[len(f.pubs)-1].Options[render.MainOption]
 }
 
 func TestNilThemeSourceMeansAllSwatchesUnset(t *testing.T) {

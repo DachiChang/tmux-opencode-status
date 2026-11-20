@@ -50,7 +50,7 @@ session、window、pane 一次到位，可跨 tmux session，目標 pane 不是�
 - **多個 TUI client**：同一目錄有多個 TUI 時，跳到 pane 編號（`%N` 的 N，以數字比較，`%3` 先於 `%13`）最小者；global 模式的 GLOBAL 群組取全部 TUI 中最小者。
   編號最小代表 pane 最早建立，不代表 OpenCode 最早啟動。
 - **只到 pane**：插件唯讀，無法切換到 TUI 內的特定 tab。
-- **其他位置**：點標題、分隔線、讀取錯誤提示、「… 還有 N 個 tab」、「沒有 OpenCode TUI」或空白處，以及其他非插件的 range，行為與 tmux 預設（`switch-client -t =`）相同。
+- **其他位置**：點標題、分隔線、讀取錯誤提示、「沒有 OpenCode TUI」或空白處，以及其他非插件的 range，行為與 tmux 預設（`switch-client -t =`）相同。
 - **跳轉目標會隨側欄更新**：TUI 開啟、關閉或移動 pane 後，下一次側欄更新就指向新的 pane。
 
 **這會覆寫你的 `MouseDown1SideStatus` 綁定。** 常駐程式啟動時（含交接給新實例）把 root 鍵表的 `MouseDown1SideStatus` 設成插件的綁定；
@@ -80,7 +80,7 @@ set -g @opencode-status-mode global   # 單一 GLOBAL 群組，對應 OpenCode �
 | `split` | `#404040` | 標題下分隔線 |
 | `project` | `#F2EEE3` | 專案名稱 |
 | `active-tab` | `#cac5b5` | 執行中、等你處理、結束未讀、失敗未讀的 tab 標題 |
-| `inactive-tab` | `#71717A` | 閒置與資料異常的 tab 標題、「無 tab」、「… 還有 N 個 tab」、右側摘要放不下時補的 `…` |
+| `inactive-tab` | `#71717A` | 閒置與資料異常的 tab 標題、「無 tab」、右側摘要放不下時補的 `…` |
 | `state-running` | `#4ADE80` | `●` 執行中（含右側摘要中的符號與數字） |
 | `state-ask` | `#FACC15` | `?` 等你處理 |
 | `state-finished` | `#60A5FA` | `◆` 結束未讀 |
@@ -164,4 +164,4 @@ scripts/build-release.sh [版本]   # 預設讀 VERSION；輸出 dist/*.tar.gz �
 
 ## 文件
 
-`docs/validation/`（生命週期、模式、cwd tab、高度適配、TPM 封裝）、`docs/adr/`、`GLOSSARY.md`。
+`docs/validation/`（生命週期、模式、cwd tab、TPM 封裝）、`docs/adr/`、`GLOSSARY.md`。

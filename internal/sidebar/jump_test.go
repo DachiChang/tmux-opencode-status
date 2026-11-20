@@ -19,7 +19,7 @@ var rangeRe = regexp.MustCompile(`^#\[range=user\|oc(\d+)\](.*)#\[norange\]$`)
 func (f *fakeOut) jumpTargetsAndRows(t *testing.T, avail int) (targets []string, rows []string) {
 	t.Helper()
 	f.mu.Lock()
-	raw := f.pubs[len(f.pubs)-1].Select(avail)
+	raw := f.truncatedLayoutLocked(avail)
 	f.mu.Unlock()
 	for _, line := range strings.Split(raw, "\n") {
 		if m := rangeRe.FindStringSubmatch(line); m != nil {
@@ -78,15 +78,15 @@ func TestNonGroupRowsNeverCarryARange(t *testing.T) {
 	}
 }
 
-func TestMoreTabsFooterHasNoRangeWhileVisibleRowsKeepTheirs(t *testing.T) {
+func TestEveryRowOfTheFullLayoutKeepsItsRange(t *testing.T) {
 	w := newWorld(t)
 	w.panes.set(tui("%4", "/work/api"))
 	w.setTabs(t, `{"global":{"tabs":[]},"cwd":{"/work/api":{"tabs":[{"sessionID":"s1","title":"a"},{"sessionID":"s2","title":"b"},{"sessionID":"s3","title":"c"},{"sessionID":"s4","title":"d"}]}}}`)
 	w.sync(t)
-	targets, rows := w.out.jumpTargetsAndRows(t, 5) // 標題、分隔線、目錄列、1 個 tab、頁尾
-	assertTargets(t, targets, "", "", "4", "4", "")
-	if !strings.Contains(rows[4], "還有 3 個 tab") {
-		t.Fatalf("頁尾不符：%q", rows)
+	targets, rows := w.out.jumpTargetsAndRows(t, 100) // 版面只有一份完整的，不依高度改變
+	assertTargets(t, targets, "", "", "4", "4", "4", "4", "4")
+	if !strings.HasSuffix(rows[len(rows)-1], "d") {
+		t.Fatalf("最後一列應是最後一個 tab：%q", rows)
 	}
 }
 
@@ -145,7 +145,7 @@ func TestAddingRangesChangesNeitherLayoutNorCellWidth(t *testing.T) {
 	rawOf := func(f *fakeOut) string {
 		f.mu.Lock()
 		defer f.mu.Unlock()
-		return f.pubs[len(f.pubs)-1].Select(20)
+		return f.pubs[len(f.pubs)-1].Options[render.MainOption]
 	}
 	// 沒有跳轉目標（pane id 不是 %N）的輸出就是加 range 前的輸出；加了 range 的輸出
 	// 只移除 range 標記後，必須逐字相同（含樣式、換行與折行）。
@@ -180,7 +180,7 @@ func TestHostileTitlesAndDirectoryNamesCannotAddRangesOrChangeTheTarget(t *testi
 	targets, _ := w.out.jumpTargetsAndRows(t, 20) // ranged 本身會拒絕沒有整行包住的標記
 	assertTargets(t, targets, "", "", "6", "6", "6")
 	w.out.mu.Lock()
-	raw := w.out.pubs[len(w.out.pubs)-1].Select(20)
+	raw := w.out.pubs[len(w.out.pubs)-1].Options[render.MainOption]
 	w.out.mu.Unlock()
 	if n := strings.Count(strings.ReplaceAll(raw, "##", ""), "#[range="); n != 3 {
 		t.Fatalf("range 數量 = %d，要 3（群組列與兩個 tab 列）：%q", n, raw)

@@ -9,7 +9,7 @@ import (
 )
 
 // 定案預覽（v3）：#14 Further Notes 所述情境的逐字輸出，作為獨立的真值來源。
-// 預覽原稿在提示列後與「還有 N 個 tab」前各有一行手寫空白，Fit 不會產生，故不列入。
+// 預覽原稿在提示列後有一行手寫空白，Fit 不會產生，故不列入。
 var v3Preview = []string{
 	` #[bg=#A78BFA,fg=#18181B] OPENCODE #[default]         #[fg=#4ADE80]●1#[default] #[fg=#FACC15]?1#[default] #[fg=#60A5FA]◆1#[default] #[fg=#F87171]✗1#[default] #[fg=#A1A1AA]!1#[default]`,
 	` #[fg=#404040]─────────────────────────────────#[default]`,
@@ -29,7 +29,6 @@ var v3Preview = []string{
 	``,
 	` #[fg=#A78BFA]▎#[fg=#F2EEE3]empty-project#[default]`,
 	`  #[fg=#71717A]無 tab#[default]`,
-	` #[fg=#71717A]… 還有 3 個 tab#[default]`,
 }
 
 // v3Preview36 是同一份預覽在 36 欄（Render width=36，每行最多 35 格）的逐字輸出：
@@ -53,7 +52,6 @@ var v3Preview36 = []string{
 	``,
 	` #[fg=#A78BFA]▎#[fg=#F2EEE3]empty-project#[default]`,
 	`  #[fg=#71717A]無 tab#[default]`,
-	` #[fg=#71717A]… 還有 3 個 tab#[default]`,
 }
 
 func v3Rows() []render.Row {
@@ -79,7 +77,6 @@ func v3Rows() []render.Row {
 		blank,
 		group("empty-project", ""),
 		{Kind: render.RowNote, Text: "無 tab", Indent: 1},
-		{Kind: render.RowMore, Hidden: 3},
 	}
 }
 
@@ -111,8 +108,8 @@ func TestPublishViewWithDefaultThemeMatchesConvenienceFunction(t *testing.T) {
 	groups := []render.Group{{Name: "api", Tabs: []render.Tab{{Title: "x", State: render.Running, SessionID: "1"}}}}
 	a := render.Publish(groups, contentWidth)
 	b := render.PublishView(render.View{Groups: groups}, contentWidth, render.DefaultTheme())
-	if a.Select(20) != b.Select(20) {
-		t.Fatalf("便利函式應等同預設主題：\n%q\n%q", a.Select(20), b.Select(20))
+	if a.Options[render.MainOption] != b.Options[render.MainOption] {
+		t.Fatalf("便利函式應等同預設主題：\n%q\n%q", a.Options[render.MainOption], b.Options[render.MainOption])
 	}
 }
 
@@ -159,7 +156,6 @@ func TestEveryThemeColourAppearsOnItsElement(t *testing.T) {
 		{11, "!", "fg=#0B0B0B", "problem 符號"},
 		{11, "狀態讀取", "fg=#060606", "inactive-tab（資料異常）"},
 		{17, "無 tab", "fg=#060606", "inactive-tab（無 tab）"},
-		{18, "還有", "fg=#060606", "inactive-tab（還有 N 個 tab）"},
 	}
 	for _, c := range cases {
 		if got := styleOf(t, ls[c.line], c.text); got != c.style {
@@ -187,7 +183,7 @@ func TestNothingIsEverBold(t *testing.T) {
 		{Title: "a", State: render.FinishedUnread, SessionID: "1"}, {Title: "b", State: render.FailedUnread, SessionID: "2"},
 		{Title: "c", State: render.Idle, SessionID: "3"}}}}
 	p := render.PublishView(render.View{Groups: groups, Notice: strings.Repeat("長", 80), Empty: "x"}, contentWidth, render.DefaultTheme())
-	all = append(all, p.Select(30))
+	all = append(all, p.Options[render.MainOption])
 	for _, l := range all {
 		if strings.Contains(l, "bold") {
 			t.Fatalf("不得有 bold：%q", l)
@@ -219,11 +215,9 @@ func TestEveryLineStaysWithinWidthMinusMargin(t *testing.T) {
 				Notice: long + "\n" + hostile, Empty: long,
 			}
 			p := render.PublishView(v, width, render.DefaultTheme())
-			for avail := render.MinAvail; avail <= 40; avail++ {
-				for _, l := range strings.Split(p.Select(avail), "\n") {
-					if w := cellwidthOf(l); w > width-1 {
-						t.Fatalf("width=%d avail=%d：行寬 %d 超過 %d：%q", width, avail, w, width-1, render.StripStyles(l))
-					}
+			for _, l := range strings.Split(p.Options[render.MainOption], "\n") {
+				if w := cellwidthOf(l); w > width-1 {
+					t.Fatalf("width=%d：行寬 %d 超過 %d：%q", width, w, width-1, render.StripStyles(l))
 				}
 			}
 		}
@@ -233,7 +227,7 @@ func TestEveryLineStaysWithinWidthMinusMargin(t *testing.T) {
 func TestLongNoticeWrapsReservingTheTriangleAndAlignsContinuationLines(t *testing.T) {
 	text := strings.Repeat("無法讀取資料", 8)
 	p := render.PublishView(render.View{Notice: text}, contentWidth, render.DefaultTheme())
-	ls := strings.Split(p.Select(20), "\n")[2:]
+	ls := strings.Split(p.Options[render.MainOption], "\n")[2:]
 	if len(ls) < 2 {
 		t.Fatalf("應折成多行：%q", ls)
 	}

@@ -23,11 +23,16 @@ func countKind(rows []Row, k RowKind) int {
 	return n
 }
 
-func TestEnoughHeightShowsEverythingWithoutFooter(t *testing.T) {
+func TestFitShowsEveryRowInOrder(t *testing.T) {
 	// title + rule + 3 headers + 2 blanks + 7 tabs = 14 rows
-	rows, hidden := Fit(sample(), 14)
-	if hidden != 0 || len(rows) != 14 || countKind(rows, RowMore) != 0 {
-		t.Fatalf("hidden=%d rows=%d more=%d", hidden, len(rows), countKind(rows, RowMore))
+	rows := Fit(sample())
+	if len(rows) != 14 || countKind(rows, RowTab) != 7 || countKind(rows, RowGroup) != 3 {
+		t.Fatalf("rows=%d tabs=%d groups=%d", len(rows), countKind(rows, RowTab), countKind(rows, RowGroup))
+	}
+	want := []string{"a1", "a2", "a3", "b1", "b2", "c1", "c2"}
+	got := tabTitles(rows)
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("tabs = %v, want %v", got, want)
 	}
 }
 
@@ -41,72 +46,18 @@ func tabTitles(rows []Row) []string {
 	return out
 }
 
-func TestHiddenCountIsTabsNotGroupsOrLines(t *testing.T) {
-	rows, hidden := Fit(sample(), 6)
-	if hidden != 5 {
-		t.Fatalf("hidden = %d, want 5 (a3,b1,b2,c1,c2)", hidden)
-	}
-	if got := tabTitles(rows); len(got) != 2 || got[0] != "a1" || got[1] != "a2" {
-		t.Fatalf("visible = %v", got)
-	}
-	last := rows[len(rows)-1]
-	if last.Kind != RowMore || last.Hidden != 5 || len(rows) != 6 {
-		t.Fatalf("last = %+v, len = %d", last, len(rows))
-	}
-}
-
-func TestFullyHiddenGroupsHaveNoHeaderButAreCounted(t *testing.T) {
-	rows, hidden := Fit(sample(), 7)
-	if hidden != 4 {
-		t.Fatalf("hidden = %d, want 4", hidden)
-	}
-	if n := countKind(rows, RowGroup); n != 1 {
-		t.Fatalf("group headers = %d, want 1", n)
-	}
-}
-
-func TestCrossGroupTruncationKeepsSourceOrder(t *testing.T) {
-	rows, hidden := Fit(sample(), 10)
-	got := tabTitles(rows)
-	want := []string{"a1", "a2", "a3", "b1"}
-	if len(got) != len(want) {
-		t.Fatalf("visible = %v, want %v", got, want)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("visible = %v, want %v", got, want)
-		}
-	}
-	if hidden != 3 {
-		t.Fatalf("hidden = %d, want 3", hidden)
-	}
-}
-
-func TestTitleSummaryCountsHiddenTabsAndIgnoresHeight(t *testing.T) {
-	small, _ := Fit(sample(), 6)
-	big, _ := Fit(sample(), 40)
+func TestTitleSummaryCountsEveryTab(t *testing.T) {
+	rows := Fit(sample())
 	const want = "●2 ?1 ◆1 ✗1 !1" // idle a3 omitted
-	if small[0].Summary != want || big[0].Summary != want {
-		t.Fatalf("small=%q big=%q want=%q", small[0].Summary, big[0].Summary, want)
+	if rows[0].Summary != want {
+		t.Fatalf("summary=%q want=%q", rows[0].Summary, want)
 	}
 }
 
 func TestAllIdleHasNoSummary(t *testing.T) {
-	rows, _ := Fit([]Group{{Name: "x", Tabs: []Tab{{Title: "t", State: Idle}}}}, 10)
+	rows := Fit([]Group{{Name: "x", Tabs: []Tab{{Title: "t", State: Idle}}}})
 	if rows[0].Summary != "" {
 		t.Fatalf("summary = %q", rows[0].Summary)
-	}
-}
-
-func TestNeverOverflowsAndAccountsForEveryTab(t *testing.T) {
-	for avail := 0; avail <= 20; avail++ {
-		rows, hidden := Fit(sample(), avail)
-		if len(rows) > avail {
-			t.Fatalf("avail %d: %d rows", avail, len(rows))
-		}
-		if avail >= 3 && countKind(rows, RowTab)+hidden != 7 {
-			t.Fatalf("avail %d: shown %d + hidden %d != 7", avail, countKind(rows, RowTab), hidden)
-		}
 	}
 }
 
@@ -143,80 +94,23 @@ func TestRenderRightAlignsSummaryWithinWidth(t *testing.T) {
 	}
 }
 
-func TestRenderFooterSaysHowManyTabsRemain(t *testing.T) {
-	plain := StripStyles(Render([]Row{{Kind: RowMore, Hidden: 5}}, 35, DefaultTheme())[0])
-	if !strings.Contains(plain, "還有 5 個 tab") {
-		t.Fatalf("footer = %q", plain)
-	}
-}
-
 func TestRenderTitleRowIsExactlyWidthWithSummaryOnTheRight(t *testing.T) {
-	rows, _ := Fit(sample(), 40)
+	rows := Fit(sample())
 	plain := StripStyles(Render(rows, 36, DefaultTheme())[0])
 	if CellWidth(plain) != 35 || !strings.HasPrefix(plain, "  OPENCODE ") || !strings.HasSuffix(plain, "●2 ?1 ◆1 ✗1 !1") {
 		t.Fatalf("title = %q (%d cells)", plain, CellWidth(plain))
 	}
 }
 
-func TestPublishCoversEveryAvailableHeightWithItsOwnLayout(t *testing.T) {
-	p := Publish(sample(), 36)
-	// Selecting by avail must reproduce what Fit+Render give for that avail.
-	for avail := 3; avail <= 30; avail++ {
-		rows, _ := Fit(sample(), avail)
-		want := strings.Join(Render(rows, 36, DefaultTheme()), "\n")
-		if got := p.Select(avail); got != want {
-			t.Fatalf("avail %d:\n got %q\nwant %q", avail, got, want)
-		}
+func TestNoticeLinesPrecedeTheListAndNothingIsDropped(t *testing.T) {
+	rows := FitView(View{Groups: sample(), Notice: "一\n二\n三\n四\n五"})
+	if rows[0].Kind != RowTitle || rows[1].Kind != RowRule {
+		t.Fatalf("開頭應是標題與分隔線：%+v", rows[:2])
 	}
-}
-
-func TestPublishFormatSelectsByClientHeightAndStatusLines(t *testing.T) {
-	p := Publish(sample(), 36)
-	f := p.Format()
-	for _, must := range []string{"#{client_height}", "#{status}", "#{@tos_sb_"} {
-		if !strings.Contains(f, must) {
-			t.Fatalf("format lacks %q: %s", must, f)
-		}
+	if n := countKind(rows, RowNotice); n != 5 {
+		t.Fatalf("Notice 應有 5 行，實際 %d", n)
 	}
-	if strings.Contains(f, "#{E:") || strings.Contains(f, "#{T:") {
-		t.Fatalf("format must not re-expand option content: %s", f)
-	}
-}
-
-func TestPublishOnlyEmitsDistinctLayouts(t *testing.T) {
-	p := Publish(sample(), 36)
-	seen := map[string]bool{}
-	for _, v := range p.Options {
-		if seen[v] {
-			t.Fatalf("duplicate layout published")
-		}
-		seen[v] = true
-	}
-	if len(p.Options) < 2 {
-		t.Fatalf("options = %d", len(p.Options))
-	}
-}
-
-func TestFooterAndSummarySurviveManyNoticeLines(t *testing.T) {
-	notice := "一\n二\n三\n四\n五"
-	for avail := 3; avail <= 12; avail++ {
-		rows, hidden := FitView(View{Groups: sample(), Notice: notice}, avail)
-		if len(rows) > avail {
-			t.Fatalf("avail=%d：列數 %d 超出", avail, len(rows))
-		}
-		if hidden == 0 {
-			continue
-		}
-		if rows[0].Kind != RowTitle || rows[0].Summary == "" {
-			t.Fatalf("avail=%d：頂部摘要被裁掉：%+v", avail, rows[0])
-		}
-		last := rows[len(rows)-1]
-		if last.Kind != RowMore || last.Hidden != hidden {
-			t.Fatalf("avail=%d：「還有 N 個 tab」被裁掉，最後一列 %+v（hidden=%d）", avail, last, hidden)
-		}
-		visible := len(tabTitles(rows))
-		if visible+hidden != 7 {
-			t.Fatalf("avail=%d：可見 %d + 隱藏 %d 應為 7", avail, visible, hidden)
-		}
+	if got := len(tabTitles(rows)); got != 7 {
+		t.Fatalf("tab 應全數保留，實際 %d", got)
 	}
 }

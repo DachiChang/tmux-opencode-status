@@ -189,8 +189,8 @@ func foregroundProcs() (map[string]int, error) {
 	return res, nil
 }
 
-// Publish 以單一 source-file（同一 command queue）寫入所有版面選項與 side-status-format，
-// 並清掉不再使用的版面選項。client 永遠不會看到半更新。
+// Publish 以單一 source-file（同一 command queue）寫入版面選項與 side-status-format，
+// 並清掉同前綴下不再使用的選項（前一個實例或崩潰留下的）。client 永遠不會看到半更新。
 func (c *Client) Publish(p render.Published) error {
 	var s strings.Builder
 	s.WriteString("set-option -g side-status-width " + strconv.Itoa(c.Width) + "\n")
