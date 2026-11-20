@@ -288,7 +288,7 @@ func TestTwoSocketsRunIndependentInstances(t *testing.T) {
 	var bOpts string
 	for i := 0; i < 60 && !strings.Contains(bOpts, "foreign"); i++ {
 		b, _ := exec.Command("tmux", "-L", other, "-f", "/dev/null", "show-options", "-g").CombinedOutput()
-		bOpts = grep(string(b), "tos_sb")
+		bOpts = grep(string(b), "tos_layout")
 		time.Sleep(50 * time.Millisecond)
 	}
 	if !strings.Contains(bOpts, "foreign") || strings.Contains(bOpts, "local") {
@@ -476,7 +476,7 @@ func TestTransientTmuxFailureIsNotMistakenForServerExit(t *testing.T) {
 	e.eventually(7*time.Second, "tmux 恢復後繼續運作", func(s string) bool { return strings.Contains(s, "! 恢復後新增") })
 }
 
-// 明確停止：只清本插件的資源（hook、@tos_sb_*、自己寫的 side-status-format、鎖與狀態檔），
+// 明確停止：只清本插件的資源（hook、@tos_*、自己寫的 side-status-format、鎖與狀態檔），
 // 使用者的選項、hook、session override 與綁定原封不動；之後 start 可重新啟動。
 func TestStopCleansOnlyThePluginsOwnResources(t *testing.T) {
 	e := newLifecycleEnv(t)
@@ -500,10 +500,18 @@ func TestStopCleansOnlyThePluginsOwnResources(t *testing.T) {
 	}
 	e.waitDaemons(e.in, 0, 3*time.Second, "stop")
 	opts := e.inTmux("show-options", "-g")
-	if strings.Contains(opts, "@tos_sb_") || strings.Contains(opts, "@opencode-status-shown") || strings.Contains(opts, "tos_sb") {
-		t.Fatalf("停止後應移除本插件發布的選項：\n%s", grep(opts, "tos_sb"))
+	for _, l := range strings.Split(opts, "\n") {
+		if strings.HasPrefix(l, "@tos_") {
+			t.Fatalf("停止後不應留下任何 @tos_*：\n%s", grep(opts, "tos_"))
+		}
 	}
-	if f := e.inTmux("show", "-gv", "side-status-format"); strings.Contains(f, "tos_sb") {
+	if strings.Contains(opts, "@opencode-status-shown") {
+		t.Fatalf("停止後應移除首次打開側欄標記：\n%s", grep(opts, "opencode-status-shown"))
+	}
+	if !strings.Contains(opts, "@opencode-status-mode cwd") {
+		t.Fatalf("停止後使用者的 @opencode-status-* 設定應保留：\n%s", opts)
+	}
+	if f := e.inTmux("show", "-gv", "side-status-format"); strings.Contains(f, "tos_") {
 		t.Fatalf("side-status-format 應回到 tmux 預設：%s", f)
 	}
 	if strings.Contains(e.allHooks(), "[41700]") || !strings.Contains(e.allHooks(), "user-hook") {
@@ -555,7 +563,7 @@ func TestMissingTmuxCapabilityFailsLoudlyWithoutStartingAnything(t *testing.T) {
 	if got := e.daemons(e.in); len(got) != 0 {
 		t.Fatalf("缺少能力不得啟動常駐程式：%v", got)
 	}
-	if strings.Contains(e.inTmux("show-options", "-g"), "@tos_sb_") {
+	if strings.Contains(e.inTmux("show-options", "-g"), "@tos_") {
 		t.Fatal("缺少能力不得寫入任何側欄選項")
 	}
 }
@@ -807,7 +815,7 @@ func TestStartWithoutSocketFlagsFollowsTMUXEnvAndRefusesWithoutIt(t *testing.T) 
 }
 
 // 實例被 kill -9（沒機會清理）：鎖自動釋放，沒有過期鎖；下次 start 接手，
-// 並把前一個實例留下的 @tos_sb_* 孤兒選項一併換成新內容。
+// 並把前一個實例留下的 @tos_* 孤兒選項（含舊名稱 @tos_sb_main）一併換成新內容。
 func TestStartRecoversFromAKilledInstanceWithoutStaleLockOrOrphanOptions(t *testing.T) {
 	e := newLifecycleEnv(t)
 	api := filepath.Join(e.dir, "work", "api")
@@ -818,7 +826,9 @@ func TestStartRecoversFromAKilledInstanceWithoutStaleLockOrOrphanOptions(t *test
 	}
 	old := e.waitDaemons(e.in, 1, 3*time.Second, "start")[0]
 	e.eventually(3*time.Second, "已顯示", func(s string) bool { return strings.Contains(s, "! j") })
-	e.inTmux("set", "-g", "@tos_sb_999", "orphan from crashed instance")
+	for _, name := range []string{"@tos_sb_main", "@tos_sb_999", "@tos_whatever"} {
+		e.inTmux("set", "-g", name, "orphan from crashed instance")
+	}
 	must(t, syscall.Kill(old, syscall.SIGKILL))
 	e.waitGone(old, 3*time.Second, "kill -9")
 
@@ -831,7 +841,13 @@ func TestStartRecoversFromAKilledInstanceWithoutStaleLockOrOrphanOptions(t *test
 	}
 	e.writeTabs(e.tabsJSON(map[string][]string{api: {"only"}}))
 	e.eventually(3*time.Second, "新實例接手顯示", func(s string) bool { return strings.Contains(s, "! only") })
-	if strings.Contains(e.inTmux("show-options", "-g"), "@tos_sb_999") {
-		t.Fatal("前一個實例留下的 @tos_sb_* 孤兒選項應在新實例第一次寫入時清掉")
+	opts := e.inTmux("show-options", "-g")
+	for _, name := range []string{"@tos_sb_main", "@tos_sb_999", "@tos_whatever"} {
+		if strings.Contains(opts, name+" ") {
+			t.Fatalf("前一個實例留下的孤兒選項 %s 應在新實例第一次寫入時清掉", name)
+		}
+	}
+	if !strings.Contains(opts, "@tos_layout_main ") {
+		t.Fatal("新實例應發布 @tos_layout_main")
 	}
 }

@@ -397,11 +397,11 @@ func TestPublishWritesOneLayoutOptionAndAFixedFormat(t *testing.T) {
 		if len(p.Options) != 1 {
 			t.Fatalf("%d 個群組：應只有一個版面選項，實際 %d 個", n, len(p.Options))
 		}
-		if _, ok := p.Options["@tos_sb_main"]; !ok {
-			t.Fatalf("%d 個群組：選項應為 @tos_sb_main：%v", n, p.Options)
+		if _, ok := p.Options["@tos_layout_main"]; !ok {
+			t.Fatalf("%d 個群組：選項應為 @tos_layout_main：%v", n, p.Options)
 		}
-		if got := p.Format(); got != "#{@tos_sb_main}" {
-			t.Fatalf("%d 個群組：format = %q，要固定為 #{@tos_sb_main}", n, got)
+		if got := p.Format(); got != "#{@tos_layout_main}" {
+			t.Fatalf("%d 個群組：format = %q，要固定為 #{@tos_layout_main}", n, got)
 		}
 	}
 }
@@ -411,7 +411,7 @@ func TestLongContentIsPublishedWholeWithTheLastTabOnTheLastRow(t *testing.T) {
 	groups[29].Tabs[3].State = render.Attention
 	groups[28].Tabs[0].State = render.FinishedUnread
 	p := render.Publish(groups, contentWidth)
-	ls := plain(strings.Split(p.Options["@tos_sb_main"], "\n"))
+	ls := plain(strings.Split(p.Options["@tos_layout_main"], "\n"))
 
 	// 標題 + 分隔線 + 30 個群組列 + 29 個空行 + 120 個 tab 列
 	if want := 2 + 30 + 29 + 120; len(ls) != want {

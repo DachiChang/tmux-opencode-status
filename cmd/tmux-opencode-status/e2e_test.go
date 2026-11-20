@@ -493,7 +493,7 @@ func TestPendingApprovalsAndAnswersOnARealTmuxWithFakeOpenCodeService(t *testing
 	e.eventually(time.Second, "待核准", func(s string) bool { return strings.Contains(s, "? calm") })
 	var own []string
 	for _, l := range strings.Split(e.inTmux("show-options", "-g"), "\n") {
-		if strings.HasPrefix(l, "@tos_sb_") {
+		if strings.HasPrefix(l, "@tos_layout_") {
 			own = append(own, l)
 		}
 	}

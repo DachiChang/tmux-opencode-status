@@ -12,10 +12,11 @@ type Published struct {
 
 // OptPrefix is the tmux user option prefix owned by this plugin; it must never
 // collide with a user's own @options (the POC used @oc_side / @sb_*).
-const OptPrefix = "@tos_sb_"
+// Every option is named @tos_<purpose>_<name> (ADR-0004).
+const OptPrefix = "@tos_"
 
 // MainOption is the option holding the full layout.
-const MainOption = OptPrefix + "main"
+const MainOption = OptPrefix + "layout_main"
 
 // Publish lays out groups with the default theme.
 func Publish(groups []Group, width int) Published {

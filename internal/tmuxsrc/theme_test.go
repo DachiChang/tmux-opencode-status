@@ -119,7 +119,7 @@ func TestAfterSetOptionHookWakesForModeAndEverySwatchButNotOtherOptions(t *testi
 			t.Errorf("取消 %s 應喚醒", name)
 		}
 	}
-	for _, name := range []string{"@other", "@opencode-status-colour-x", "@tos_sb_5", "@opencode-status-shown", "status-left"} {
+	for _, name := range []string{"@other", "@opencode-status-colour-x", "@tos_layout_5", "@opencode-status-shown", "status-left"} {
 		if _, err := c.tmux("", "set-option", "-g", name, "x"); err != nil {
 			t.Fatal(err)
 		}

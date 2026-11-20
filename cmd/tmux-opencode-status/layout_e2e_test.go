@@ -159,15 +159,15 @@ func TestLayoutOnRealClientsDisambiguationSummarySingleLayoutAndTmuxTruncation(t
 	}
 	var layouts []string
 	for _, l := range strings.Split(e.inTmux("show-options", "-g"), "\n") {
-		if strings.HasPrefix(l, "@tos_sb_") {
+		if strings.HasPrefix(l, "@tos_") {
 			layouts = append(layouts, l)
 		}
 	}
-	if len(layouts) != 1 || !strings.HasPrefix(layouts[0], "@tos_sb_main ") {
-		t.Fatalf("全域應只有一個版面選項 @tos_sb_main：%q", layouts)
+	if len(layouts) != 1 || !strings.HasPrefix(layouts[0], "@tos_layout_main ") {
+		t.Fatalf("全域應只有一個版面選項 @tos_layout_main：%q", layouts)
 	}
-	if got := strings.TrimSpace(e.inTmux("show-options", "-gv", "side-status-format")); got != "#{@tos_sb_main}" {
-		t.Fatalf("side-status-format 應固定為 #{@tos_sb_main}：%q", got)
+	if got := strings.TrimSpace(e.inTmux("show-options", "-gv", "side-status-format")); got != "#{@tos_layout_main}" {
+		t.Fatalf("side-status-format 應固定為 #{@tos_layout_main}：%q", got)
 	}
 
 	for name, scr := range map[string][]string{"c9": small, "c14": mid} {

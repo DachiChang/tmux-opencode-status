@@ -31,7 +31,7 @@ set -g @opencode-status-mode global
 ## 套用機制與單實例
 
 - 常駐程式在專屬索引 `41700` 安裝 `after-set-option` hook，條件為 `#{hook_argument_0}` 等於 `@opencode-status-mode` 時
-  才 `wait-for -S`，因此插件自己寫入側欄選項（`@tos_sb_*`）不會造成回授。設定、`set -gu`、重載設定檔都會觸發。
+  才 `wait-for -S`，因此插件自己寫入側欄選項（`@tos_*`）不會造成回授。設定、`set -gu`、重載設定檔都會觸發。
 - **啟動空窗**：hook 是常駐程式啟動後才安裝；首次同步與 hook 就緒之間的設定變動沒有通知。hook 全部裝好後補一次喚醒，
   該空窗內的重載因此也在 1 秒內套用，不必等 5 秒補漏（`TestModeChangeDuringDaemonStartupIsNotLeftToTheBackstop` 以 tmux 包裝確定性放大空窗）。
 - 喚醒後內容一律重讀；漏通知由低頻補漏補上。模式與資料都沒變時不重寫 tmux（指紋比對）。

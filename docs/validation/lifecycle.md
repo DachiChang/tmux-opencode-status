@@ -26,7 +26,7 @@ tmux-opencode-status run -L <name> | -S <path> …                           # �
   - `<id>.start`：`start`／`stop` 的序列化鎖。並行 `start` 一次只有一個在判斷與啟動。
   - `<id>.json`：診斷用狀態；`<id>.log`：常駐程式 stderr（超過 64 KiB 於下次啟動時重建）。
 - `run` 自己也取 `<id>.lock`：即使有人繞過 `start` 直接執行 `run`，第二個也會立即退出（結束碼 0）。
-- 不同 socket 的檔案不同，因此實例、輸出（`@tos_sb_*`）、hook、退出完全獨立；所有 tmux 指令都帶明確的 `-L`／`-S`。
+- 不同 socket 的檔案不同，因此實例、輸出（`@tos_*`）、hook、退出完全獨立；所有 tmux 指令都帶明確的 `-L`／`-S`。
 
 ## 重載交接
 
@@ -41,14 +41,14 @@ tmux-opencode-status run -L <name> | -S <path> …                           # �
 - 交接不呼叫 `side-status`（不強制打開已隱藏的側欄）、不清除 session 層級 override、不新增任何綁定。
 - **`-show` 每個 tmux server 只生效一次**：第一次成功後在全域設 `@opencode-status-shown`（插件專屬；隨 server 結束消失，
   `stop` 會移除以便重新啟動後再次顯示）。之後重載、交接、崩潰後重啟，只要使用者把側欄隱藏就不會被重新打開。
-- 新實例第一次寫入時會順便清掉前一個實例（例如被 `kill -9`）留下的 `@tos_sb_*` 孤兒選項。
+- 新實例第一次寫入時會順便清掉前一個實例（例如被 `kill -9`）留下的 `@tos_*` 孤兒選項。
 - 模式切換（`@opencode-status-mode`）不需 `start`：同一實例由 `after-set-option` hook 喚醒後重讀（見 `modes.md`）。
 
 ## 退出與清理
 
 | 結束原因 | 清理 |
 | --- | --- |
-| `stop`／SIGTERM／SIGINT | 移除自己的 hook（索引 41700）、`@tos_sb_*`、`@opencode-status-shown`；`side-status-format` **只在仍等於本實例最後寫入的內容時**才移除（連同 `side-status-width`）；刪除鎖檔與狀態檔 |
+| `stop`／SIGTERM／SIGINT | 移除自己的 hook（索引 41700）、`@tos_*`、`@opencode-status-shown`；`side-status-format` **只在仍等於本實例最後寫入的內容時**才移除（連同 `side-status-width`）；刪除鎖檔與狀態檔 |
 | 交接（SIGUSR1） | 只移除 hook、刪除鎖檔與狀態檔；畫面選項保留給新實例接手 |
 | tmux server 結束 | 本機鎖檔與狀態檔；tmux 內的資源已隨 server 消失 |
 
