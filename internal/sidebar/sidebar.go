@@ -58,6 +58,9 @@ type Deps struct {
 	// Report 在可觀察狀態改變時被呼叫（診斷用）。內容只有計數與固定描述，
 	// 不含憑證、prompt、對話、session 或 tab 標題，也不含原始錯誤文字。nil 表示不回報。
 	Report func(Status)
+
+	// Startup 是啟動時（Daemon 之外）發生、要記入最近錯誤的問題（固定描述，例如觸發鍵無效）。
+	Startup []ErrorRecord
 }
 
 // Service 連線狀態的固定描述值。
@@ -85,7 +88,7 @@ type Status struct {
 // ErrorRecord 是一筆最近發生的問題：只有來源與固定描述。
 type ErrorRecord struct {
 	At      time.Time
-	Source  string // tmux／tabs／mode／theme／service／output
+	Source  string // tmux／tabs／mode／theme／service／output／jump
 	Message string
 }
 
@@ -145,6 +148,7 @@ func New(cfg Config, deps Deps) *Daemon {
 		deps.Theme = unsetTheme{}
 	}
 	d := &Daemon{cfg: cfg, deps: deps, theme: render.DefaultTheme(), liveWake: make(chan struct{}, 1)}
+	d.recent = append(d.recent, deps.Startup...)
 	if deps.Service != nil {
 		d.live = newLive(deps.Service, cfg.Retry, cfg.Resync, func() {
 			select {

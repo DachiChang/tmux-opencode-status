@@ -18,7 +18,7 @@ go build -o tmux-opencode-status ./cmd/tmux-opencode-status
 | --- | --- | --- |
 | `PaneSource.Panes()` | `tmuxsrc.Client`（`list-panes -a` + `ps` + `KERN_PROCARGS2` + `lsof`；以 pane_id 去重） | 受控 pane 事實 |
 | `TabSource.Read()` | `tabsrc.Source`（唯讀 tabs.json；不存在＝空，其他錯誤＝錯誤） | 受控 `TabsFile` 或錯誤 |
-| `Output.Publish()` | `tmuxsrc.Client`（單一 `source-file -`，選項前綴 `@tos_sb_`） | 記錄寫入、讀取單一版面 `@tos_sb_main`（需要模擬某高度時自行取前 n 列） |
+| `Output.Publish()` | `tmuxsrc.Client`（單一 `source-file -`，選項前綴 `@tos_`） | 記錄寫入、讀取單一版面 `@tos_layout_main`（需要模擬某高度時自行取前 n 列） |
 | `Deps.Wake` / `Deps.Ticks` | tmux hook + `wait-for`、tabs.json 目錄 fsnotify／低頻 ticker | 受控 channel（不需等待真實時間） |
 
 三層測試：
@@ -43,8 +43,8 @@ go build -o tmux-opencode-status ./cmd/tmux-opencode-status
 
 ## 重要設計決定
 
-- 使用者選項使用專屬前綴 `@tos_sb_`（`render.OptPrefix`；版面選項為 `@tos_sb_main`，見 ADR-0003）；舊 POC 的 `@sb_`、`@oc_side*` 不使用也不修改。
-- hook 使用專屬陣列索引 `41700`，結束時只移除自己的索引；不新增任何按鍵／滑鼠綁定。
+- 使用者選項使用專屬前綴 `@tos_`（`render.OptPrefix`；版面選項為 `@tos_layout_main`，見 ADR-0003、ADR-0004）；舊 POC 的 `@sb_`、`@oc_side*` 不使用也不修改。
+- hook 使用專屬陣列索引 `41700`，結束時只移除自己的索引；hook 本身不新增任何按鍵／滑鼠綁定（插件的綁定只有點擊跳轉、prefix 觸發鍵與 `opencode-status-jump` 按鍵表，見 ADR-0002、ADR-0005）。
   hook 是視窗層級（`show-hooks -gw`），`pane-exited`、`window-linked` 等都在其中。
 - hook 只負責「喚醒」，內容每次重新讀取；漏掉任何 hook 由低頻補漏補上。
 - **pane title 喚醒**：在既有 shell 啟動／結束 TUI 時 tmux 沒有結構事件，但 TUI 會改終端標題，

@@ -10,6 +10,7 @@ import (
 	"github.com/DachiChang/tmux-opencode-status/internal/instance"
 	"github.com/DachiChang/tmux-opencode-status/internal/render"
 	"github.com/DachiChang/tmux-opencode-status/internal/sidebar"
+	"github.com/DachiChang/tmux-opencode-status/internal/tmuxsrc"
 )
 
 // diagnose 是嚴格唯讀的診斷：只查 tmux（show-options／list-sessions／display-message）與本機狀態檔，
@@ -110,6 +111,8 @@ func diagnose(o *options, w io.Writer) int {
 		}
 	}
 
+	problems += diagnoseJump(tm, held, haveState, st.JumpTrigger, p)
+
 	ov, oerr := tm.SessionOverrides()
 	switch {
 	case oerr != nil:
@@ -129,6 +132,49 @@ func diagnose(o *options, w io.Writer) int {
 	} else {
 		p("結論：發現 %d 項問題（見上）", problems)
 	}
+	return 0
+}
+
+// diagnoseJump 輸出「鍵盤跳轉」一行並回傳要計入的問題數（無效設定、綁定失敗、已被覆寫各算一項）。
+// 唯讀：只讀設定選項、@tos_jump_trigger 與 list-keys。不偵測觸發鍵在綁定前原本是什麼。
+// reported 與 startSetting 是常駐程式啟動時讀到的設定（haveState 為 false 時未知）：目前設定與它不同，
+// 表示使用者改了設定還沒重載，那是「設定尚未套用」，不是綁定失敗。
+func diagnoseJump(tm *tmuxsrc.Client, running, haveState bool, startSetting string, p func(string, ...any)) int {
+	set := tm.JumpTriggerSetting()
+	if set.Unreadable {
+		p("鍵盤跳轉：無法讀取觸發鍵設定")
+		return 0
+	}
+	configured := set.Key()
+	shown := configured
+	if !set.Set {
+		shown = configured + "（未設定，預設）"
+	}
+	actual := tm.ActualJumpTrigger()
+	switch {
+	case configured == "" || tm.JumpKeyInvalid(configured):
+		p("鍵盤跳轉：無效設定（%s 的值 %q 不是 tmux 認得的鍵名）；不綁任何觸發鍵，也不退回預設 A", tmuxsrc.JumpTriggerOption, configured)
+		return 1
+	case actual == "" && running && !haveState:
+		p("鍵盤跳轉：設定的觸發鍵 %s；常駐程式尚未回報狀態", shown)
+		return 0
+	case actual == "" && running && startSetting != set.String():
+		p("鍵盤跳轉：設定的觸發鍵 %s，實際綁定的鍵：無——設定尚未套用，重新載入 tmux 設定後生效", shown)
+		return 0
+	case actual == "" && running:
+		p("鍵盤跳轉：綁定失敗（設定的觸發鍵 %s，實際綁定的鍵：無）；tmux 拒絕了這個綁定", shown)
+		return 1
+	case actual == "":
+		p("鍵盤跳轉：未綁定（設定的觸發鍵 %s；常駐程式未執行）", shown)
+		return 0
+	case actual != configured:
+		p("鍵盤跳轉：設定的觸發鍵 %s，實際綁定的鍵 %s——設定尚未套用，重新載入 tmux 設定後生效", shown, actual)
+		return 0
+	case !tm.PrefixBindingIsJump(actual):
+		p("鍵盤跳轉：已被覆寫（設定的觸發鍵 %s；prefix 表的這個鍵已不是跳轉綁定，可能被 tmux.conf 或其他插件改綁）", shown)
+		return 1
+	}
+	p("鍵盤跳轉：已綁定（設定的觸發鍵 %s，實際綁定的鍵 %s；按 prefix 再按 %s 進入跳轉模式）", shown, actual, actual)
 	return 0
 }
 

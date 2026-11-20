@@ -13,6 +13,7 @@ const (
 	barWidth          = 1  // 專案名稱前的 ▎
 	noticePrefixWidth = 2  // 提示前 "▲ " 的格寬
 	titleBlock        = 10 // " OPENCODE " 底塊
+	tagWidth          = 3  // 跳轉標籤 " a "
 )
 
 // Render 把排好的列轉成 tmux side-status 的行。width 是側欄內容寬度（36 格扣掉分隔線）；
@@ -21,10 +22,16 @@ const (
 // 標題與名稱都是資料：每個 # 雙寫，控制字元換成空白，雙向控制字元移除，每份文字依格寬
 // 以群集為單位截斷。輸出存進使用者選項並以 #{@opt} 讀取（絕不用 #{E:@opt}／#{T:@opt}），
 // 因此只展開一次。
-func Render(rows []Row, width int, th Theme) []string {
+func Render(rows []Row, width int, th Theme) []string { return render(rows, width, th, false) }
+
+// RenderJump 是跳轉模式的版面：與 Render 的列數、range、非群組列完全相同，只有分到字母的群組列
+// 以跳轉標籤取代開頭的 ▎。
+func RenderJump(rows []Row, width int, th Theme) []string { return render(rows, width, th, true) }
+
+func render(rows []Row, width int, th Theme, jump bool) []string {
 	out := make([]string, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, jumpRange(r.JumpTarget, renderRow(r, max(width-margin, 1), th)))
+		out = append(out, jumpRange(r.JumpTarget, renderRow(r, max(width-margin, 1), th, jump)))
 	}
 	return out
 }
@@ -43,7 +50,7 @@ func jumpRange(target, line string) string {
 	return "#[range=user|" + JumpRangePrefix + target + "]" + line + "#[norange]"
 }
 
-func renderRow(r Row, usable int, th Theme) string {
+func renderRow(r Row, usable int, th Theme, jump bool) string {
 	pad := strings.Repeat(" ", margin)
 	switch r.Kind {
 	case RowTitle:
@@ -52,12 +59,17 @@ func renderRow(r Row, usable int, th Theme) string {
 	case RowRule:
 		return pad + styled("fg="+th.Split, strings.Repeat("─", max(usable-margin, 0)))
 	case RowGroup:
-		room := usable - margin - barWidth
+		lead, leadWidth := pad+"#[fg="+th.Emphasis+"]▎", margin+barWidth
+		if jump && strings.IndexByte(JumpLetters, r.Letter) >= 0 {
+			// 標籤（空白＋字母＋空白）加 1 格空白取代 ▎ 與它前面的邊距；字母只來自 a–z，不是資料。
+			lead, leadWidth = styled("bg="+th.Emphasis+",fg="+th.Title, " "+string(r.Letter)+" ")+" ", tagWidth+1
+		}
+		room := usable - leadWidth
 		if r.Summary != "" {
 			room -= cellwidth.String(r.Summary) + 1
 		}
 		name := truncate(clean(r.Text), room)
-		return pad + "#[fg=" + th.Emphasis + "]▎" + styled("fg="+th.Project, esc(name)) + rightSummary(margin+barWidth+cellwidth.String(name), r.Summary, usable, th)
+		return lead + styled("fg="+th.Project, esc(name)) + rightSummary(leadWidth+cellwidth.String(name), r.Summary, usable, th)
 	case RowTab:
 		sym, color := th.symbol(r.State)
 		title := truncate(clean(r.Text), usable-tabIndent-2)

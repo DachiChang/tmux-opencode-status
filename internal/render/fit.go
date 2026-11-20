@@ -55,6 +55,8 @@ type Row struct {
 	Indent  int // RowNote 額外縮排格數；RowNotice 為折行續行的縮排
 	// JumpTarget 是所屬群組的跳轉目標（群組列、tab 列與群組內的「無 tab」列才會有）；空字串表示不加 range。
 	JumpTarget string
+	// Letter 是群組列分到的跳轉字母（'a'–'z'），0 表示沒有；只有群組列會有。
+	Letter byte
 }
 
 // View is everything the sidebar can show: the logical list plus the two
@@ -103,13 +105,20 @@ func FitView(v View) []Row {
 }
 
 // layout renders every group (in order) with group headers and blanks.
+// 跳轉字母依群組順序只分配給有跳轉目標的群組，分完 a–z 為止。
 func layout(groups []Group) []Row {
 	var rows []Row
+	next := 0
 	for _, g := range groups {
 		if len(rows) > 0 {
 			rows = append(rows, Row{Kind: RowBlank})
 		}
-		rows = append(rows, Row{Kind: RowGroup, Text: g.Name, Summary: groupSummary(g), JumpTarget: g.JumpTarget})
+		head := Row{Kind: RowGroup, Text: g.Name, Summary: groupSummary(g), JumpTarget: g.JumpTarget}
+		if g.JumpTarget != "" && next < len(JumpLetters) {
+			head.Letter = JumpLetters[next]
+			next++
+		}
+		rows = append(rows, head)
 		if len(g.Tabs) == 0 {
 			rows = append(rows, Row{Kind: RowNote, Text: "無 tab", Indent: tabIndent - margin, JumpTarget: g.JumpTarget})
 			continue

@@ -7,8 +7,13 @@
 #   2. 否則依 VERSION 與 uname -m 選擇 GitHub Release 資產，下載、以 SHA256SUMS 驗證、放到 bin/ 後使用。
 # 任何一步失敗都明確報錯（stderr 與 tmux display-message）並以非 0 結束；
 # 絕不靜默改用 go build、也絕不換用其他架構的執行檔。
-# 本腳本不新增任何按鍵或滑鼠綁定；唯一的綁定是常駐程式啟動時接管 root 鍵表的 MouseDown1SideStatus（點擊側欄群組跳到跳轉目標），
-# 明確停止時只寫回 tmux 預設 `switch-client -t =`（見 docs/adr/0002-click-to-jump.md）。
+# 本腳本本身不新增任何按鍵或滑鼠綁定；綁定都由常駐程式啟動時建立，共三項：
+#   1. 接管 root 鍵表的 MouseDown1SideStatus（點擊側欄群組跳到跳轉目標）；明確停止時只寫回 tmux 預設
+#      `switch-client -t =`（見 docs/adr/0002-click-to-jump.md）。
+#   2. 一個 prefix 觸發鍵（預設 A，@opencode-status-jump-trigger 可改；無效值不綁、不退回 A）→ 進入跳轉模式。
+#   3. 跳轉按鍵表 opencode-status-jump 的 a–z（按字母切到該群組的跳轉目標）。
+#   明確停止時 unbind 觸發鍵並清空跳轉按鍵表，不寫回、不還原任何原有綁定（見 docs/adr/0005-keyboard-jump.md）。
+# 改了 @opencode-status-jump-trigger 後重載設定（會再次執行本腳本）即交接給新實例並套用新鍵。
 #
 # 可注入（測試與鏡像用）：TMUX_OPENCODE_STATUS_RELEASE_URL 取代預設的 Release 下載基底網址。
 

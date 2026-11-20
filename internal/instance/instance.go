@@ -173,19 +173,21 @@ type ErrorRecord struct {
 
 // State 是常駐程式寫給診斷用的狀態。診斷只讀這份檔案與 tmux，不連 OpenCode。
 type State struct {
-	PID           int           `json:"pid"`
-	ServerPID     int           `json:"serverPid"`
-	Key           string        `json:"key"`
-	Started       time.Time     `json:"started"`
-	Mode          string        `json:"mode"`
-	ModeIssue     string        `json:"modeIssue,omitempty"`
-	Tracking      bool          `json:"tracking"`
-	TUIs          int           `json:"tuis"`
-	Tabs          int           `json:"tabs"`
-	Service       string        `json:"service"`
-	ServiceReason string        `json:"serviceReason,omitempty"`
-	Issues        []string      `json:"issues,omitempty"`
-	Recent        []ErrorRecord `json:"recent,omitempty"`
+	PID           int       `json:"pid"`
+	ServerPID     int       `json:"serverPid"`
+	Key           string    `json:"key"`
+	Started       time.Time `json:"started"`
+	Mode          string    `json:"mode"`
+	ModeIssue     string    `json:"modeIssue,omitempty"`
+	Tracking      bool      `json:"tracking"`
+	TUIs          int       `json:"tuis"`
+	Tabs          int       `json:"tabs"`
+	Service       string    `json:"service"`
+	ServiceReason string    `json:"serviceReason,omitempty"`
+	Issues        []string  `json:"issues,omitempty"`
+	// JumpTrigger 是常駐程式啟動時讀到的觸發鍵設定（tmuxsrc.JumpTrigger.String()）；diagnose 用來分辨「設定尚未套用」。
+	JumpTrigger string        `json:"jumpTrigger,omitempty"`
+	Recent      []ErrorRecord `json:"recent,omitempty"`
 }
 
 // WriteState 以暫存檔 + rename 原子寫入。

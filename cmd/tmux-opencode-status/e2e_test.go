@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"syscall"
 	"testing"
@@ -443,7 +444,7 @@ func TestSessionLifecycleOnARealTmuxWithFakeOpenCodeService(t *testing.T) {
 }
 
 // 等你核准／等你回答：多個請求、交錯處理、權限優先、問題取消；全程只有 GET，
-// 也不新增任何 tmux 綁定。
+// 也不新增或改變插件接管以外的 tmux 綁定。
 func TestPendingApprovalsAndAnswersOnARealTmuxWithFakeOpenCodeService(t *testing.T) {
 	e := newEnv(t)
 	dir := filepath.Join(e.dir, "work", "api")
@@ -493,7 +494,7 @@ func TestPendingApprovalsAndAnswersOnARealTmuxWithFakeOpenCodeService(t *testing
 	e.eventually(time.Second, "待核准", func(s string) bool { return strings.Contains(s, "? calm") })
 	var own []string
 	for _, l := range strings.Split(e.inTmux("show-options", "-g"), "\n") {
-		if strings.HasPrefix(l, "@tos_sb_") {
+		if strings.HasPrefix(l, "@tos_layout_") {
 			own = append(own, l)
 		}
 	}
@@ -501,7 +502,9 @@ func TestPendingApprovalsAndAnswersOnARealTmuxWithFakeOpenCodeService(t *testing
 	if opts == "" {
 		t.Fatalf("找不到側欄輸出選項：\n%s", opts)
 	}
-	if strings.Contains(strings.ReplaceAll(opts, "#[bg=#A78BFA,fg=#18181B] OPENCODE ", ""), "bg=") || strings.Contains(opts, "fg=#FACC15]!") {
+	noBlocks := strings.ReplaceAll(opts, "#[bg=#A78BFA,fg=#18181B] OPENCODE ", "")
+	noBlocks = regexp.MustCompile(`#\[bg=#A78BFA,fg=#18181B\] [a-z] `).ReplaceAllString(noBlocks, "") // 跳轉標籤
+	if strings.Contains(noBlocks, "bg=") || strings.Contains(opts, "fg=#FACC15]!") {
 		t.Fatalf("待處理不得使用標題以外的背景色塊或黃色 !：\n%s", opts)
 	}
 	if !strings.Contains(opts, "#[fg=#FACC15]?#[default]") {
@@ -522,7 +525,7 @@ func TestPendingApprovalsAndAnswersOnARealTmuxWithFakeOpenCodeService(t *testing
 }
 
 // 多層 subagent 家族：孫輩的執行與待處理彙整到 tab；主 session 先結束；啟動前已存在的後代；
-// 無關家族隔離；後代失敗不污染 tab。全程只有 GET，也不新增任何 tmux 綁定。
+// 無關家族隔離；後代失敗不污染 tab。全程只有 GET，也不新增或改變插件接管以外的 tmux 綁定。
 func TestSessionFamilyRollsUpToTabsOnARealTmuxWithFakeOpenCodeService(t *testing.T) {
 	e := newEnv(t)
 	dir := filepath.Join(e.dir, "work", "api")

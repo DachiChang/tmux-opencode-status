@@ -159,15 +159,22 @@ func TestLayoutOnRealClientsDisambiguationSummarySingleLayoutAndTmuxTruncation(t
 	}
 	var layouts []string
 	for _, l := range strings.Split(e.inTmux("show-options", "-g"), "\n") {
-		if strings.HasPrefix(l, "@tos_sb_") {
+		if strings.HasPrefix(l, "@tos_") {
 			layouts = append(layouts, l)
 		}
 	}
-	if len(layouts) != 1 || !strings.HasPrefix(layouts[0], "@tos_sb_main ") {
-		t.Fatalf("全域應只有一個版面選項 @tos_sb_main：%q", layouts)
+	var names []string
+	for _, l := range layouts {
+		n, _, _ := strings.Cut(l, " ")
+		names = append(names, n)
 	}
-	if got := strings.TrimSpace(e.inTmux("show-options", "-gv", "side-status-format")); got != "#{@tos_sb_main}" {
-		t.Fatalf("side-status-format 應固定為 #{@tos_sb_main}：%q", got)
+	// 全域只有兩份版面（一般與跳轉，不依高度）加每個群組一個字母與實際綁定的觸發鍵。
+	if want := "@tos_jump_key_a,@tos_jump_key_b,@tos_jump_key_c,@tos_jump_trigger,@tos_layout_jump,@tos_layout_main"; strings.Join(names, ",") != want {
+		t.Fatalf("全域選項 = %q，要 %q", names, want)
+	}
+	const wantFormat = "#{?#{==:#{client_key_table},opencode-status-jump},#{@tos_layout_jump},#{@tos_layout_main}}"
+	if got := strings.TrimSpace(e.inTmux("show-options", "-gv", "side-status-format")); got != wantFormat {
+		t.Fatalf("side-status-format 應固定為 %q：%q", wantFormat, got)
 	}
 
 	for name, scr := range map[string][]string{"c9": small, "c14": mid} {

@@ -30,6 +30,8 @@ type Client struct {
 	// lastFormat 是本實例最後寫入的 side-status-format；停止時只有內容仍相同才移除，
 	// 不覆蓋使用者之後自己設定的值。
 	lastFormat string
+	// jumpTrigger 是本實例實際綁定成功的觸發鍵；空字串表示沒有綁（無效或失敗）。每次發布一起寫入 @tos_jump_trigger。
+	jumpTrigger string
 	// proc 是讀取前景行程事實的來源；nil 使用本機實作（測試以受控實作替換）。
 	proc procReader
 }
@@ -194,19 +196,27 @@ func foregroundProcs() (map[string]int, error) {
 func (c *Client) Publish(p render.Published) error {
 	var s strings.Builder
 	s.WriteString("set-option -g side-status-width " + strconv.Itoa(c.Width) + "\n")
-	names := make([]string, 0, len(p.Options))
-	for n := range p.Options {
+	opts := make(map[string]string, len(p.Options)+1)
+	for n, v := range p.Options {
+		opts[n] = v
+	}
+	if c.jumpTrigger != "" {
+		// 實際綁定的觸發鍵與版面一起寫入：交接的新實例與 stop 都從這裡知道要 unbind 哪個鍵。
+		opts[render.BoundTriggerOption] = c.jumpTrigger
+	}
+	names := make([]string, 0, len(opts))
+	for n := range opts {
 		names = append(names, n)
 	}
 	sort.Strings(names)
 	if c.published == nil {
 		// 第一次寫入：本插件專屬前綴下既有的選項（前一個實例或崩潰留下的）一併由這次寫入清掉。
-		c.published = c.existingLayoutOptions()
+		c.published = c.existingPluginOptions()
 	}
 	next := map[string]bool{}
 	for _, n := range names {
 		next[n] = true
-		s.WriteString("set-option -g " + n + " " + quote(p.Options[n]) + "\n")
+		s.WriteString("set-option -g " + n + " " + quote(opts[n]) + "\n")
 	}
 	s.WriteString("set-option -g side-status-format " + quote(p.Format()) + "\n")
 	for old := range c.published {
@@ -222,8 +232,8 @@ func (c *Client) Publish(p render.Published) error {
 	return nil
 }
 
-// existingLayoutOptions 列出目前全域中屬於本插件前綴的版面選項。讀取失敗視為沒有（之後的寫入會補上新內容）。
-func (c *Client) existingLayoutOptions() map[string]bool {
+// existingPluginOptions 列出目前全域中屬於本插件前綴（@tos_）的內部選項。讀取失敗視為沒有（之後的寫入會補上新內容）。
+func (c *Client) existingPluginOptions() map[string]bool {
 	out, err := c.tmux("", "show-options", "-g")
 	found := map[string]bool{}
 	if err != nil {
@@ -237,7 +247,7 @@ func (c *Client) existingLayoutOptions() map[string]bool {
 	return found
 }
 
-// ClearDisplay 在常駐程式因明確停止而退出（server 仍在）時，移除本插件發布的版面選項，
+// ClearDisplay 在常駐程式因明確停止而退出（server 仍在）時，移除本插件發布的內部選項（@tos_*），
 // 並在 side-status-format 仍是本實例寫入的內容時把它與 width 重設為 tmux 預設，避免留下不再更新的過期內容。
 // 只動本插件前綴的選項與它自己寫入的全域選項；不碰其他使用者選項。
 func (c *Client) ClearDisplay() {
@@ -246,7 +256,7 @@ func (c *Client) ClearDisplay() {
 		strings.TrimSuffix(string(cur), "\n") == c.lastFormat {
 		b.WriteString("set-option -gu side-status-format\nset-option -gu side-status-width\n")
 	}
-	for name := range c.existingLayoutOptions() {
+	for name := range c.existingPluginOptions() {
 		b.WriteString("set-option -gu " + name + "\n")
 	}
 	_, _ = c.tmux(b.String(), "source-file", "-")

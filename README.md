@@ -1,7 +1,7 @@
 # tmux-opencode-status
 
 在 tmux 3.9 的原生 **side-status** 顯示同一 tmux server 中所有 OpenCode TUI 的 tab 狀態（等你核准／回答、執行中、失敗未讀、結束未讀、閒置、資料異常）。
-唯讀資訊總覽：不安裝 OpenCode plugin、不修改 OpenCode 設定、不啟動或重啟服務。唯一的 tmux 綁定是接管 `MouseDown1SideStatus`（見「點擊跳轉」），不新增任何鍵盤綁定。
+唯讀資訊總覽：不安裝 OpenCode plugin、不修改 OpenCode 設定、不啟動或重啟服務。插件在 tmux 中的綁定只有三項：接管 root 表的 `MouseDown1SideStatus`（見「點擊跳轉」）、一個 prefix 觸發鍵（預設 `A`）與 `opencode-status-jump` 按鍵表（見「鍵盤跳轉」）。
 
 ## 需求
 
@@ -58,6 +58,29 @@ session、window、pane 一次到位，可跨 tmux session，目標 pane 不是�
 tmux server 結束時綁定隨之消失；常駐程式被強制終止（`kill -9`）時綁定會殘留，但非插件的 range 仍走 `switch-client -t =`，下次啟動會重寫。
 綁定完全在 tmux 內執行，不開 shell、不呼叫插件執行檔。設計理由見 `docs/adr/0002-click-to-jump.md`。
 
+### 鍵盤跳轉
+
+按觸發鍵（預設 `prefix` 再按 `A`）進入**跳轉模式**：只有這個 client 的側欄，每個目錄群組列開頭的 `▎` 換成紫底的**跳轉標籤**（` a `、` b `…），
+再按該字母就切到該群組的跳轉目標（與點擊同一個 pane，可跨 session）；跳轉後標籤消失。按 `Esc`、沒有綁定的鍵或沒有群組的字母會離開跳轉模式，位置不變，那個鍵不會送進 pane。
+
+```tmux
+# 選用：改觸發鍵（只寫鍵名，一律綁在 prefix 表）。預設 A 不覆蓋 tmux 預設鍵與常見插件的鍵
+# set -g @opencode-status-jump-trigger J
+# 選用：自己在 root 表加別名，少按一下 prefix（插件不提供、不管理 root 鍵；表名 opencode-status-jump 是對外承諾）
+# bind -n M-a switch-client -T opencode-status-jump
+```
+
+- **標籤規則**：字母依側欄群組順序從 `a` 分配，只分給有跳轉目標的群組，最多 26 個（第 27 個起維持 `▎`，只能用滑鼠點）；tab 列不加標籤。
+  字母與側欄高度無關：群組被截到畫面外時按它的字母仍會跳轉。標籤用 `emphasis` 底、`title` 字，不新增色票。
+- **多 client**：只有按下觸發鍵的那個 client 顯示標籤，其他 client 的側欄不變。側欄隱藏（`side-status off`）時按觸發鍵仍會進入跳轉模式。
+- **改觸發鍵**：改 `@opencode-status-jump-trigger` 後**重載 tmux.conf** 才生效（TPM 重新執行入口腳本，觸發鍵設定是常駐程式指紋的一部分，因此交接給新實例：
+  先 unbind 舊鍵、再綁新鍵）。只在命令列 `set -g` 而不重載不會改綁。
+- **無效的觸發鍵**（空字串、tmux 不認得的鍵名）：不綁任何 prefix 鍵，也**不會退回預設 `A`**；`diagnose` 會回報並計入問題數。
+- **會覆寫該鍵的 prefix 綁定。** 預設鍵 `A` 在 tmux 預設與常見插件中都沒用到；若你自己的 `tmux.conf` 或其他插件綁了同一個鍵，插件載入後以插件為準，`diagnose` 會在被改綁時回報「已被覆寫」。
+- **停止與重載的影響**：明確停止（`stop`）時 unbind 觸發鍵、清空 `opencode-status-jump` 表，並清掉所有 `@tos_*`；**不寫回、不還原任何原有綁定**。
+  被覆蓋的若是你 `tmux.conf` 的綁定，重載設定即恢復；若是 tmux 內建預設鍵，需要重啟 tmux server。你自己加的 root 別名插件不會動，但停止後它指向的表是空的，按下去等同取消。
+- 綁定完全在 tmux 內執行，不開 shell、不呼叫插件執行檔。設計理由見 `docs/adr/0004-internal-option-naming.md`、`docs/adr/0005-keyboard-jump.md`。
+
 ### cwd／global 模式（請與 OpenCode 的 scope 一致）
 
 ```tmux
@@ -75,8 +98,8 @@ set -g @opencode-status-mode global   # 單一 GLOBAL 群組，對應 OpenCode �
 
 | 名稱 | 預設 | 對應位置 |
 | --- | --- | --- |
-| `emphasis` | `#A78BFA` | OPENCODE 底塊、專案名稱前的 `▎` |
-| `title` | `#18181B` | 底塊上的 OPENCODE 文字 |
+| `emphasis` | `#A78BFA` | OPENCODE 底塊、專案名稱前的 `▎`、跳轉標籤底色 |
+| `title` | `#18181B` | 底塊上的 OPENCODE 文字、跳轉標籤上的字母 |
 | `split` | `#404040` | 標題下分隔線 |
 | `project` | `#F2EEE3` | 專案名稱 |
 | `active-tab` | `#cac5b5` | 執行中、等你處理、結束未讀、失敗未讀的 tab 標題 |
@@ -154,6 +177,7 @@ scripts/build-release.sh [版本]   # 預設讀 VERSION；輸出 dist/*.tar.gz �
 | 配色沒生效 | 跑 `diagnose`：無效的色票值會列出並退回預設（側欄不顯示錯誤）；合法格式見「配色」 |
 | 模式不對／清單是空的 | 確認 `@opencode-status-mode` 與 OpenCode 的 scope 一致 |
 | 點側欄沒有跳轉 | 只有目錄群組的列可點；用 `tmux list-keys -T root \| grep MouseDown1SideStatus` 確認綁定是插件的（內容含 `mouse_status_range`），並確認 `mouse` 選項為 `on` |
+| 按觸發鍵沒反應 | 跑 `diagnose` 看「鍵盤跳轉」一行（已綁定／無效設定／綁定失敗／已被覆寫）；再用 `tmux list-keys -T prefix <鍵>` 確認綁定是 `switch-client -T opencode-status-jump`；改了 `@opencode-status-jump-trigger` 要重載 tmux.conf |
 | 想完全移除 | `tmux-opencode-status stop`（清理本插件資源），再從 `tmux.conf` 移除 `@plugin` 並 `prefix + alt + u` |
 
 常駐程式的錯誤記錄在 `$XDG_RUNTIME_DIR/tmux-opencode-status/`（沒有則 `$TMPDIR/tmux-opencode-status-<uid>/`）下的 `<id>.log`。

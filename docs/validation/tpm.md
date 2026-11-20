@@ -38,7 +38,7 @@
 | 情境 | 測試 |
 | --- | --- |
 | 兩種架構產物為 Mach-O 且校驗檔可驗證；建置可重現；無效版本拒絕 | `TestReleaseBuild…` |
-| 缺少 Go 的乾淨環境：只下載本機架構、驗證、放置、啟動、左側 36 格、不新增綁定 | `TestInstallsTheHostArchitecture…WithoutGo` |
+| 缺少 Go 的乾淨環境：只下載本機架構、驗證、放置、啟動、左側 36 格、不另外新增綁定（綁定由常駐程式建立，tpm 測試的綁定比對排除插件接管的三項） | `TestInstallsTheHostArchitecture…WithoutGo` |
 | x86_64 選擇 amd64 資產且不 fallback（Rosetta 可用才執行，否則必須明確失敗） | `TestIntelArchitectureSelects…` |
 | 不支援的架構明確失敗且不下載 | `TestUnsupportedArchitectureFailsLoudly…` |
 | 資產 404／伺服器不可連線：明確失敗、不換架構、不編譯、不留暫存 | `TestDownloadFailureIsLoud…` |
