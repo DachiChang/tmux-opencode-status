@@ -151,8 +151,8 @@ func TestLayoutOnRealClientsDisambiguationSummarySingleLayoutAndTmuxTruncation(t
 		t.Fatalf("長標題應以 … 截斷：\n%s", whole)
 	}
 
-	small := e.clientScreen("c9")
-	mid := e.clientScreen("c14")
+	small := e.clientWaits("c9", 3*time.Second, "c9 收到最新版面", func(s []string) bool { return contains(s, "● 修正登入逻辑 bug") && contains(s, "✗ PR #42") })
+	mid := e.clientWaits("c14", 3*time.Second, "c14 收到最新版面", func(s []string) bool { return contains(s, "● 修正登入逻辑 bug") && contains(s, "✗ PR #42") })
 	t.Logf("c9（可用 8 列）：\n%s\n\nc14（可用 13 列）：\n%s", trimRight(small), trimRight(mid))
 	summary := func(ls []string) string {
 		return strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(ls[0]), "OPENCODE"))
@@ -182,6 +182,12 @@ func TestLayoutOnRealClientsDisambiguationSummarySingleLayoutAndTmuxTruncation(t
 				t.Fatalf("%s 第 %d 列應與完整版面相同（只從底部截斷）：\n%q\n%q", name, i, l, full[i])
 			}
 		}
+		if contains(scr, "· refactor") {
+			t.Fatalf("%s 最後一個 tab 應在畫面外：\n%s", name, trimRight(scr))
+		}
+	}
+	if last := strings.Fields(strings.TrimSpace(strings.Join(full, "\n"))); last[len(last)-1] != "refactor" {
+		t.Fatalf("完整 client 的最後一列應是最後一個 tab，不是提示列：\n%s", whole)
 	}
 
 	beforeMid := trimRight(mid)

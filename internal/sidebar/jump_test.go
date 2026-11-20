@@ -19,7 +19,7 @@ var rangeRe = regexp.MustCompile(`^#\[range=user\|oc(\d+)\](.*)#\[norange\]$`)
 func (f *fakeOut) jumpTargetsAndRows(t *testing.T, avail int) (targets []string, rows []string) {
 	t.Helper()
 	f.mu.Lock()
-	raw := f.latestLayoutLocked(avail)
+	raw := f.truncatedLayoutLocked(avail)
 	f.mu.Unlock()
 	for _, line := range strings.Split(raw, "\n") {
 		if m := rangeRe.FindStringSubmatch(line); m != nil {

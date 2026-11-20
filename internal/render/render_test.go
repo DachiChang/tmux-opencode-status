@@ -423,6 +423,13 @@ func TestLongContentIsPublishedWholeWithTheLastTabOnTheLastRow(t *testing.T) {
 	if got := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(ls[0]), "OPENCODE")); got != "?1 ◆1" {
 		t.Fatalf("頂部摘要應計入畫面外的 tab：%q", got)
 	}
+	// 任何假設高度（tmux 從底部截斷）下，兩個狀態 tab 都在畫面外，摘要仍是同一行。
+	for avail := 5; avail <= 50; avail++ {
+		shown := strings.Join(ls[:avail], "\n")
+		if strings.Contains(shown, "tab-28-0") || strings.Contains(shown, "tab-29-3") {
+			t.Fatalf("高度 %d 不應看到畫面外的狀態 tab：\n%s", avail, shown)
+		}
+	}
 }
 
 func cellwidthOf(line string) int { return cellwidth.String(render.StripStyles(line)) }

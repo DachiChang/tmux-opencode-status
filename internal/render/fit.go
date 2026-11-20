@@ -155,9 +155,7 @@ func summarize(groups []Group, dedupe bool) string {
 		if out != "" {
 			out += " "
 		}
-		out += e.sym + itoa(e.n)
+		out += e.sym + strconv.Itoa(e.n)
 	}
 	return out
 }
-
-func itoa(n int) string { return strconv.Itoa(n) }

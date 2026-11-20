@@ -157,12 +157,12 @@ func (f *fakeOut) rawScreen(avail int) []string {
 	if len(f.pubs) == 0 {
 		return nil
 	}
-	return strings.Split(render.StripStyles(f.latestLayoutLocked(avail)), "\n")
+	return strings.Split(render.StripStyles(f.truncatedLayoutLocked(avail)), "\n")
 }
 
-// latestLayoutLocked 是最近一次發布的那一份完整版面，只留前 avail 列：
+// truncatedLayoutLocked 是最近一次發布的版面只留前 avail 列：
 // 模擬 tmux 對可用高度為 avail 的 client 從底部截斷。呼叫端須持有 f.mu。
-func (f *fakeOut) latestLayoutLocked(avail int) string {
+func (f *fakeOut) truncatedLayoutLocked(avail int) string {
 	rows := strings.Split(f.pubs[len(f.pubs)-1].Options[render.MainOption], "\n")
 	return strings.Join(rows[:min(avail, len(rows))], "\n")
 }
