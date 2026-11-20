@@ -111,7 +111,7 @@ func diagnose(o *options, w io.Writer) int {
 		}
 	}
 
-	problems += diagnoseJump(tm, held, p)
+	problems += diagnoseJump(tm, held, haveState, st.JumpTrigger, p)
 
 	ov, oerr := tm.SessionOverrides()
 	switch {
@@ -137,9 +137,11 @@ func diagnose(o *options, w io.Writer) int {
 
 // diagnoseJump 輸出「鍵盤跳轉」一行並回傳要計入的問題數（無效設定、綁定失敗、已被覆寫各算一項）。
 // 唯讀：只讀設定選項、@tos_jump_trigger 與 list-keys。不偵測觸發鍵在綁定前原本是什麼。
-func diagnoseJump(tm *tmuxsrc.Client, running bool, p func(string, ...any)) int {
-	set, err := tm.JumpTriggerSetting()
-	if err != nil {
+// reported 與 startSetting 是常駐程式啟動時讀到的設定（haveState 為 false 時未知）：目前設定與它不同，
+// 表示使用者改了設定還沒重載，那是「設定尚未套用」，不是綁定失敗。
+func diagnoseJump(tm *tmuxsrc.Client, running, haveState bool, startSetting string, p func(string, ...any)) int {
+	set := tm.JumpTriggerSetting()
+	if set.Unreadable {
 		p("鍵盤跳轉：無法讀取觸發鍵設定")
 		return 0
 	}
@@ -153,6 +155,12 @@ func diagnoseJump(tm *tmuxsrc.Client, running bool, p func(string, ...any)) int 
 	case configured == "" || tm.JumpKeyInvalid(configured):
 		p("鍵盤跳轉：無效設定（%s 的值 %q 不是 tmux 認得的鍵名）；不綁任何觸發鍵，也不退回預設 A", tmuxsrc.JumpTriggerOption, configured)
 		return 1
+	case actual == "" && running && !haveState:
+		p("鍵盤跳轉：設定的觸發鍵 %s；常駐程式尚未回報狀態", shown)
+		return 0
+	case actual == "" && running && startSetting != set.String():
+		p("鍵盤跳轉：設定的觸發鍵 %s，實際綁定的鍵：無——設定尚未套用，重新載入 tmux 設定後生效", shown)
+		return 0
 	case actual == "" && running:
 		p("鍵盤跳轉：綁定失敗（設定的觸發鍵 %s，實際綁定的鍵：無）；tmux 拒絕了這個綁定", shown)
 		return 1

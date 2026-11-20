@@ -60,7 +60,7 @@ func renderRow(r Row, usable int, th Theme, jump bool) string {
 		return pad + styled("fg="+th.Split, strings.Repeat("─", max(usable-margin, 0)))
 	case RowGroup:
 		lead, leadWidth := pad+"#[fg="+th.Emphasis+"]▎", margin+barWidth
-		if jump && r.Letter >= 'a' && r.Letter <= 'z' {
+		if jump && strings.IndexByte(JumpLetters, r.Letter) >= 0 {
 			// 標籤（空白＋字母＋空白）加 1 格空白取代 ▎ 與它前面的邊距；字母只來自 a–z，不是資料。
 			lead, leadWidth = styled("bg="+th.Emphasis+",fg="+th.Title, " "+string(r.Letter)+" ")+" ", tagWidth+1
 		}

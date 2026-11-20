@@ -345,3 +345,22 @@ func TestDiagnoseReportsABindingFailureWhenTmuxRefusesTheTrigger(t *testing.T) {
 	out := e.diagnose(e.in)
 	mustContain(t, out, "鍵盤跳轉：綁定失敗", "發現 1 項問題")
 }
+
+func TestDiagnoseSaysNotYetAppliedWhenTheTriggerWasInvalidAtStartAndFixedWithoutReloading(t *testing.T) {
+	e := newLifecycleEnv(t)
+	e.inTmux("set", "-g", "@opencode-status-jump-trigger", "")
+	if out, err := e.start(e.in, "-show"); err != nil {
+		t.Fatalf("start：%v\n%s", err, out)
+	}
+	e.waitDaemons(e.in, 1, 3*time.Second, "start")
+	e.eventually(3*time.Second, "常駐程式已發布", func(string) bool { return len(e.tosOptions()) > 0 })
+	mustContain(t, e.diagnose(e.in), "鍵盤跳轉：無效設定", "發現 1 項問題")
+
+	// 使用者改成合法值但沒有重載：設定尚未套用，不是綁定失敗，也不計入問題
+	e.inTmux("set", "-g", "@opencode-status-jump-trigger", "M-j")
+	out := e.diagnose(e.in)
+	mustContain(t, out, "鍵盤跳轉：設定的觸發鍵 M-j", "設定尚未套用", "結論：未發現問題")
+	if strings.Contains(out, "綁定失敗") {
+		t.Fatalf("不應報綁定失敗：\n%s", out)
+	}
+}

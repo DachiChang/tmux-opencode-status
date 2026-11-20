@@ -61,7 +61,7 @@ tmux-opencode-status run -L <name> | -S <path> …                           # �
 ## 診斷（唯讀）
 
 `diagnose` 只查 tmux（`display-message`、`show-options`、`list-sessions`、`list-keys`）與本機狀態檔，**不連 OpenCode**、不寫任何選項、不啟動／停止任何程序。
-輸出項目：tmux 版本與 pid；必要能力（`side-status`、`side-status-width`、`side-status-format` 可用）；插件模式設定與生效模式；鍵盤跳轉（設定的觸發鍵、實際綁定的鍵與已綁定／無效設定／綁定失敗／已被覆寫，後三者計入問題數）；
+輸出項目：tmux 版本與 pid；必要能力（`side-status`、`side-status-width`、`side-status-format` 可用）；插件模式設定與生效模式；鍵盤跳轉（設定的觸發鍵、實際綁定的鍵與已綁定／無效設定／綁定失敗／已被覆寫，後三者計入問題數；設定與常駐程式啟動時不同＝設定尚未套用，不計入）；
 全域 side-status（隱藏時說明仍在追蹤）；常駐實例狀態；發現的 TUI 數與追蹤的 tab 數；服務連線（已連線／連線中／待命／無法連線＋固定原因）；
 目前問題與最近錯誤（最多 8 筆，邊緣觸發，只有來源與固定描述）；session 層級覆寫與影響；結論。
 

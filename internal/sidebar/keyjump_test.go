@@ -103,8 +103,9 @@ func TestJumpLayoutReplacesTheBarOfLetteredGroupsWithATagAndKeepsEverythingElse(
 		t.Fatalf("標籤樣式不符：%q", jump[2])
 	}
 	mainRows := w.out.layout(mainOpt)
+	rangeStart := regexp.MustCompile(`^#\[range=user\|oc\d+\]`)
 	for i := range mainRows {
-		prefix := func(s string) string { m := regexp.MustCompile(`^#\[range=user\|oc\d+\]`).FindString(s); return m }
+		prefix := rangeStart.FindString
 		if prefix(mainRows[i]) != prefix(jump[i]) || strings.HasSuffix(mainRows[i], "#[norange]") != strings.HasSuffix(jump[i], "#[norange]") {
 			t.Fatalf("第 %d 列 range 不同\n main: %q\n jump: %q", i, mainRows[i], jump[i])
 		}
@@ -153,12 +154,8 @@ func TestLettersSkipGroupsWithoutAJumpTarget(t *testing.T) {
 }
 
 func manyTUIs(w *world, n int) {
-	var panes = make([]string, 0, n)
 	for i := 0; i < n; i++ {
-		panes = append(panes, fmt.Sprintf("%d", i+1))
-	}
-	for i := 0; i < n; i++ {
-		w.panes.panes = append(w.panes.panes, tui("%"+panes[i], fmt.Sprintf("/work/d%02d", i)))
+		w.panes.panes = append(w.panes.panes, tui(fmt.Sprintf("%%%d", i+1), fmt.Sprintf("/work/d%02d", i)))
 	}
 }
 

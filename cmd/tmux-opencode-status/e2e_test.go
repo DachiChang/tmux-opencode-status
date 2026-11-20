@@ -444,7 +444,7 @@ func TestSessionLifecycleOnARealTmuxWithFakeOpenCodeService(t *testing.T) {
 }
 
 // 等你核准／等你回答：多個請求、交錯處理、權限優先、問題取消；全程只有 GET，
-// 也不新增任何 tmux 綁定。
+// 也不新增或改變插件接管以外的 tmux 綁定。
 func TestPendingApprovalsAndAnswersOnARealTmuxWithFakeOpenCodeService(t *testing.T) {
 	e := newEnv(t)
 	dir := filepath.Join(e.dir, "work", "api")
@@ -525,7 +525,7 @@ func TestPendingApprovalsAndAnswersOnARealTmuxWithFakeOpenCodeService(t *testing
 }
 
 // 多層 subagent 家族：孫輩的執行與待處理彙整到 tab；主 session 先結束；啟動前已存在的後代；
-// 無關家族隔離；後代失敗不污染 tab。全程只有 GET，也不新增任何 tmux 綁定。
+// 無關家族隔離；後代失敗不污染 tab。全程只有 GET，也不新增或改變插件接管以外的 tmux 綁定。
 func TestSessionFamilyRollsUpToTabsOnARealTmuxWithFakeOpenCodeService(t *testing.T) {
 	e := newEnv(t)
 	dir := filepath.Join(e.dir, "work", "api")

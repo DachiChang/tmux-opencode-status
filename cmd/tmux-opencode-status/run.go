@@ -30,9 +30,9 @@ const (
 
 // fingerprint 描述一個實例的有效設定與執行檔；start 以它判斷「已有同設定的實例」或「需要交接」。
 //
-// trigger 是 @opencode-status-jump-trigger 的設定（含未設定與空字串的區別）：改了觸發鍵並重載 tmux.conf
-// 時指紋改變，start 因此交接，新實例綁新鍵、unbind 舊鍵。只改選項值而不重載不會生效。
-func (o *options) fingerprint(serverPID int, trigger string) string {
+// trigger 是 @opencode-status-jump-trigger 的設定（含未設定、空字串與讀取失敗的區別）：改了觸發鍵並重載
+// tmux.conf 時指紋改變，start 因此交接，新實例綁新鍵、unbind 舊鍵。只改選項值而不重載不會生效。
+func (o *options) fingerprint(serverPID int, trigger tmuxsrc.JumpTrigger) string {
 	exe, _ := os.Executable()
 	var stamp string
 	if fi, err := os.Stat(exe); err == nil {
@@ -40,7 +40,7 @@ func (o *options) fingerprint(serverPID int, trigger string) string {
 	}
 	// 納入 tmux server 的 pid：同一個 socket 路徑上換了新的 server，舊實例（即使還沒偵測到 server 已結束）也必須交接。
 	return fmt.Sprintf("v2|%d|%s|%s|%s|%s|%d|%s|%s|%s|%s|%v|%s|%s|%q", serverPID, o.socketName, o.socketPath, o.config, o.tabs+"|"+o.service,
-		o.width, o.backstop, o.idle, o.resync, o.serverCheck, o.show, exe, stamp, trigger)
+		o.width, o.backstop, o.idle, o.resync, o.serverCheck, o.show, exe, stamp, trigger.String())
 }
 
 func runDaemon(o *options) int {
@@ -82,16 +82,17 @@ func runDaemon(o *options) int {
 		return 0
 	}
 	defer lock.Release()
-	trigger, triggerErr := tm.JumpTriggerSetting()
-	_ = lock.SetContent(o.fingerprint(info.PID, triggerFingerprint(trigger, triggerErr)))
+	trigger := tm.JumpTriggerSetting()
+	_ = lock.SetContent(o.fingerprint(info.PID, trigger))
 
 	started := time.Now()
-	state := instance.State{PID: os.Getpid(), ServerPID: info.PID, Started: started, Service: sidebar.ServiceNone}
+	state := instance.State{PID: os.Getpid(), ServerPID: info.PID, Started: started, Service: sidebar.ServiceNone, JumpTrigger: trigger.String()}
 	defer func() { _ = os.Remove(paths.State) }()
 	_ = instance.WriteState(paths.State, state)
 	report := func(s sidebar.Status) {
 		st := instance.State{PID: state.PID, ServerPID: info.PID, Started: started, Mode: s.Mode, ModeIssue: s.ModeIssue,
-			Tracking: s.Tracking, TUIs: s.TUIs, Tabs: s.Tabs, Service: s.Service, ServiceReason: s.ServiceReason, Issues: s.Issues}
+			Tracking: s.Tracking, TUIs: s.TUIs, Tabs: s.Tabs, Service: s.Service, ServiceReason: s.ServiceReason, Issues: s.Issues,
+			JumpTrigger: trigger.String()}
 		for _, r := range s.Recent {
 			st.Recent = append(st.Recent, instance.ErrorRecord{At: r.At, Source: r.Source, Message: r.Message})
 		}
@@ -137,7 +138,7 @@ func runDaemon(o *options) int {
 		fmt.Fprintln(os.Stderr, "點擊跳轉綁定：", err)
 	}
 	var startup []sidebar.ErrorRecord
-	if msg := tm.BindJumpMode(trigger, triggerErr); msg != "" {
+	if msg := tm.BindJumpMode(trigger); msg != "" {
 		fmt.Fprintln(os.Stderr, "鍵盤跳轉綁定：", msg)
 		startup = append(startup, sidebar.ErrorRecord{At: time.Now(), Source: "jump", Message: msg})
 	}
@@ -167,12 +168,4 @@ func runDaemon(o *options) int {
 	case exitServerGone:
 	}
 	return 0
-}
-
-// triggerFingerprint 是觸發鍵設定在指紋中的文字；讀取失敗與任何設定值都不同。
-func triggerFingerprint(t tmuxsrc.JumpTrigger, err error) string {
-	if err != nil {
-		return "unreadable"
-	}
-	return t.String()
 }

@@ -104,9 +104,6 @@ func FitView(v View) []Row {
 	return append(rows, layout(groups)...)
 }
 
-// MaxJumpLetters 是跳轉字母的數量（a–z）。
-const MaxJumpLetters = 26
-
 // layout renders every group (in order) with group headers and blanks.
 // 跳轉字母依群組順序只分配給有跳轉目標的群組，分完 a–z 為止。
 func layout(groups []Group) []Row {
@@ -117,8 +114,8 @@ func layout(groups []Group) []Row {
 			rows = append(rows, Row{Kind: RowBlank})
 		}
 		head := Row{Kind: RowGroup, Text: g.Name, Summary: groupSummary(g), JumpTarget: g.JumpTarget}
-		if g.JumpTarget != "" && next < MaxJumpLetters {
-			head.Letter = byte('a' + next)
+		if g.JumpTarget != "" && next < len(JumpLetters) {
+			head.Letter = JumpLetters[next]
 			next++
 		}
 		rows = append(rows, head)

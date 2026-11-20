@@ -26,8 +26,13 @@ const JumpOption = OptPrefix + "layout_jump"
 // the value is the target pane id (%N).
 const JumpKeyPrefix = OptPrefix + "jump_key_"
 
-// JumpTriggerOption records the trigger key that is actually bound.
-const JumpTriggerOption = OptPrefix + "jump_trigger"
+// BoundTriggerOption records the trigger key that is actually bound (not the
+// user's setting, which is tmuxsrc.JumpTriggerOption).
+const BoundTriggerOption = OptPrefix + "jump_trigger"
+
+// JumpLetters are the jump labels in assignment order; it is the single source
+// of the a–z range (layout, rendering and the jump key table).
+const JumpLetters = "abcdefghijklmnopqrstuvwxyz"
 
 // JumpTable is the key table jump mode switches to. It is a public promise:
 // users may alias it from the root table.

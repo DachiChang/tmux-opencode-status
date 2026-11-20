@@ -44,7 +44,7 @@ go build -o tmux-opencode-status ./cmd/tmux-opencode-status
 ## 重要設計決定
 
 - 使用者選項使用專屬前綴 `@tos_`（`render.OptPrefix`；版面選項為 `@tos_layout_main`，見 ADR-0003、ADR-0004）；舊 POC 的 `@sb_`、`@oc_side*` 不使用也不修改。
-- hook 使用專屬陣列索引 `41700`，結束時只移除自己的索引；不新增任何按鍵／滑鼠綁定。
+- hook 使用專屬陣列索引 `41700`，結束時只移除自己的索引；hook 本身不新增任何按鍵／滑鼠綁定（插件的綁定只有點擊跳轉、prefix 觸發鍵與 `opencode-status-jump` 按鍵表，見 ADR-0002、ADR-0005）。
   hook 是視窗層級（`show-hooks -gw`），`pane-exited`、`window-linked` 等都在其中。
 - hook 只負責「喚醒」，內容每次重新讀取；漏掉任何 hook 由低頻補漏補上。
 - **pane title 喚醒**：在既有 shell 啟動／結束 TUI 時 tmux 沒有結構事件，但 TUI 會改終端標題，

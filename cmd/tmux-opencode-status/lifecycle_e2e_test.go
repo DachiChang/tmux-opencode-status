@@ -184,7 +184,7 @@ func TestConcurrentStartsLeaveExactlyOneInstance(t *testing.T) {
 }
 
 // 重載交接：設定（這裡以寬度為例）改變後再次 start，舊實例讓位、新實例接手，從不同時有兩個；
-// 交接不強制打開已隱藏的側欄、不清除 session 層級 override、不新增任何綁定。
+// 交接不強制打開已隱藏的側欄、不清除 session 層級 override、不新增或改變插件接管以外的綁定。
 func TestReloadWithChangedSettingsHandsOffToExactlyOneNewInstance(t *testing.T) {
 	e := newLifecycleEnv(t)
 	api := filepath.Join(e.dir, "work", "api")
