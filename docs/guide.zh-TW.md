@@ -29,6 +29,8 @@ set -g @plugin 'DachiChang/tmux-opencode-status'
 3. 驗證 SHA-256、封存內容與執行檔架構，通過才放到插件的 `bin/<版本>-darwin-<arch>/`；
 4. 執行 `tmux-opencode-status start -show`。
 
+安裝目錄中的架構名稱在 Apple Silicon 上為 `arm64`，在 Intel macOS（`x86_64`）上為 `amd64`。
+
 已安裝且校驗相符時不再下載。**任何一步失敗（下載失敗、驗證失敗、架構不支援、缺少 tmux 能力）都會明確報錯**：
 訊息寫到 stderr，並以 `tmux display-message` 顯示；**不會靜默改用 `go build`，也不會換用其他架構的執行檔**。
 
@@ -41,7 +43,7 @@ set -g @plugin 'DachiChang/tmux-opencode-status'
   所以插件啟動（`start -show`）的**第一次**載入無法分辨你是「從未打開過」還是「明確想隱藏」，會把側欄打開一次。
   之後（同一個 tmux server 的重載、交接、重啟常駐程式）都不會再替你打開。若你不想在啟動時打開：
   不要使用 `-show`（例如在 TPM 以外自行呼叫 `start`，不帶 `-show`），再用 `tmux set -g side-status left` 自行顯示。
-- 重複載入（`tmux source-file`、TPM 更新）是冪等的：每個 tmux socket 只有一個常駐實例；設定或執行檔不同時安全交接。
+- 重複載入（`tmux source-file`、TPM 更新）是冪等的：每個 tmux socket 只有一個常駐實例；設定或執行檔不同時安全交接。`start` 成功只代表有實例持有鎖並已記錄有效設定，不代表側欄已經顯示。
 - tmux server 結束時常駐程式自動退出並清理本插件資源。
 
 ## 跳轉與按鍵綁定
@@ -94,7 +96,7 @@ set -g @opencode-status-mode global   # 單一 GLOBAL 群組，對應 OpenCode �
 
 重載設定即套用，不需重啟 tmux。**模式必須由你設定成與 OpenCode 實際的 tab scope 一致**：
 插件不偵測、不警告不一致（例如 OpenCode 用 cwd scope 而插件設 global，可能看到空的或過期的清單），也不支援各 TUI 混用不同 scope。
-其他值（含大小寫不同、前後空白）視為無效：首次無效時不開始追蹤並提示，已有有效模式時保留原模式並提示。詳見[模式驗證](validation/modes.md)。
+其他值（含空字串、大小寫不同、前後空白）視為無效。未設定時預設為 `cwd`，但讀取失敗不會套用預設值。設定無效或讀取失敗時，插件會顯示提示；如果已有有效模式就沿用，否則不開始追蹤。
 
 ## 配色
 
@@ -190,12 +192,14 @@ scripts/build-release.sh [版本]   # 預設讀 VERSION；輸出 dist/*.tar.gz �
 建置使用 `CGO_ENABLED=0`、`-trimpath`、固定的封存中繼資料，同一原始碼與 Go 版本得到逐位元組相同的產物。
 [發布工作流程](../.github/workflows/release.yml)在推送 `v<VERSION>` tag 時建置並建立 Release；**本機建置不會打 tag 或發布，需由維護者啟動發布流程**。
 
-### 已驗證與尚未驗證
+### 測試與發布限制
 
-見 [TPM 驗證紀錄](validation/tpm.md)。**Intel（x86_64）產物尚未在真實 Intel 機器上驗證**。
+在具備必要 tmux 功能的 macOS 上執行 `go test -count=1 ./...`。端對端測試使用隔離的 tmux server 和暫存目錄。TPM 測試透過本機 HTTP 提供自行建置的發布產物，並確認安裝程式不會呼叫 Go。
+
+**Intel（`x86_64`）產物尚未在 Intel 實機上驗證。** Mach-O 架構檢查與 Rosetta 啟動不等於原生 Intel 驗證。可重現建置只在同一台主機、同一個 Go 版本驗證，未做跨主機驗證。發布產物未簽章、未經 Apple 公證。校驗碼可檢查損毀或與 `SHA256SUMS` 不符，但若產物和校驗檔都被替換，無法驗證發布的真偽。
 
 ## 文件
 
-- [驗證紀錄](validation/)（生命週期、模式、cwd tab、TPM 封裝）
+- [OpenCode 整合契約](contracts/opencode-2.3.0.md)
 - [架構決策紀錄](adr/)
 - [專案詞彙表](../GLOSSARY.md)

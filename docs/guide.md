@@ -29,13 +29,15 @@ Press `prefix + I` to install. TPM runs `tmux-opencode-status.tmux` from the plu
 3. Verifies the SHA-256 checksum, archive contents, and executable architecture before installing into the plugin's `bin/<version>-darwin-<arch>/` directory.
 4. Runs `tmux-opencode-status start -show`.
 
+The install directory uses `arm64` on Apple Silicon and `amd64` on Intel macOS (`x86_64`).
+
 If the installed binary passes verification, the script does not download it again. **Any failure** (a failed download or verification, an unsupported architecture, or missing tmux capabilities) is reported on stderr and through `tmux display-message`. The script **never falls back to `go build` or to a binary for a different architecture**.
 
 ### Default behavior
 
 - The sidebar defaults to the **left side**, **36 terminal cells** wide (not 36 characters). It opens once per tmux server on first load. Reloading the plugin or handing it off to a new daemon instance will not reopen it after you hide it.
 - **Known limitation: the plugin cannot honor an explicit `set -g side-status off` on first load.** tmux defaults `side-status` to `off`, and neither `show-options` (including `-g`, `-q`, `-A`, and `-H`) nor format variables distinguish the default from an explicit setting. In tests with tmux next-3.9, an unset option, `set -g side-status off`, and `set -gu side-status` all produced identical output (`options-table.c` defines `default_num = 0`). On first load, `start -show` therefore opens the sidebar once. Reloads, handoffs, and daemon restarts on the same tmux server do not reopen it. To keep it hidden on startup, run `start` without `-show` (for example, when starting the plugin manually outside TPM). Use `tmux set -g side-status left` when you want to show it.
-- Repeated loads (via `tmux source-file` or TPM updates) are idempotent: there is one daemon instance per tmux socket. If the configuration or executable changes, the old instance hands off to the new one.
+- Repeated loads (via `tmux source-file` or TPM updates) are idempotent: there is one daemon instance per tmux socket. If the configuration or executable changes, the old instance hands off to the new one. A successful `start` confirms that an instance holds the lock and has recorded its configuration, not that the sidebar is already visible.
 - When the tmux server exits, the daemon exits and cleans up plugin resources.
 
 ## Jumping and key bindings
@@ -83,7 +85,7 @@ set -g @opencode-status-mode global   # One GLOBAL group; matches OpenCode's glo
 
 Reload your configuration to apply changes; no tmux restart is needed. **Set the plugin mode to match OpenCode's actual tab scope.** The plugin neither detects nor warns about mismatches. For example, with OpenCode in cwd scope and the plugin in global mode, the list may be empty or stale. Mixing tab scopes across TUI clients is not supported.
 
-Values other than `cwd` or `global` are invalid, including differences in case and leading or trailing whitespace. The plugin shows a notice and waits for a valid mode before it starts tracking. If a valid mode is already in use, it keeps that mode and shows a notice. See [mode validation](validation/modes.md).
+Values other than `cwd` or `global` are invalid, including an empty value, differences in case, and leading or trailing whitespace. An unset option defaults to `cwd`; a read error does not. On an invalid value or read error, the plugin shows a notice and keeps the last valid mode if it has one. Otherwise, it does not start tracking.
 
 ## Theme colors
 
@@ -173,12 +175,14 @@ scripts/build-release.sh [version]   # Defaults to VERSION; writes dist/*.tar.gz
 
 The build uses `CGO_ENABLED=0`, `-trimpath`, and fixed archive metadata. The same source and Go version produce byte-for-byte identical artifacts. [The release workflow](../.github/workflows/release.yml) builds the artifacts and creates a GitHub release when a `v<VERSION>` tag is pushed. **Building locally does not tag or publish anything; a maintainer must initiate the release.**
 
-### Validation
+### Testing and release limits
 
-See [TPM validation](validation/tpm.md). **The Intel (`x86_64`) release artifact has not yet been tested on Intel hardware.**
+Run `go test -count=1 ./...` on macOS with the required tmux capabilities. The end-to-end tests use isolated tmux servers and temporary directories. The TPM tests serve locally built release artifacts over HTTP and check that the installer does not invoke Go.
+
+**The Intel (`x86_64`) release artifact has not yet been tested on Intel hardware.** Mach-O architecture checks and launching through Rosetta do not verify native Intel behavior. Build reproducibility has been verified on one host with the same Go version, not across hosts. Release artifacts are not signed or notarized. The checksum detects corruption or a mismatch with `SHA256SUMS`; it cannot authenticate a release if both files are replaced.
 
 ## Documentation
 
-- [Validation notes](validation/) (lifecycle, modes, cwd tabs, and TPM packaging)
+- [OpenCode integration contract](contracts/opencode-2.3.0.md)
 - [Architecture decision records](adr/)
 - [Project glossary](../GLOSSARY.md)
