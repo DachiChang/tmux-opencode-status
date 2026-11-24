@@ -290,6 +290,25 @@ func (e *env) sideStatus() string {
 	return strings.TrimSpace(e.rawTmux("show-options", "-gv", "side-status"))
 }
 
+// waitSideStatus 等 side-status 變成 want：start 返回只代表常駐程式已持鎖，run 的第一次 Show 可能稍後才到。
+// 逾時時附上這個隔離測試環境自己的 daemon log（位於本測試的 XDG_RUNTIME_DIR 之下）。
+func (e *env) waitSideStatus(want string) {
+	e.t.Helper()
+	var got string
+	for end := time.Now().Add(5 * time.Second); time.Now().Before(end); time.Sleep(50 * time.Millisecond) {
+		if got = e.sideStatus(); got == want {
+			return
+		}
+	}
+	var logs strings.Builder
+	files, _ := filepath.Glob(filepath.Join(e.runtime, "tmux-opencode-status", "*.log"))
+	for _, f := range files {
+		b, _ := os.ReadFile(f)
+		fmt.Fprintf(&logs, "--- %s ---\n%s\n", filepath.Base(f), b)
+	}
+	e.t.Fatalf("5 秒內 side-status 應為 %q，實際 %q\ndaemon log：\n%s", want, got, logs.String())
+}
+
 // keys 是 list-keys 去掉插件接管的綁定：MouseDown1SideStatus（ADR-0002）、鍵盤跳轉的觸發鍵與
 // opencode-status-jump 按鍵表（ADR-0005）。
 func (e *env) keys() string {
@@ -377,9 +396,7 @@ func TestInstallsTheHostArchitectureVerifiesItAndStartsTheSidebarWithoutGo(t *te
 		t.Fatalf("不得下載另一種架構：%v", rs.reqs)
 	}
 	e.waitDaemons(1)
-	if got := e.sideStatus(); got != "left" {
-		t.Fatalf("首次載入應顯示側欄（side-status=left），實際 %q", got)
-	}
+	e.waitSideStatus("left") // 首次載入應顯示側欄
 	// 寬度在常駐程式第一次發布時寫入，start 返回時可能還沒到。
 	var w string
 	for end := time.Now().Add(5 * time.Second); time.Now().Before(end); time.Sleep(50 * time.Millisecond) {

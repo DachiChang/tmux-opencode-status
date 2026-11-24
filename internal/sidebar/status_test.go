@@ -338,19 +338,17 @@ func TestPendingPermissionAndFormExistingAtStartupShowYellowQuestionMark(t *test
 		t.Fatalf("摘要或其他 tab 不符：\n%s", got)
 	}
 	// 顏色：黃色 ?，除標題底塊外沒有背景色塊，也不是舊 POC 的黃色 !
-	for _, opt := range lw.out.options() {
-		if strings.Contains(strings.ReplaceAll(opt, "#[bg=#A78BFA,fg=#18181B] OPENCODE ", ""), "bg=") {
-			t.Fatalf("待處理不得使用標題以外的背景色塊：%q", opt)
-		}
-		if !strings.Contains(opt, "#[fg=#FACC15]?#[default] ") {
-			continue
-		}
-		if strings.Contains(opt, "#[fg=#FACC15]!") {
-			t.Fatalf("不得沿用黃色 !：%q", opt)
-		}
-		return
+	// 只看一般版面：跳轉版面（JumpOption）的標籤本來就有底色，且 Options 是 map，遍歷順序不固定。
+	opt := lw.out.styled()
+	if strings.Contains(strings.ReplaceAll(opt, "#[bg=#A78BFA,fg=#18181B] OPENCODE ", ""), "bg=") {
+		t.Fatalf("待處理不得使用標題以外的背景色塊：%q", opt)
 	}
-	t.Fatal("輸出中找不到黃色 ?")
+	if !strings.Contains(opt, "#[fg=#FACC15]?#[default] ") {
+		t.Fatalf("輸出中找不到黃色 ?：%q", opt)
+	}
+	if strings.Contains(opt, "#[fg=#FACC15]!") {
+		t.Fatalf("不得沿用黃色 !：%q", opt)
+	}
 }
 
 func TestPermissionAndFormEventsAfterStartupAndTheirCompletionRestoreTheRightState(t *testing.T) {
