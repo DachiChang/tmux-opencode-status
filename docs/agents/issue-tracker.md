@@ -1,45 +1,40 @@
 # Issue tracker: GitHub
 
-本專案的 issues 與 specs 存放於 DachiChang/tmux-opencode-status 的 GitHub Issues。
-使用 gh CLI 操作，從儲存庫目錄執行。
+Issues and specs live in GitHub Issues for `DachiChang/tmux-opencode-status`. Run `gh` from the repository directory.
 
-## 操作慣例
+## Issue operations
 
-- 首次建立議題前，執行 `gh repo view --json nameWithOwner` 確認目標。
-  僅在使用者自己的儲存庫建立議題；若目標不符，先向使用者確認。
-- 建立：`gh issue create --title "..." --body-file -`，以 heredoc 傳入多行內容。
-- 讀取：`gh issue view <number> --json number,title,body,labels,comments`。
-- 列出：`gh issue list --state open --json number,title,body,labels,comments`；
-  視需要加上 --label 或調整 --state。
-- 留言：`gh issue comment <number> --body "..."`。
-- 標籤：`gh issue edit <number> --add-label "..."` 或 --remove-label。
-- 關閉：先留言解釋，再執行 `gh issue close <number>`；
-  已關閉的議題也應用獨立留言指令補充說明。
+- Before creating the first issue, verify the target with `gh repo view --json nameWithOwner`.
+  Create issues only in the user's own repository. If the target differs from the expected repository, confirm with the user first.
+- Create: `gh issue create --title "..." --body-file -`; pass a multiline body with a heredoc.
+- Read: `gh issue view <number> --json number,title,body,labels,comments`.
+- List: `gh issue list --state open --json number,title,body,labels,comments`; add `--label` or adjust `--state` as needed.
+- Comment: `gh issue comment <number> --body "..."`.
+- Label: `gh issue edit <number> --add-label "..."` or use `--remove-label`.
+- Close: Leave an explanatory comment before running `gh issue close <number>`. For an already closed issue, add any further explanation with a separate comment command.
 
-## 子議題與相依性
+## Sub-issues and dependencies
 
-優先使用 GitHub 原生 sub-issues 與 issue dependencies。
-使用前以 gh help 確認目前版本支援的指令。
+Prefer GitHub's native sub-issues and issue dependencies. Check `gh help` for commands supported by the installed version before using them.
 
-若無法使用原生關聯：
-- 子議題本文頂端寫 `Part of #<parent>`，並在父議題加入子議題 task list。
-- 被阻擋議題本文頂端寫 `Blocked by: #<n>, #<n>`。
-- 所有阻擋議題皆關閉後，該議題才可開始。
+If native relationships are unavailable:
+- Put `Part of #<parent>` at the top of each child issue and add a task list of child issues to the parent.
+- Put `Blocked by: #<n>, #<n>` at the top of the blocked issue.
+- Start work on a blocked issue only after all blockers are closed.
 
 ## Pull requests as a triage surface
 
 **PRs as a request surface: no.**
 
-## 技能指令的對應
+## Skill instruction mapping
 
-「publish to the issue tracker」表示建立 GitHub issue。
-「fetch the relevant ticket」表示讀取對應的 GitHub issue。
+- `publish to the issue tracker` means create a GitHub issue.
+- `fetch the relevant ticket` means read the corresponding GitHub issue.
 
 ## Wayfinding
 
-- Map：單一議題，標籤為 wayfinder:map，本文包含 Notes、Decisions-so-far、Fog。
-- Child ticket：以 sub-issue 連至 map；不支援時使用上述替代關聯。
-  標籤為 wayfinder:<type>，type 為 research、prototype、grilling 或 task。
-- Frontier：依 map 順序選取第一個未關閉、無負責人且無未關閉 blocker 的子議題。
-- Claim：以 `gh issue edit <n> --add-assignee @me` 作為該工作階段的首次寫入。
-- Resolve：先留言答案，再關閉議題，最後將摘要與連結加入 map 的 Decisions-so-far。
+- Map: A single issue labeled `wayfinder:map` with Notes, Decisions-so-far, and Fog sections.
+- Child ticket: Link it to the map as a sub-issue, or use the fallback above. Apply `wayfinder:<type>`, where `<type>` is `research`, `prototype`, `grilling`, or `task`.
+- Frontier: In map order, choose the first open, unassigned child issue with no open blockers.
+- Claim: Run `gh issue edit <n> --add-assignee @me` as the session's first write.
+- Resolve: Comment with the answer, close the issue, then add a summary and link to the map's Decisions-so-far section.
