@@ -57,6 +57,6 @@ go build -o tmux-opencode-status ./cmd/tmux-opencode-status
 - **標題關閉**：行程不改標題就沒有喚醒，行為退回低頻補漏（≤ 10 s），功能不受影響。
 - **啟動空窗**：tmux hook 與 tabs.json watcher 就緒後各補一次喚醒，裝好之前發生的變動不必等補漏
   （`tabsrc.TestWatchWakesOnceWhenReadyEvenWithoutAnyFileEvent`）。
-- 讀取失敗（tmux、tabs.json）：沿用最後可用資料並在標題下顯示一行提示；從未成功讀過時只有提示，不顯示「沒有 OpenCode TUI」／「無 tab」。
+- 讀取失敗（tmux、tabs.json）：沿用最後可用資料並在標題下顯示一行提示；從未成功讀過時只有提示，不顯示 `No OpenCode TUI running` 或 `No tabs`。
 - tabs.json 不存在視為全新環境（空清單），格式不相容才是錯誤。
-- render（原 heightfit）擴充：`View`（`Empty`、`Notice`）、無 tab 群組以 `無 tab` 行呈現。
+- render（原 heightfit）擴充：`View`（`Empty`、`Notice`）、無 tab 群組以 `No tabs` 行呈現。

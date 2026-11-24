@@ -268,7 +268,7 @@ func TestNoTUIShowsEmptyFrameNotAnErrorOrBlank(t *testing.T) {
 	assertLines(t, w.out.screen(20), []string{
 		"OPENCODE",
 		"─────────────────────────────────",
-		"沒有 OpenCode TUI",
+		"No OpenCode TUI running",
 	})
 }
 
@@ -281,7 +281,7 @@ func TestTUIWithoutTabsKeepsGroupAndSaysNoTab(t *testing.T) {
 		"OPENCODE",
 		"─────────────────────────────────",
 		"api",
-		"無 tab",
+		"No tabs",
 	})
 }
 
@@ -345,14 +345,13 @@ func TestUnreadableTabListKeepsLastGoodListWithNoticeNotEmptyList(t *testing.T) 
 	assertLines(t, w.out.screen(20), []string{
 		"OPENCODE                      !1",
 		"─────────────────────────────────",
-		"▲ 無法讀取 tab 清單，顯示最後可用",
-		" 資料",
+		"▲ Cannot read tab list",
 		"api                           !1",
 		"! keep me",
 	})
 	w.setTabs(t, `{"global":{"tabs":[]},"cwd":{"/work/api":{"tabs":[{"sessionID":"s1","title":"keep me"}]}}}`)
 	w.sync(t)
-	if got := strings.Join(w.out.screen(20), "\n"); strings.Contains(got, "無法讀取") {
+	if got := strings.Join(w.out.screen(20), "\n"); strings.Contains(got, "Cannot read") {
 		t.Fatalf("恢復後提示應消失：\n%s", got)
 	}
 }
@@ -363,14 +362,14 @@ func TestReadErrorBeforeAnyGoodDataShowsNoticeNotEmptyStates(t *testing.T) {
 	w.tabs.fail(errBoom)
 	_ = w.d.Sync()
 	got := strings.Join(w.out.screen(20), "\n")
-	if strings.Contains(got, "沒有 OpenCode TUI") || strings.Contains(got, "無 tab") || !strings.Contains(got, "無法讀取 tab 清單") {
+	if strings.Contains(got, "No OpenCode TUI running") || strings.Contains(got, "No tabs") || !strings.Contains(got, "Cannot read tab list") {
 		t.Fatalf("錯誤被偽裝成空清單：\n%s", got)
 	}
 	w2 := newWorld(t)
 	w2.panes.fail(errBoom)
 	_ = w2.d.Sync()
 	got = strings.Join(w2.out.screen(20), "\n")
-	if strings.Contains(got, "沒有 OpenCode TUI") || !strings.Contains(got, "無法讀取 tmux") {
+	if strings.Contains(got, "No OpenCode TUI running") || !strings.Contains(got, "Cannot read tmux") {
 		t.Fatalf("tmux 錯誤被偽裝成沒有 TUI：\n%s", got)
 	}
 }
@@ -474,7 +473,7 @@ func TestMissedNotificationIsCaughtByBackstopTick(t *testing.T) {
 	r.expectQuiet(t) // 沒有事件也沒有補漏時，不會自己更新
 	r.ticks <- time.Now()
 	r.waitPublish(t)
-	if got := strings.Join(w.out.screen(20), "\n"); !strings.Contains(got, "沒有 OpenCode TUI") {
+	if got := strings.Join(w.out.screen(20), "\n"); !strings.Contains(got, "No OpenCode TUI running") {
 		t.Fatalf("補漏後仍顯示舊資料：\n%s", got)
 	}
 }
@@ -505,7 +504,7 @@ func TestSyncFailuresInRunAreRetriedNotFatal(t *testing.T) {
 	w.setTabs(t, `{"global":{"tabs":[]},"cwd":{"/work/api":{"tabs":[{"sessionID":"s1","title":"back"}]}}}`)
 	r.ticks <- time.Now()
 	r.waitPublish(t)
-	if got := strings.Join(w.out.screen(20), "\n"); !strings.Contains(got, "back") || strings.Contains(got, "無法讀取") {
+	if got := strings.Join(w.out.screen(20), "\n"); !strings.Contains(got, "back") || strings.Contains(got, "Cannot read") {
 		t.Fatalf("恢復後畫面不正確：\n%s", got)
 	}
 }

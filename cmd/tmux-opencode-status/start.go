@@ -43,14 +43,14 @@ func startInstance(o *options) int {
 	}
 	info, err := tm.Server()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "找不到 tmux server：", err)
+		fmt.Fprintln(os.Stderr, "Cannot find tmux server:", err)
 		return 1
 	}
 	if missing, err := tm.MissingCapabilities(); err != nil {
-		fmt.Fprintln(os.Stderr, "無法確認 tmux 能力：", err)
+		fmt.Fprintln(os.Stderr, "Cannot verify tmux capabilities:", err)
 		return 1
 	} else if len(missing) > 0 {
-		fmt.Fprintf(os.Stderr, "tmux %s 缺少必要能力：%v（需要 tmux 3.9 的 side-status）；不啟動\n", info.Version, missing)
+		fmt.Fprintf(os.Stderr, "tmux %s is missing required capabilities: %v (requires tmux 3.9 side-status); not starting\n", info.Version, missing)
 		return 1
 	}
 	paths, err := instance.PathsFor(info.SocketPath)
@@ -60,7 +60,7 @@ func startInstance(o *options) int {
 	}
 	gate, err := instance.Acquire(paths.Start, startLockWait)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "等待其他 start 完成逾時")
+		fmt.Fprintln(os.Stderr, "Timed out waiting for another start command")
 		return 1
 	}
 	defer gate.Release()
@@ -68,7 +68,7 @@ func startInstance(o *options) int {
 	// 其後的 run 一律以明確 socket 路徑啟動，不依賴 $TMUX。
 	o.socketName, o.socketPath = "", info.SocketPath
 	if o.socketPath == "" {
-		fmt.Fprintln(os.Stderr, "tmux 未回報 socket 路徑")
+		fmt.Fprintln(os.Stderr, "tmux did not report a socket path")
 		return 1
 	}
 	want := o.fingerprint(info.PID, tm.JumpTriggerSetting())
@@ -79,7 +79,7 @@ func startInstance(o *options) int {
 			return 0 // 已有同設定的實例：重複載入什麼都不做
 		}
 		if err := handOff(pid, paths.Lock); err != nil {
-			fmt.Fprintln(os.Stderr, "無法與既有實例交接：", err)
+			fmt.Fprintln(os.Stderr, "Cannot hand off from the existing daemon:", err)
 			return 1
 		}
 	}
@@ -109,7 +109,7 @@ func handOff(pid int, lockPath string) error {
 	if waitReleased(lockPath, handoffWait/2) {
 		return nil
 	}
-	return fmt.Errorf("舊實例 %d 未在時限內結束", pid)
+	return fmt.Errorf("previous daemon %d did not exit in time", pid)
 }
 
 func waitReleased(lockPath string, within time.Duration) bool {
@@ -128,12 +128,12 @@ func waitReleased(lockPath string, within time.Duration) bool {
 func spawn(o *options, paths instance.Paths) int {
 	exe, err := os.Executable()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "找不到自己的執行檔：", err)
+		fmt.Fprintln(os.Stderr, "Cannot locate the plugin binary:", err)
 		return 1
 	}
 	logf, err := openLog(paths.Log)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "無法開啟記錄檔：", err)
+		fmt.Fprintln(os.Stderr, "Cannot open the log file:", err)
 		return 1
 	}
 	defer logf.Close()
@@ -143,7 +143,7 @@ func spawn(o *options, paths instance.Paths) int {
 	cmd.Stdout, cmd.Stderr = logf, logf
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := cmd.Start(); err != nil {
-		fmt.Fprintln(os.Stderr, "無法啟動常駐程式：", err)
+		fmt.Fprintln(os.Stderr, "Cannot start the daemon:", err)
 		return 1
 	}
 	exited := make(chan struct{})
@@ -153,7 +153,7 @@ func spawn(o *options, paths instance.Paths) int {
 		select {
 		case <-exited:
 			// 常駐程式提早結束：能力不足、找不到 server 等。轉述它寫的固定訊息。
-			fmt.Fprintln(os.Stderr, "常駐程式啟動失敗：")
+			fmt.Fprintln(os.Stderr, "Daemon startup failed:")
 			fmt.Fprint(os.Stderr, logSince(paths.Log, offset))
 			return 1
 		default:
@@ -163,7 +163,7 @@ func spawn(o *options, paths instance.Paths) int {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	fmt.Fprintln(os.Stderr, "常駐程式未在時限內就緒")
+	fmt.Fprintln(os.Stderr, "Timed out waiting for the daemon to become ready")
 	return 1
 }
 
@@ -194,7 +194,7 @@ func stopInstance(o *options) int {
 	}
 	info, err := tm.Server()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "找不到 tmux server：", err)
+		fmt.Fprintln(os.Stderr, "Cannot find tmux server:", err)
 		return 1
 	}
 	paths, err := instance.PathsFor(info.SocketPath)
@@ -204,20 +204,20 @@ func stopInstance(o *options) int {
 	}
 	gate, err := instance.Acquire(paths.Start, startLockWait)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "等待其他 start 完成逾時")
+		fmt.Fprintln(os.Stderr, "Timed out waiting for another start command")
 		return 1
 	}
 	defer gate.Release()
 	pid, held := instance.Holder(paths.Lock)
 	if !held {
-		fmt.Println("沒有執行中的常駐實例")
+		fmt.Println("No daemon is running")
 		return 0
 	}
 	_ = syscall.Kill(pid, syscall.SIGTERM)
 	if !waitReleased(paths.Lock, handoffWait) {
-		fmt.Fprintf(os.Stderr, "常駐實例 %d 未在時限內結束\n", pid)
+		fmt.Fprintf(os.Stderr, "Daemon %d did not exit in time\n", pid)
 		return 1
 	}
-	fmt.Println("已停止常駐實例並清理本插件資源")
+	fmt.Println("Stopped the daemon and cleaned up plugin resources")
 	return 0
 }

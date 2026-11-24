@@ -56,10 +56,10 @@ type rawEvent struct {
 func decodeEvent(payload string) (Event, error) {
 	var r rawEvent
 	if err := json.Unmarshal([]byte(payload), &r); err != nil {
-		return Event{}, fmt.Errorf("事件不是有效 JSON：%w", err)
+		return Event{}, fmt.Errorf("event is not valid JSON: %w", err)
 	}
 	if r.Type == "" {
-		return Event{}, fmt.Errorf("事件缺少 type")
+		return Event{}, fmt.Errorf("event is missing type")
 	}
 	e := Event{ID: r.ID, Type: r.Type, Created: r.Created, SessionID: r.Data.SessionID, ParentID: r.Data.ParentID, Title: r.Data.Title, Idle: r.Data.Idle, Reason: r.Data.Reason}
 	switch r.Type {

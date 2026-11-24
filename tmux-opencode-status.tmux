@@ -39,8 +39,8 @@ fail() {
   exit 1
 }
 
-[ -n "${TMUX:-}" ] || fail "必須在 tmux 內執行（由 TPM 或 tmux run-shell 載入）；不會使用預設 tmux server"
-command -v tmux >/dev/null 2>&1 || fail "找不到 tmux"
+[ -n "${TMUX:-}" ] || fail "Run this inside tmux (via TPM or tmux run-shell); the default tmux server is not used"
+command -v tmux >/dev/null 2>&1 || fail "Cannot find tmux"
 
 check_tmux_capabilities() {
   local opt out missing=""
@@ -48,19 +48,19 @@ check_tmux_capabilities() {
     if ! out="$(tmux show-options -gv "$opt" 2>&1)"; then
       case "$out" in
         *"invalid option"*) missing="$missing $opt" ;;
-        *) fail "無法確認 tmux 能力：$out" ;;
+        *) fail "Cannot verify tmux capabilities: $out" ;;
       esac
     fi
   done
-  [ -z "$missing" ] || fail "tmux $(tmux -V 2>/dev/null) 缺少必要能力：$missing（需要 tmux 3.9 的原生 side-status）；不啟動"
+  [ -z "$missing" ] || fail "tmux $(tmux -V 2>/dev/null) is missing required capabilities: $missing (requires tmux 3.9 native side-status); not starting"
 }
 
 resolve_dev_binary() {
   local bin
   bin="$(tmux show-options -gqv @opencode-status-binary 2>/dev/null)"
   [ -n "$bin" ] || return 1
-  case "$bin" in /*) ;; *) fail "@opencode-status-binary 必須是絕對路徑：$bin" ;; esac
-  [ -f "$bin" ] && [ -x "$bin" ] || fail "@opencode-status-binary 指定的執行檔不存在或不可執行：$bin（不會改用下載）"
+  case "$bin" in /*) ;; *) fail "@opencode-status-binary must be an absolute path: $bin" ;; esac
+  [ -f "$bin" ] && [ -x "$bin" ] || fail "Binary specified by @opencode-status-binary is missing or not executable: $bin (no download fallback)"
   BINARY="$bin"
 }
 
@@ -75,7 +75,7 @@ fetch() { # fetch <url> <輸出檔>
   local proto=(--proto '=https' --proto-redir '=https')
   [ -z "${TMUX_OPENCODE_STATUS_RELEASE_URL:-}" ] || proto=()
   curl --fail --silent --show-error --location "${proto[@]}" --connect-timeout 15 --max-time 180 \
-    --output "$2" "$1" 2>&1 || fail "下載失敗：$1（不會改用本機編譯；開發者請見 README 的自行編譯路徑）"
+    --output "$2" "$1" 2>&1 || fail "Download failed: $1 (no local build fallback; see docs/guide.md#building-from-source)"
 }
 
 install_release() {
@@ -83,7 +83,7 @@ install_release() {
   local base="${TMUX_OPENCODE_STATUS_RELEASE_URL:-$REPO_URL/releases/download/v$VERSION}"
   base="${base%/}"
 
-  mkdir -p "$CURRENT_DIR/bin" || fail "無法建立 $CURRENT_DIR/bin"
+  mkdir -p "$CURRENT_DIR/bin" || fail "Cannot create $CURRENT_DIR/bin"
   LOCKDIR="$CURRENT_DIR/bin/.install.lock"
   local waited=0 holder
   until mkdir "$LOCKDIR" 2>/dev/null; do
@@ -93,7 +93,7 @@ install_release() {
       continue
     fi
     waited=$((waited + 1))
-    if [ "$waited" -gt 240 ]; then LOCKDIR=""; fail "等待另一個安裝完成逾時"; fi
+    if [ "$waited" -gt 240 ]; then LOCKDIR=""; fail "Timed out waiting for another installation"; fi
     sleep 0.5
   done
   echo $$ >"$LOCKDIR/pid"
@@ -101,7 +101,7 @@ install_release() {
   # 取得鎖後再確認一次：別的載入可能剛裝好。
   installed_ok && return 0
 
-  STAGE="$(mktemp -d "$CURRENT_DIR/bin/.stage.XXXXXX")" || fail "無法建立暫存目錄"
+  STAGE="$(mktemp -d "$CURRENT_DIR/bin/.stage.XXXXXX")" || fail "Cannot create a temporary directory"
   fetch "$base/SHA256SUMS" "$STAGE/SHA256SUMS"
   fetch "$base/$asset" "$STAGE/$asset"
 
@@ -111,23 +111,23 @@ install_release() {
     [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]*) [ "${#want}" -eq 64 ] || want="" ;;
     *) want="" ;;
   esac
-  [ -n "$want" ] || fail "SHA256SUMS 沒有 $asset 的有效校驗碼；不安裝"
+  [ -n "$want" ] || fail "No valid checksum for $asset in SHA256SUMS; not installing"
   got="$(sha256_of "$STAGE/$asset")"
-  [ "$got" = "$want" ] || fail "完整性驗證失敗：$asset 的 SHA-256 為 $got，預期 $want；不安裝"
+  [ "$got" = "$want" ] || fail "Integrity verification failed: $asset SHA-256 is $got, expected $want; not installing"
 
-  [ "$(tar -tzf "$STAGE/$asset" 2>/dev/null)" = "$NAME" ] || fail "封存內容不符預期（應只含 $NAME）；不安裝"
-  mkdir "$STAGE/out" && tar -xzf "$STAGE/$asset" -C "$STAGE/out" || fail "解開封存失敗；不安裝"
-  [ -f "$STAGE/out/$NAME" ] && [ ! -L "$STAGE/out/$NAME" ] || fail "封存內的 $NAME 不是一般檔案；不安裝"
+  [ "$(tar -tzf "$STAGE/$asset" 2>/dev/null)" = "$NAME" ] || fail "Unexpected archive contents (expected only $NAME); not installing"
+  mkdir "$STAGE/out" && tar -xzf "$STAGE/$asset" -C "$STAGE/out" || fail "Cannot extract archive; not installing"
+  [ -f "$STAGE/out/$NAME" ] && [ ! -L "$STAGE/out/$NAME" ] || fail "$NAME in the archive is not a regular file; not installing"
   chmod 755 "$STAGE/out/$NAME"
   if command -v file >/dev/null 2>&1; then
     local want_arch="$ARCH"
     [ "$ARCH" = amd64 ] && want_arch=x86_64
-    file "$STAGE/out/$NAME" | grep -q "Mach-O.*$want_arch" || fail "封存內的執行檔不是 darwin/$ARCH；不安裝"
+    file "$STAGE/out/$NAME" | grep -q "Mach-O.*$want_arch" || fail "The archived binary is not darwin/$ARCH; not installing"
   fi
 
-  mkdir -p "$DEST" || fail "無法建立 $DEST"
+  mkdir -p "$DEST" || fail "Cannot create $DEST"
   sha256_of "$STAGE/out/$NAME" >"$STAGE/out/$NAME.sha256"
-  mv -f "$STAGE/out/$NAME" "$DEST/$NAME" && mv -f "$STAGE/out/$NAME.sha256" "$DEST/$NAME.sha256" || fail "放置執行檔失敗"
+  mv -f "$STAGE/out/$NAME" "$DEST/$NAME" && mv -f "$STAGE/out/$NAME.sha256" "$DEST/$NAME.sha256" || fail "Cannot install the binary"
   rm -rf "$STAGE" "$LOCKDIR"
   STAGE="" LOCKDIR=""
 }
@@ -137,12 +137,12 @@ check_tmux_capabilities
 BINARY=""
 if ! resolve_dev_binary; then
   VERSION="$(tr -d '[:space:]' <"$CURRENT_DIR/VERSION" 2>/dev/null)"
-  printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-.+][0-9A-Za-z.-]+)?$' || fail "VERSION 檔缺少或格式無效：$VERSION"
-  [ "$(uname -s)" = Darwin ] || fail "不支援的平台 $(uname -s)：只提供 macOS（darwin/arm64、darwin/amd64）"
+  printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-.+][0-9A-Za-z.-]+)?$' || fail "VERSION file is missing or invalid: $VERSION"
+  [ "$(uname -s)" = Darwin ] || fail "Unsupported platform $(uname -s): only macOS (darwin/arm64 and darwin/amd64) is supported"
   case "$(uname -m)" in
     arm64) ARCH=arm64 ;;
     x86_64) ARCH=amd64 ;;
-    *) fail "不支援的架構 $(uname -m)：只提供 arm64 與 x86_64；不會改用其他架構" ;;
+    *) fail "Unsupported architecture $(uname -m): only arm64 and x86_64 are supported; no fallback" ;;
   esac
   DEST="$CURRENT_DIR/bin/$VERSION-darwin-$ARCH"
   installed_ok || install_release
@@ -150,6 +150,6 @@ if ! resolve_dev_binary; then
 fi
 
 if ! out="$("$BINARY" start -show 2>&1 </dev/null)"; then
-  fail "啟動失敗：$out"
+  fail "Startup failed: $out"
 fi
 exit 0

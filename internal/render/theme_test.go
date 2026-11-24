@@ -28,7 +28,7 @@ var v3Preview = []string{
 	`  #[fg=#A1A1AA]!#[default] #[fg=#71717A]資料異常（無法解析）#[default]`,
 	``,
 	` #[fg=#A78BFA]▎#[fg=#F2EEE3]empty-project#[default]`,
-	`  #[fg=#71717A]無 tab#[default]`,
+	`  #[fg=#71717A]No tabs#[default]`,
 }
 
 // v3Preview36 是同一份預覽在 36 欄（Render width=36，每行最多 35 格）的逐字輸出：
@@ -51,7 +51,7 @@ var v3Preview36 = []string{
 	`  #[fg=#A1A1AA]!#[default] #[fg=#71717A]資料異常（無法解析）#[default]`,
 	``,
 	` #[fg=#A78BFA]▎#[fg=#F2EEE3]empty-project#[default]`,
-	`  #[fg=#71717A]無 tab#[default]`,
+	`  #[fg=#71717A]No tabs#[default]`,
 }
 
 func v3Rows() []render.Row {
@@ -76,7 +76,7 @@ func v3Rows() []render.Row {
 		tab("資料異常（無法解析）", render.DataProblem),
 		blank,
 		group("empty-project", ""),
-		{Kind: render.RowNote, Text: "無 tab", Indent: 1},
+		{Kind: render.RowNote, Text: "No tabs", Indent: 1},
 	}
 }
 
@@ -155,7 +155,7 @@ func TestEveryThemeColourAppearsOnItsElement(t *testing.T) {
 		{10, "go test", "fg=#050505", "active-tab（失敗未讀）"},
 		{11, "!", "fg=#0B0B0B", "problem 符號"},
 		{11, "狀態讀取", "fg=#060606", "inactive-tab（資料異常）"},
-		{17, "無 tab", "fg=#060606", "inactive-tab（無 tab）"},
+		{17, "No tabs", "fg=#060606", "inactive-tab（無 tab）"},
 	}
 	for _, c := range cases {
 		if got := styleOf(t, ls[c.line], c.text); got != c.style {

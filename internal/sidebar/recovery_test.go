@@ -13,7 +13,7 @@ import (
 // 受控假 OpenCode 服務做故障注入（無聲斷線、延遲回應、單項失敗）；時間以短週期注入，
 // 產品預設值（45 秒無聲逾時等）另由常數測試鎖定。從寫到 tmux 的側欄輸出觀察結果。
 
-const downNotice = "無法連線 OpenCode 服務"
+const downNotice = "Cannot connect to OpenCode"
 
 func TestSilentDisconnectIsDetectedThenResyncedWithoutAnyReload(t *testing.T) {
 	lw := startLiveOpts(t, liveOpts{idle: 200 * time.Millisecond, retry: 400 * time.Millisecond})
@@ -224,7 +224,7 @@ func TestUnreadableTabListAndServiceOutageAreBothReportedOnceEach(t *testing.T) 
 
 	lw.tabs.fail(errBoom)
 	lw.wake <- struct{}{}
-	tabNotice := flat("無法讀取 tab 清單，顯示最後可用資料")
+	tabNotice := flat("Cannot read tab list")
 	got := lw.eventually(t, "兩種提示並存", func(s string) bool {
 		return strings.Contains(flat(s), tabNotice) && strings.Contains(flat(s), flat(downNotice))
 	})

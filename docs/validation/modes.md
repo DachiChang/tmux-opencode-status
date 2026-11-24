@@ -17,13 +17,13 @@ set -g @opencode-status-mode global
 | 未設定（選項不存在） | 預設 cwd |
 | `cwd` / `global` | 套用該模式 |
 | 其他任何值（含空字串、大小寫不同、前後空白） | 無效；**不修剪、不猜測** |
-| 無效，且從未有過有效模式（首次） | 不開始追蹤：不讀 tmux／tab 清單，側欄只留「模式設定無效，尚未開始追蹤」，不顯示「沒有 OpenCode TUI」或「無 tab」 |
-| 無效，但已有有效模式（重載） | 保留原有效模式，標題下提示「模式設定無效，未套用，仍用 <mode>」；選項修正或移除後提示消失 |
+| 無效，且從未有過有效模式（首次） | 不開始追蹤：不讀 tmux／tab 清單，側欄只留 `Invalid mode; not tracking`，不顯示 `No OpenCode TUI running` 或 `No tabs` |
+| 無效，但已有有效模式（重載） | 保留原有效模式，標題下提示 `Invalid mode; using <mode>`；選項修正或移除後提示消失 |
 | 讀不到選項（tmux 錯誤） | 視為錯誤，不當成「未設定」；已有模式時保留，並提示「無法讀取模式設定」 |
 
 - cwd：每個「有執行中 TUI 的目錄」一個群組，tab 取自 `cwd[<TUI 行程 cwd>]`。
 - global：只要有 TUI（不論其所在目錄、數量）就顯示**單一 `GLOBAL` 群組**，tab 取自 `global.tabs`，沿用來源順序；
-  同樣的標題／群組摘要／「無 tab」結構。最後一個 TUI 關閉後呈現「沒有 OpenCode TUI」。
+  同樣的標題／群組摘要／`No tabs` 結構。最後一個 TUI 關閉後呈現 `No OpenCode TUI running`。
 - cwd 與 global 來源從不合併；不推斷各 TUI 的有效 scope、不支援混用。
 - **使用者責任**：插件模式應與 OpenCode 的 tab scope 設定一致。若 OpenCode 實際以 cwd scope 運作卻把插件設為 global，
   global 清單可能是空的或過期的（OpenCode 只在 global scope 下維護 `global.tabs`）；插件不會偵測也不會警告這種不一致。

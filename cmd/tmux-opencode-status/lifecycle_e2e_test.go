@@ -380,7 +380,7 @@ func TestLastTUIClosingStopsQueriesButKeepsTheInstanceAlive(t *testing.T) {
 	pid := e.waitDaemons(e.in, 1, 3*time.Second, "start")[0]
 	e.eventually(5*time.Second, "接上服務", func(s string) bool { return strings.Contains(s, "· 修正登入") })
 	e.inTmux("kill-window", "-t", win)
-	e.eventually(2*time.Second, "TUI 關閉", func(s string) bool { return strings.Contains(s, "沒有 OpenCode TUI") })
+	e.eventually(2*time.Second, "TUI 關閉", func(s string) bool { return strings.Contains(s, "No OpenCode TUI running") })
 	time.Sleep(300 * time.Millisecond)
 	before := len(svc.Requests())
 	time.Sleep(1500 * time.Millisecond)
@@ -542,7 +542,7 @@ func TestStopDoesNotRemoveAFormatTheUserSetAfterwards(t *testing.T) {
 		t.Fatalf("%v\n%s", err, out)
 	}
 	e.waitDaemons(e.in, 1, 3*time.Second, "start")
-	e.eventually(3*time.Second, "已顯示", func(s string) bool { return strings.Contains(s, "沒有 OpenCode TUI") })
+	e.eventually(3*time.Second, "已顯示", func(s string) bool { return strings.Contains(s, "No OpenCode TUI running") })
 	e.inTmux("set", "-g", "side-status-format", "my own format")
 	if out, err := e.cli("stop", e.in); err != nil {
 		t.Fatalf("%v\n%s", err, out)
@@ -556,7 +556,7 @@ func TestStopDoesNotRemoveAFormatTheUserSetAfterwards(t *testing.T) {
 func TestMissingTmuxCapabilityFailsLoudlyWithoutStartingAnything(t *testing.T) {
 	e := newBareEnv(t, []string{tmuxShim(t, "", "side-status-width")}, nil)
 	out, err := e.start(e.in, "-show")
-	if err == nil || !strings.Contains(out, "缺少必要能力") || !strings.Contains(out, "side-status-width") {
+	if err == nil || !strings.Contains(out, "missing required capabilities") || !strings.Contains(out, "side-status-width") {
 		t.Fatalf("缺少能力應明確失敗：err=%v\n%s", err, out)
 	}
 	time.Sleep(300 * time.Millisecond)
@@ -576,7 +576,7 @@ func TestTransientTmuxErrorAtStartIsNotReportedAsMissingCapability(t *testing.T)
 	if err == nil {
 		t.Fatalf("tmux 不可用時 start 應失敗：%s", out)
 	}
-	if strings.Contains(out, "缺少必要能力") {
+	if strings.Contains(out, "missing required capabilities") {
 		t.Fatalf("暫時性錯誤不得被說成缺少能力：%s", out)
 	}
 	if got := e.daemons(e.in); len(got) != 0 {
@@ -634,32 +634,32 @@ func TestDiagnoseReportsTheDecidedItemsAndLeaksNothingSensitive(t *testing.T) {
 		t.Fatalf("%v\n%s", err, out)
 	}
 	e.waitDaemons(e.in, 1, 3*time.Second, "start")
-	e.eventually(3*time.Second, "服務未開時提示", func(s string) bool { return strings.Contains(s, "無法連線 OpenCode 服務") })
+	e.eventually(3*time.Second, "服務未開時提示", func(s string) bool { return strings.Contains(s, "Cannot connect to OpenCode") })
 	time.Sleep(300 * time.Millisecond)
 	out := e.diagnose(e.in)
 	t.Logf("診斷（服務未開）：\n%s", out)
-	mustContain(t, out, "版本", "插件模式設定：cwd", "生效模式：cwd", "常駐實例：執行中",
-		"服務連線：無法連線", "找不到服務探索檔", "不會啟動或重啟", "最近錯誤", "必要能力", "side-status-format 皆可用",
-		"session 層級覆寫：1 個", "side-status=off", "side-status-width=20", "不會清除或修改這些覆寫")
+	mustContain(t, out, "version", "Configured plugin mode: cwd", "Active mode: cwd", "Daemon: Running",
+		"Service connection: Cannot connect", "service discovery file not found", "does not start or restart", "Recent errors", "Required capabilities", "side-status-format are available",
+		"Session overrides: 1", "side-status=off", "side-status-width=20", "does not change these overrides")
 
 	// 服務出現後：已連線、TUI／tab 數
 	svc.WriteServiceFile(e.servicePath)
-	e.eventually(6*time.Second, "接上服務", func(s string) bool { return !strings.Contains(s, "無法連線") })
+	e.eventually(6*time.Second, "接上服務", func(s string) bool { return !strings.Contains(s, "Cannot connect") })
 	time.Sleep(300 * time.Millisecond)
 	out = e.diagnose(e.in)
 	t.Logf("診斷（已連線）：\n%s", out)
-	mustContain(t, out, "服務連線：已連線", "發現的 TUI：1 個", "追蹤的 tab：2 個")
+	mustContain(t, out, "Service connection: Connected", "TUI clients found: 1", "tabs tracked: 2")
 	// 模式與 OpenCode 實際 scope 不一致時（global 清單是空的）：沒有追蹤項目，診斷看得出來
 	e.inTmux("set", "-g", "@opencode-status-mode", "global")
-	e.eventually(3*time.Second, "切到 global", func(s string) bool { return strings.Contains(s, "無 tab") })
+	e.eventually(3*time.Second, "切到 global", func(s string) bool { return strings.Contains(s, "No tabs") })
 	time.Sleep(300 * time.Millisecond)
 	out = e.diagnose(e.in)
-	mustContain(t, out, "生效模式：global", "追蹤的 tab：0 個", "待命", "刻意不連線")
+	mustContain(t, out, "Active mode: global", "tabs tracked: 0", "Standby", "no connection")
 	e.inTmux("set", "-g", "@opencode-status-mode", "cwd")
 	e.eventually(5*time.Second, "切回 cwd", func(s string) bool { return strings.Contains(s, "·") })
 	time.Sleep(300 * time.Millisecond)
 	out = e.diagnose(e.in)
-	mustContain(t, out, "生效模式：cwd", "追蹤的 tab：2 個")
+	mustContain(t, out, "Active mode: cwd", "tabs tracked: 2")
 
 	for _, forbidden := range []string{fakeoc.Password, "sk-live", "SENTINEL_", "secret-project-name", e.dir, e.servicePath, e.tabsPath, "127.0.0.1", "0.0.0.0", svc.URL()} {
 		mustNotContain(t, out, forbidden)
@@ -667,10 +667,10 @@ func TestDiagnoseReportsTheDecidedItemsAndLeaksNothingSensitive(t *testing.T) {
 	// 服務中斷後的最近錯誤也不洩漏
 	_ = os.Remove(e.servicePath)
 	svc.Drop()
-	e.eventually(5*time.Second, "斷線提示", func(s string) bool { return strings.Contains(s, "無法連線 OpenCode 服務") })
+	e.eventually(5*time.Second, "斷線提示", func(s string) bool { return strings.Contains(s, "Cannot connect to OpenCode") })
 	time.Sleep(300 * time.Millisecond)
 	out = e.diagnose(e.in)
-	mustContain(t, out, "服務連線：無法連線")
+	mustContain(t, out, "Service connection: Cannot connect")
 	for _, forbidden := range []string{fakeoc.Password, "sk-live", "SENTINEL_", "secret-project-name", e.dir, "127.0.0.1", "Authorization", "Basic "} {
 		mustNotContain(t, out, forbidden)
 	}
@@ -688,7 +688,7 @@ func TestDiagnoseIsStrictlyReadOnly(t *testing.T) {
 		t.Fatalf("%v\n%s", err, out)
 	}
 	pid := e.waitDaemons(e.in, 1, 3*time.Second, "start")[0]
-	e.eventually(3*time.Second, "已顯示", func(s string) bool { return strings.Contains(s, "沒有 OpenCode TUI") })
+	e.eventually(3*time.Second, "已顯示", func(s string) bool { return strings.Contains(s, "No OpenCode TUI running") })
 	opts, hooks, keys := e.inTmux("show-options", "-g"), e.allHooks(), e.inTmux("list-keys")
 	reqs := len(svc.Requests())
 	e.diagnose(e.in)
@@ -708,7 +708,7 @@ func TestDiagnoseIsStrictlyReadOnly(t *testing.T) {
 func TestDiagnoseExplainsWhyNothingIsShown(t *testing.T) {
 	e := newLifecycleEnv(t)
 	out := e.diagnose(e.in)
-	mustContain(t, out, "常駐實例：未執行", "重新載入 tmux 設定", "發現 1 項問題")
+	mustContain(t, out, "Daemon: Not running", "reload the tmux configuration", "Issues found: 1")
 
 	e.inTmux("set", "-g", "@opencode-status-mode", "globl")
 	if o, err := e.start(e.in, "-show"); err != nil {
@@ -717,13 +717,14 @@ func TestDiagnoseExplainsWhyNothingIsShown(t *testing.T) {
 	e.waitDaemons(e.in, 1, 3*time.Second, "start")
 	time.Sleep(600 * time.Millisecond)
 	out = e.diagnose(e.in)
-	mustContain(t, out, "插件模式設定：無效值", "尚未開始追蹤")
+	mustContain(t, out, "Configured plugin mode: Invalid value", "Tracking not started",
+		"Current issue: Invalid mode; not tracking\n", "[mode] Invalid mode; not tracking\n")
 	mustNotContain(t, out, "globl")
 }
 
 func TestDiagnoseReportsAMissingCapability(t *testing.T) {
 	e := newBareEnv(t, []string{tmuxShim(t, "", "side-status-format")}, nil)
-	mustContain(t, e.diagnose(e.in), "必要能力：缺少 side-status-format", "tmux 3.9")
+	mustContain(t, e.diagnose(e.in), "Required capabilities: Missing side-status-format", "tmux 3.9")
 }
 
 // 側欄隱藏時診斷會說明常駐程式仍在追蹤。
@@ -734,7 +735,7 @@ func TestDiagnoseMentionsTheSidebarIsHiddenButStillTracking(t *testing.T) {
 		t.Fatalf("%v\n%s", err, out)
 	}
 	e.waitDaemons(e.in, 1, 3*time.Second, "start")
-	mustContain(t, e.diagnose(e.in), "側欄隱藏", "不需重啟")
+	mustContain(t, e.diagnose(e.in), "sidebar hidden", "no restart")
 }
 
 // 服務斷線與 tab 清單問題都要出現在「最近錯誤」，且只有固定描述。
@@ -747,13 +748,13 @@ func TestDiagnoseRecentErrorsIncludeServiceAndTabListProblems(t *testing.T) {
 		t.Fatalf("%v\n%s", err, out)
 	}
 	e.waitDaemons(e.in, 1, 3*time.Second, "start")
-	e.eventually(3*time.Second, "服務未開提示", func(s string) bool { return strings.Contains(s, "無法連線 OpenCode 服務") })
+	e.eventually(3*time.Second, "服務未開提示", func(s string) bool { return strings.Contains(s, "Cannot connect to OpenCode") })
 	e.writeTabs(`{"version":9,"secret":"sk-live-should-not-appear"}`)
-	e.eventually(3*time.Second, "tab 清單不可讀提示", func(s string) bool { return strings.Contains(s, "無法讀取 tab 清單") })
+	e.eventually(3*time.Second, "tab 清單不可讀提示", func(s string) bool { return strings.Contains(s, "Cannot read tab list") })
 	time.Sleep(300 * time.Millisecond)
 	out := e.diagnose(e.in)
-	mustContain(t, out, "最近錯誤：", "[service]", "找不到服務探索檔", "[tabs]", "tab 清單不可讀")
-	mustNotContain(t, out, "sk-live", "secret", "version", e.dir)
+	mustContain(t, out, "Recent errors:", "[service]", "service discovery file not found", "[tabs]", "Tab list is unreadable")
+	mustNotContain(t, out, "sk-live", "secret", `"version"`, e.dir)
 }
 
 // tmux server 重啟（同一個 socket、新的 server）時，舊實例即使還沒偵測到也不能讓 start 誤以為「已有實例」。
@@ -787,7 +788,7 @@ func TestInvalidStartSettingsAreRejectedBeforeTouchingTheRunningInstance(t *test
 	pid := e.waitDaemons(e.in, 1, 3*time.Second, "start")[0]
 	for _, bad := range [][]string{{"-width", "0"}, {"-backstop", "0s"}, {"-width", "-3"}, {"-idle-timeout", "0s"}, {"-server-check", "-1s"}} {
 		out, err := e.start(e.in, bad...)
-		if err == nil || !strings.Contains(out, "無效") {
+		if err == nil || !strings.Contains(out, "invalid setting") {
 			t.Fatalf("%v 應被拒絕：err=%v\n%s", bad, err, out)
 		}
 	}
@@ -809,7 +810,7 @@ func TestStartWithoutSocketFlagsFollowsTMUXEnvAndRefusesWithoutIt(t *testing.T) 
 
 	bare := exec.Command(e.daemonBin, "start")
 	bare.Env = e.cmdEnv()
-	if out, err := bare.CombinedOutput(); err == nil || !strings.Contains(string(out), "必須明確指定") {
+	if out, err := bare.CombinedOutput(); err == nil || !strings.Contains(string(out), "specify -L <name> or -S <path> explicitly") {
 		t.Fatalf("沒有 socket 資訊時必須拒絕：%v\n%s", err, out)
 	}
 }

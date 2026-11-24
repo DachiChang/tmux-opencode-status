@@ -180,7 +180,7 @@ func (d *Daemon) Sync() error {
 	defer func() { d.lastRecv = active; d.report() }()
 	if err := d.resolveTheme(); err != nil {
 		errs = append(errs, err)
-		note("theme", "無法讀取色票設定，沿用上次有效配色")
+		note("theme", "Cannot read theme settings; keeping the last valid colors")
 	}
 	_, tracking, modeNotice, modeErr := d.resolveMode()
 	d.modeIssue = ""
@@ -197,17 +197,17 @@ func (d *Daemon) Sync() error {
 		return errors.Join(errs...)
 	}
 	if panes, err := d.deps.Panes.Panes(); err != nil {
-		errs = append(errs, fmt.Errorf("讀取 tmux pane：%w", err))
-		notice = "無法讀取 tmux，顯示最後可用資料"
-		note("tmux", "無法讀取 tmux pane 清單")
+		errs = append(errs, fmt.Errorf("read tmux panes: %w", err))
+		notice = "Cannot read tmux panes"
+		note("tmux", "Cannot read tmux pane list")
 	} else {
 		d.panes, d.havePanes = panes, true
 	}
 	if tabs, err := d.deps.Tabs.Read(); err != nil {
-		errs = append(errs, fmt.Errorf("讀取 tab 清單：%w", err))
-		note("tabs", "tab 清單不可讀或格式不相容")
+		errs = append(errs, fmt.Errorf("read tab list: %w", err))
+		note("tabs", "Tab list is unreadable or has an incompatible format")
 		if notice == "" {
-			notice = "無法讀取 tab 清單，顯示最後可用資料"
+			notice = "Cannot read tab list"
 		}
 	} else {
 		d.tabs = tabs
@@ -218,7 +218,7 @@ func (d *Daemon) Sync() error {
 	}
 	if err := d.render(); err != nil {
 		errs = append(errs, err)
-		note("output", "無法寫入 tmux 側欄選項")
+		note("output", "Cannot write tmux sidebar options")
 	}
 	return errors.Join(errs...)
 }
@@ -253,7 +253,7 @@ func (d *Daemon) report() {
 		st.Service, st.ServiceReason = d.live.Status()
 		down := st.Service == ServiceDown && st.ServiceReason != ""
 		if down {
-			st.Issues = append(st.Issues, "無法連線 OpenCode 服務："+st.ServiceReason)
+			st.Issues = append(st.Issues, "Cannot connect to OpenCode: "+st.ServiceReason)
 		}
 		// 服務失敗與其他來源一樣只在「剛發生」時記一筆最近錯誤，不因持續失敗而洗版。
 		if down && d.lastService != st.ServiceReason {
@@ -298,7 +298,7 @@ func (d *Daemon) render() error {
 			if view.Notice != "" {
 				view.Notice += "\n"
 			}
-			view.Notice += "無法連線 OpenCode 服務"
+			view.Notice += "Cannot connect to OpenCode"
 		}
 	}
 	return d.publish(view)
@@ -342,7 +342,7 @@ func (d *Daemon) view(mode contract.Mode) render.View {
 		names = append(names, dir)
 	}
 	sort.Strings(names)
-	view := render.View{Empty: "沒有 OpenCode TUI"}
+	view := render.View{Empty: "No OpenCode TUI running"}
 	for _, tg := range d.groupsFor(mode, names, jumps) {
 		g := render.Group{Name: tg.name, JumpTarget: tg.jump}
 		for _, t := range tg.tabs {
@@ -360,7 +360,7 @@ func (d *Daemon) publish(v render.View) error {
 		return nil
 	}
 	if err := d.deps.Out.Publish(p); err != nil {
-		return fmt.Errorf("寫入 tmux：%w", err)
+		return fmt.Errorf("write to tmux: %w", err)
 	}
 	d.last, d.havePub = fp, true
 	return nil

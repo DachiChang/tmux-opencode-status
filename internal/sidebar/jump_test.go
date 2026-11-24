@@ -50,7 +50,7 @@ func TestGroupTabAndNoTabRowsCarryTheJumpTargetAndOtherRowsDoNot(t *testing.T) {
 	// 標題、分隔線 | api 目錄列、兩個 tab | 空白 | web 目錄列、無 tab
 	assertTargets(t, targets, "", "", "7", "7", "7", "", "2", "2")
 	if !strings.Contains(rows[2], "api") || !strings.Contains(rows[3], "one") || !strings.Contains(rows[4], "two") ||
-		strings.TrimSpace(rows[5]) != "" || !strings.Contains(rows[6], "web") || !strings.Contains(rows[7], "無 tab") {
+		strings.TrimSpace(rows[5]) != "" || !strings.Contains(rows[6], "web") || !strings.Contains(rows[7], "No tabs") {
 		t.Fatalf("排版不符：%q", rows)
 	}
 }
@@ -62,7 +62,7 @@ func TestNonGroupRowsNeverCarryARange(t *testing.T) {
 	w.sync(t)
 	targets, rows := w.out.jumpTargetsAndRows(t, 20)
 	assertTargets(t, targets, "", "", "")
-	if !strings.Contains(rows[2], "沒有 OpenCode TUI") {
+	if !strings.Contains(rows[2], "No OpenCode TUI running") {
 		t.Fatalf("應顯示沒有 TUI：%q", rows)
 	}
 
@@ -73,7 +73,7 @@ func TestNonGroupRowsNeverCarryARange(t *testing.T) {
 	_ = w.d.Sync() // 讀取失敗：沿用最後可用資料並顯示提示
 	targets, rows = w.out.jumpTargetsAndRows(t, 20)
 	assertTargets(t, targets, "", "", "", "3", "3")
-	if !strings.Contains(rows[2], "無法讀取 tmux") {
+	if !strings.Contains(rows[2], "Cannot read tmux panes") {
 		t.Fatalf("應顯示讀取錯誤提示：%q", rows)
 	}
 }
@@ -208,7 +208,7 @@ func TestEmptyCwdGroupJumpsOnlyToItsOwnTUIsNotToTheGlobalSmallest(t *testing.T) 
 	targets, rows := w.out.jumpTargetsAndRows(t, 20)
 	// 標題、分隔線 | 空目錄群組、無 tab | 空白 | api 群組、無 tab
 	assertTargets(t, targets, "", "", "5", "5", "", "2", "2")
-	if !strings.Contains(rows[6], "無 tab") {
+	if !strings.Contains(rows[6], "No tabs") {
 		t.Fatalf("排版不符：%q", rows)
 	}
 }

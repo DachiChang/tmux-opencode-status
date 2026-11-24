@@ -38,14 +38,14 @@ func RuntimeDir() (string, error) {
 	}
 	dir := filepath.Join(base, name)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return "", fmt.Errorf("建立 runtime 目錄：%w", err)
+		return "", fmt.Errorf("create runtime directory: %w", err)
 	}
 	fi, err := os.Lstat(dir)
 	if err != nil {
 		return "", err
 	}
 	if st, ok := fi.Sys().(*syscall.Stat_t); !ok || !fi.IsDir() || int(st.Uid) != os.Getuid() || fi.Mode().Perm()&0o077 != 0 {
-		return "", fmt.Errorf("runtime 目錄 %s 的擁有者或權限不安全（需為自己所有且 0700）", dir)
+		return "", fmt.Errorf("unsafe ownership or permissions on runtime directory %s (must be owned by the current user with mode 0700)", dir)
 	}
 	return dir, nil
 }
@@ -72,7 +72,7 @@ func PathsFor(socketPath string) (Paths, error) {
 }
 
 // ErrHeld 表示鎖已被其他行程持有。
-var ErrHeld = errors.New("鎖已被持有")
+var ErrHeld = errors.New("lock is already held")
 
 // Lock 是一把 fcntl 記錄鎖。fcntl 鎖不會被子行程繼承，因此常駐程式啟動的 tmux 子行程不會意外持有它。
 type Lock struct {

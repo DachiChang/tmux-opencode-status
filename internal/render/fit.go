@@ -120,7 +120,7 @@ func layout(groups []Group) []Row {
 		}
 		rows = append(rows, head)
 		if len(g.Tabs) == 0 {
-			rows = append(rows, Row{Kind: RowNote, Text: "無 tab", Indent: tabIndent - margin, JumpTarget: g.JumpTarget})
+			rows = append(rows, Row{Kind: RowNote, Text: "No tabs", Indent: tabIndent - margin, JumpTarget: g.JumpTarget})
 			continue
 		}
 		for _, t := range g.Tabs {

@@ -35,8 +35,8 @@ func (d *Daemon) resolveMode() (mode contract.Mode, ok bool, notice string, err 
 	s, rerr := d.deps.Mode.Setting()
 	switch {
 	case rerr != nil:
-		err = fmt.Errorf("讀取模式設定：%w", rerr)
-		notice = "無法讀取模式設定"
+		err = fmt.Errorf("read plugin mode: %w", rerr)
+		notice = "Cannot read mode"
 	case !s.Set:
 		d.mode, d.haveMode = contract.ModeCwd, true
 		return d.mode, true, "", nil
@@ -44,13 +44,13 @@ func (d *Daemon) resolveMode() (mode contract.Mode, ok bool, notice string, err 
 		d.mode, d.haveMode = contract.Mode(s.Value), true
 		return d.mode, true, "", nil
 	default:
-		err = fmt.Errorf("%s 的值 %q 無效（只接受 cwd 或 global）", ModeOption, s.Value)
-		notice = "模式設定無效"
+		err = fmt.Errorf("invalid value %q for %s (expected cwd or global)", s.Value, ModeOption)
+		notice = "Invalid mode"
 	}
 	if d.haveMode {
-		return d.mode, true, notice + "，未套用，仍用 " + string(d.mode), err
+		return d.mode, true, notice + "; using " + string(d.mode), err
 	}
-	return "", false, notice + "，尚未開始追蹤", err
+	return "", false, notice + "; not tracking", err
 }
 
 type tabGroup struct {

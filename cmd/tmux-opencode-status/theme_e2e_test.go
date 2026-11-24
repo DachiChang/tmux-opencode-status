@@ -89,7 +89,7 @@ func TestSwatchOverrideAndUnsetUpdateTheSidebarImmediatelyViaTheHook(t *testing.
 func TestInvalidSwatchFallsBackAloneAndTheSidebarShowsNoError(t *testing.T) {
 	e, name := themeEnv(t)
 	// 測試環境沒有服務，先等既有的「無法連線」提示出現並穩定，再取基準畫面。
-	e.eventually(5*time.Second, "服務提示出現", func(s string) bool { return strings.Contains(s, "無法連線 OpenCode 服務") })
+	e.eventually(5*time.Second, "服務提示出現", func(s string) bool { return strings.Contains(s, "Cannot connect to OpenCode") })
 	time.Sleep(300 * time.Millisecond)
 	before := strings.Join(e.clientScreen("hold"), "\n")
 	e.inTmux("set", "-g", colorOpt+"project", "#{pane_id}")
@@ -125,27 +125,27 @@ func TestDiagnoseListsInvalidSwatchesAndStaysQuietWhenAllAreValid(t *testing.T) 
 		t.Fatalf("%v\n%s", err, out)
 	}
 	e.waitDaemons(e.in, 1, 3*time.Second, "start")
-	e.eventually(3*time.Second, "已顯示", func(s string) bool { return strings.Contains(s, "沒有 OpenCode TUI") })
+	e.eventually(3*time.Second, "已顯示", func(s string) bool { return strings.Contains(s, "No OpenCode TUI running") })
 
 	baseline := e.diagnose(e.in)
-	mustContain(t, baseline, "結論：未發現問題")
+	mustContain(t, baseline, "Result: No issues found")
 
 	e.inTmux("set", "-g", colorOpt+"project", "colour33")
 	e.inTmux("set", "-g", colorOpt+"notice", "default")
 	valid := e.diagnose(e.in)
-	mustNotContain(t, valid, "色票", colorOpt, "已退回預設")
-	mustContain(t, valid, "結論：未發現問題")
+	mustNotContain(t, valid, "Theme settings", colorOpt, "using its default")
+	mustContain(t, valid, "Result: No issues found")
 
 	e.inTmux("set", "-g", colorOpt+"title", "#{pane_id}")
 	e.inTmux("set", "-g", colorOpt+"split", "")
 	e.inTmux("set", "-g", colorOpt+"emphasis", "purple]")
 	out := e.diagnose(e.in)
 	t.Logf("診斷（含無效色票）：\n%s", out)
-	mustContain(t, out, colorOpt+"title", colorOpt+"split", colorOpt+"emphasis", "已退回預設", "結論：發現 3 項問題")
+	mustContain(t, out, colorOpt+"title", colorOpt+"split", colorOpt+"emphasis", "using its default", "Result: Issues found: 3")
 	mustNotContain(t, out, colorOpt+"project", colorOpt+"notice", "pane_id", "purple")
 
 	e.inTmux("set", "-gu", colorOpt+"title")
 	e.inTmux("set", "-gu", colorOpt+"split")
 	e.inTmux("set", "-gu", colorOpt+"emphasis")
-	mustContain(t, e.diagnose(e.in), "結論：未發現問題")
+	mustContain(t, e.diagnose(e.in), "Result: No issues found")
 }

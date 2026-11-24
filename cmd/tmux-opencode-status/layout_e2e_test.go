@@ -209,27 +209,48 @@ func TestLayoutOnRealClientsDisambiguationSummarySingleLayoutAndTmuxTruncation(t
 func TestEmptyAndDataProblemFramesOnARealClient(t *testing.T) {
 	e := newEnv(t)
 	e.extraClient("c20", 100, 20)
-	got := e.clientWaits("c20", 4*time.Second, "沒有 TUI", func(s []string) bool { return contains(s, "沒有 OpenCode TUI") })
+	got := e.clientWaits("c20", 4*time.Second, "沒有 TUI", func(s []string) bool { return contains(s, "No OpenCode TUI running") })
 	t.Logf("沒有 TUI：\n%s", trimRight(got))
-	if contains(got, "無 tab") || contains(got, "無法") {
+	if contains(got, "No tabs") || contains(got, "Cannot ") {
 		t.Fatalf("空清單不得混入其他提示：\n%s", trimRight(got))
 	}
 
 	dir := filepath.Join(e.dir, "work", "api")
 	e.writeTabs(e.tabsJSON(map[string][]string{dir: {}}))
 	e.tui(dir)
-	got = e.clientWaits("c20", 4*time.Second, "有 TUI 無 tab", func(s []string) bool { return contains(s, "無 tab") })
+	got = e.clientWaits("c20", 4*time.Second, "有 TUI 無 tab", func(s []string) bool { return contains(s, "No tabs") })
 	t.Logf("有 TUI 無 tab：\n%s", trimRight(got))
-	if contains(got, "沒有 OpenCode TUI") {
+	if contains(got, "No OpenCode TUI running") {
 		t.Fatalf("有 TUI 時不得顯示沒有 TUI：\n%s", trimRight(got))
 	}
 
 	e.writeTabs(e.tabsJSON(map[string][]string{dir: {"keep me"}}))
 	e.clientWaits("c20", 4*time.Second, "有 tab", func(s []string) bool { return contains(s, "keep me") })
 	e.writeTabs(`{"global":`)
-	got = e.clientWaits("c20", 6*time.Second, "不可讀提示", func(s []string) bool { return contains(s, "無法讀取 tab 清單") })
+	got = e.clientWaits("c20", 6*time.Second, "不可讀提示", func(s []string) bool {
+		for _, row := range s {
+			if strings.TrimSpace(row) == "▲ Cannot read tab list" {
+				return true
+			}
+		}
+		return false
+	})
 	t.Logf("tab 清單不可讀：\n%s", trimRight(got))
-	if !contains(got, "keep me") || contains(got, "無 tab") {
+	warnings := 0
+	for _, row := range got {
+		switch row := strings.TrimSpace(row); {
+		case row == "▲ Cannot read tab list":
+			warnings++
+		case row == "▲ Cannot connect to OpenCode":
+			// A separate warning for the disconnected service.
+		case strings.HasPrefix(row, "▲"):
+			t.Fatalf("Unexpected warning row: %q", row)
+		}
+	}
+	if warnings != 1 {
+		t.Fatalf("Expected one tab-list warning, got %d:\n%s", warnings, trimRight(got))
+	}
+	if !contains(got, "keep me") || contains(got, "No tabs") {
 		t.Fatalf("應保留最後清單且不是空清單：\n%s", trimRight(got))
 	}
 	for i, l := range got {

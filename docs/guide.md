@@ -42,11 +42,11 @@ If the installed binary passes verification, the script does not download it aga
 
 ### Click to jump
 
-Click any row in a **directory group** (the directory row, one of its tab rows, or the `無 tab` (“No tabs”) row) to switch to the **pane hosting that group's TUI client**. This switches the session, window, and pane together, even across tmux sessions or if the pane is not the active pane in its window. This feature is always enabled and requires no plugin configuration.
+Click any row in a **directory group** (the directory row, one of its tab rows, or the `No tabs` row) to switch to the **pane hosting that group's TUI client**. This switches the session, window, and pane together, even across tmux sessions or if the pane is not the active pane in its window. This feature is always enabled and requires no plugin configuration.
 
 - **Multiple TUI clients:** If several TUI clients are running in the same directory, the jump target is the pane with the lowest numeric ID (`N` in `%N`, so `%3` comes before `%13`). In global mode, the `GLOBAL` group picks from all TUI clients. The lowest ID indicates the earliest pane creation, not the earliest OpenCode launch.
 - **Pane only:** The plugin is read-only and cannot switch to a particular tab inside the TUI.
-- **Other rows:** Clicking the title, divider, read-error notice, `沒有 OpenCode TUI` (“No OpenCode TUI”), empty space, or another non-plugin range follows the tmux default (`switch-client -t =`).
+- **Other rows:** Clicking the title, divider, read-error notice, `No OpenCode TUI running`, empty space, or another non-plugin range follows the tmux default (`switch-client -t =`).
 - **Jump targets update with the sidebar:** When a TUI opens, closes, or moves to another pane, the next sidebar update reflects the change.
 
 **This overrides your `MouseDown1SideStatus` binding.** On startup, including a handoff to a new instance, the daemon installs its binding in the root key table. An explicit `stop` **restores only the tmux default** (`switch-client -t =`); it does not save or restore your custom binding.
@@ -70,7 +70,7 @@ Press the trigger key (`prefix` then `A` by default) to enter **jump mode**. In 
 - **Multiple tmux clients:** Only the client that presses the trigger key shows jump labels. The other clients' sidebars do not change. The trigger key still enters jump mode when the sidebar is hidden (`side-status off`).
 - **Changing the trigger key:** After changing `@opencode-status-jump-trigger`, **reload `tmux.conf`**. TPM reruns the entry script, and the trigger setting is part of the daemon's configuration fingerprint. The handoff unbinds the old key before binding the new one. Running `set -g` without a reload does not change the binding.
 - **Invalid trigger keys:** An empty value or a key name tmux does not recognize results in no prefix binding and **no fallback to `A`**. `diagnose` reports it and counts it as an issue.
-- **This overrides the existing prefix binding for that key.** The default `A` is not used by tmux defaults or common plugins. If `tmux.conf` or another plugin already binds the key, this plugin takes over on load. If something else replaces the plugin's binding later, `diagnose` reports `已被覆寫` (“Overwritten”).
+- **This overrides the existing prefix binding for that key.** The default `A` is not used by tmux defaults or common plugins. If `tmux.conf` or another plugin already binds the key, this plugin takes over on load. If something else replaces the plugin's binding later, `diagnose` reports `Overwritten`.
 - **Stopping and reloading:** An explicit `stop` unbinds the trigger key, clears the `opencode-status-jump` table, and removes all `@tos_*` options. **It does not restore any previous binding.** Reload your configuration to restore bindings from `tmux.conf`; restart the tmux server to restore a built-in binding. The plugin leaves your custom root binding alone, but after `stop` it points to an empty table, so pressing it is equivalent to canceling.
 - The bindings run entirely within tmux, without opening a shell or invoking the plugin binary. See [ADR-0004](adr/0004-internal-option-naming.md) and [ADR-0005](adr/0005-keyboard-jump.md) for the rationale.
 
@@ -96,7 +96,7 @@ The sidebar has 13 color options, each corresponding to a global tmux user optio
 | `split` | `#404040` | Divider below the title |
 | `project` | `#F2EEE3` | Directory names |
 | `active-tab` | `#cac5b5` | Tab titles for running, needs attention, finished unread, and failed unread |
-| `inactive-tab` | `#71717A` | Tab titles for idle and data problems, the `無 tab` (“No tabs”) note, and the `…` when the right-hand summary runs out of room |
+| `inactive-tab` | `#71717A` | Tab titles for idle and data problems, the `No tabs` note, and the `…` when the right-hand summary runs out of room |
 | `state-running` | `#4ADE80` | `●` Running (including the symbol and count in the right-hand summary) |
 | `state-ask` | `#FACC15` | `?` Needs attention |
 | `state-finished` | `#60A5FA` | `◆` Finished unread |
@@ -127,7 +127,7 @@ Setting or unsetting an option (`set -gu`) or reloading `tmux.conf` updates the 
 ~/.tmux/plugins/tmux-opencode-status/bin/<version>-darwin-<arch>/tmux-opencode-status diagnose
 ```
 
-`diagnose` reports the tmux version and capabilities, plugin mode, invalid color options, daemon status, discovered TUI client and tab counts, service connectivity, and recent errors. Output is currently in Traditional Chinese. **It does not include credentials, prompts, conversations, or OpenCode session or tab titles.** It does not connect to OpenCode or write any options.
+`diagnose` reports the tmux version and capabilities, plugin mode, invalid color options, daemon status, discovered TUI client and tab counts, service connectivity, and recent errors. **It does not include credentials, prompts, conversations, or OpenCode session or tab titles.** It does not connect to OpenCode or write any options.
 
 ### Session overrides
 
@@ -137,16 +137,16 @@ If you have set a per-session override with `set -t <session> side-status…`, t
 
 | Symptom | What to check |
 | --- | --- |
-| tmux displays `下載失敗` (“Download failed”) on load | Check your network and whether the release has artifacts for the requested version (`VERSION` maps to tag `v<version>`). The plugin does not build automatically; developers can use the binary override in [Building from source](#building-from-source). |
-| `完整性驗證失敗` (“Integrity verification failed”) or `校驗碼` (“Checksum”) | The checksum did not match, or `SHA256SUMS` had no valid checksum for the artifact. Retry; if it keeps happening, do not use that release and report the problem. |
-| `不支援的架構` (“Unsupported architecture”) or `不支援的平台` (“Unsupported platform”) | Only macOS arm64 and x86_64 are supported. |
-| `缺少必要能力` (“Missing required capabilities”) | Upgrade to tmux 3.9 with the `side-status` options. Check your version with `tmux -V`. |
+| tmux displays `Download failed` on load | Check your network and whether the release has artifacts for the requested version (`VERSION` maps to tag `v<version>`). The plugin does not build automatically; developers can use the binary override in [Building from source](#building-from-source). |
+| `Integrity verification failed` or `No valid checksum` | The checksum did not match, or `SHA256SUMS` had no valid checksum for the artifact. Retry; if it keeps happening, do not use that release and report the problem. |
+| `Unsupported architecture` or `Unsupported platform` | Only macOS arm64 and x86_64 are supported. |
+| tmux is `missing required capabilities` | Upgrade to tmux 3.9 with the `side-status` options. Check your version with `tmux -V`. |
 | The sidebar does not appear | Run `diagnose` to check the daemon, mode, and service connectivity. Confirm `side-status` is not `off`, and check for session overrides. |
-| The gray `!` persists | This indicates a data problem (for example, the service is unreachable or the tab list cannot be read). Check `最近錯誤` (“Recent errors”) in `diagnose`. The plugin does not start the OpenCode service. |
+| The gray `!` persists | This indicates a data problem (for example, the service is unreachable or the tab list cannot be read). Check `Recent errors` in `diagnose`. The plugin does not start the OpenCode service. |
 | Theme colors do not take effect | `diagnose` lists invalid values that fell back to defaults; the sidebar does not show these errors. See [Theme colors](#theme-colors) for accepted formats. |
 | The mode looks wrong or the list is empty | Check that `@opencode-status-mode` matches OpenCode's tab scope. |
 | Clicking the sidebar does not jump | Jumping works only on rows within a directory group. Run `tmux list-keys -T root \| grep MouseDown1SideStatus` to confirm the plugin binding contains `mouse_status_range`, and check that `mouse` is `on`. |
-| The trigger key does nothing | Look for `鍵盤跳轉` (“Keyboard jump”) in `diagnose`: it may report `已綁定` (“Bound”), `無效設定` (“Invalid setting”), `綁定失敗` (“Binding failed”), or `已被覆寫` (“Overwritten”). Run `tmux list-keys -T prefix <key>` to confirm the binding is `switch-client -T opencode-status-jump`. Reload `tmux.conf` after changing `@opencode-status-jump-trigger`. |
+| The trigger key does nothing | Look for `Keyboard jump` in `diagnose`: it may report `Bound`, `Invalid setting`, `Binding failed`, or `Overwritten`. Run `tmux list-keys -T prefix <key>` to confirm the binding is `switch-client -T opencode-status-jump`. Reload `tmux.conf` after changing `@opencode-status-jump-trigger`. |
 | You want to uninstall completely | Run `tmux-opencode-status stop` to clean up plugin resources. Remove the `@plugin` entry from `tmux.conf` and press `prefix + alt + u`. |
 
 Daemon error logs are named `<id>.log` under `$XDG_RUNTIME_DIR/tmux-opencode-status/`, or under `$TMPDIR/tmux-opencode-status-<uid>/` if `XDG_RUNTIME_DIR` is not set.

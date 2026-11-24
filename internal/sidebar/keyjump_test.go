@@ -76,7 +76,7 @@ func TestJumpLayoutReplacesTheBarOfLetteredGroupsWithATagAndKeepsEverythingElse(
 		"  ! two",
 		"",
 		" ▎web",
-		"  無 tab",
+		"  No tabs",
 	}
 	wantJump := append([]string(nil), wantMain...)
 	wantJump[2] = rowWithSummary(" a  api", "!2")
@@ -171,7 +171,7 @@ func TestOnlyTheFirst26GroupsGetALetterAndTheRestKeepTheBar(t *testing.T) {
 	rows := plainRows(w.out.layout(jumpOpt))
 	var groups []string
 	for _, r := range rows {
-		if strings.Contains(r, "d") && !strings.Contains(r, "無 tab") && !strings.Contains(r, "OPENCODE") {
+		if strings.Contains(r, "d") && !strings.Contains(r, "No tabs") && !strings.Contains(r, "OPENCODE") {
 			groups = append(groups, r)
 		}
 	}

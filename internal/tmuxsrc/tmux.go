@@ -133,7 +133,7 @@ func (c *Client) Panes() ([]sidebar.PaneFact, error) {
 		facts = append(facts, fact)
 	}
 	if len(unresolved) > 0 {
-		return nil, fmt.Errorf("無法判定 %d 個 pane 的前景行程（%s）", len(unresolved), strings.Join(unresolved, "、"))
+		return nil, fmt.Errorf("cannot identify foreground processes for %d pane(s) (%s)", len(unresolved), strings.Join(unresolved, ", "))
 	}
 	return facts, nil
 }
@@ -151,7 +151,7 @@ func (c *Client) readForeground(fact *sidebar.PaneFact, pid int) error {
 		if !pr.Alive(pid) || !candidate {
 			return nil
 		}
-		return fmt.Errorf("讀取行程 argv：%w", err)
+		return fmt.Errorf("read process argv: %w", err)
 	}
 	fact.ForegroundArgv = argv
 	if !contract.IsTUICandidate(fact.Pane) {
@@ -163,7 +163,7 @@ func (c *Client) readForeground(fact *sidebar.PaneFact, pid int) error {
 			fact.ForegroundArgv = nil
 			return nil
 		}
-		return fmt.Errorf("讀取行程工作目錄：%w", err)
+		return fmt.Errorf("read process working directory: %w", err)
 	}
 	fact.ForegroundCwd = cwd
 	return nil
@@ -369,7 +369,7 @@ func (c *Client) SessionOverrides() ([]SessionOverride, error) {
 			name, val, _ := strings.Cut(line, " ")
 			if name == "side-status" || name == "side-status-width" || name == "side-status-format" {
 				if name == "side-status-format" {
-					val = "（自訂格式）"
+					val = "(custom format)"
 				}
 				o.Options = append(o.Options, name+"="+val)
 			}
@@ -430,11 +430,11 @@ func (c *Client) Server() (ServerInfo, error) {
 	}
 	f := strings.Split(strings.TrimRight(string(out), "\n"), "\t")
 	if len(f) != 3 {
-		return ServerInfo{}, fmt.Errorf("tmux display-message 回應格式不符")
+		return ServerInfo{}, fmt.Errorf("unexpected response format from tmux display-message")
 	}
 	pid, perr := strconv.Atoi(f[1])
 	if perr != nil || f[0] == "" {
-		return ServerInfo{}, fmt.Errorf("tmux display-message 回應格式不符")
+		return ServerInfo{}, fmt.Errorf("unexpected response format from tmux display-message")
 	}
 	return ServerInfo{SocketPath: f[0], PID: pid, Version: f[2]}, nil
 }

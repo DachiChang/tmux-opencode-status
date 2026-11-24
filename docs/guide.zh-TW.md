@@ -48,13 +48,13 @@ set -g @plugin 'DachiChang/tmux-opencode-status'
 
 ### 點擊跳轉
 
-點擊側欄中某個**目錄群組**的任一列（目錄列、其下的 tab 列、「無 tab」列），client 立即切到該群組 **TUI client 所在的 pane**：
+點擊側欄中某個**目錄群組**的任一列（目錄列、其下的 tab 列、群組沒有 tab 時的提示列），client 立即切到該群組 **TUI client 所在的 pane**：
 session、window、pane 一次到位，可跨 tmux session，目標 pane 不是該 window 的 active pane 時也一樣。功能固定開啟，不需設定。
 
 - **多個 TUI client**：同一目錄有多個 TUI 時，跳到 pane 編號（`%N` 的 N，以數字比較，`%3` 先於 `%13`）最小者；global 模式的 GLOBAL 群組取全部 TUI 中最小者。
   編號最小代表 pane 最早建立，不代表 OpenCode 最早啟動。
 - **只到 pane**：插件唯讀，無法切換到 TUI 內的特定 tab。
-- **其他位置**：點標題、分隔線、讀取錯誤提示、「沒有 OpenCode TUI」或空白處，以及其他非插件的 range，行為與 tmux 預設（`switch-client -t =`）相同。
+- **其他位置**：點標題、分隔線、讀取錯誤提示、沒有 OpenCode TUI 時的提示或空白處，以及其他非插件的 range，行為與 tmux 預設（`switch-client -t =`）相同。
 - **跳轉目標會隨側欄更新**：TUI 開啟、關閉或移動 pane 後，下一次側欄更新就指向新的 pane。
 
 **這會覆寫你的 `MouseDown1SideStatus` 綁定。** 常駐程式啟動時（含交接給新實例）把 root 鍵表的 `MouseDown1SideStatus` 設成插件的綁定；
@@ -80,7 +80,7 @@ tmux server 結束時綁定隨之消失；常駐程式被強制終止（`kill -9
 - **改觸發鍵**：改 `@opencode-status-jump-trigger` 後**重載 tmux.conf** 才生效（TPM 重新執行入口腳本，觸發鍵設定是常駐程式指紋的一部分，因此交接給新實例：
   先 unbind 舊鍵、再綁新鍵）。只在命令列 `set -g` 而不重載不會改綁。
 - **無效的觸發鍵**（空字串、tmux 不認得的鍵名）：不綁任何 prefix 鍵，也**不會退回預設 `A`**；`diagnose` 會回報並計入問題數。
-- **會覆寫該鍵的 prefix 綁定。** 預設鍵 `A` 在 tmux 預設與常見插件中都沒用到；若你自己的 `tmux.conf` 或其他插件綁了同一個鍵，插件載入後以插件為準，`diagnose` 會在被改綁時回報「已被覆寫」。
+- **會覆寫該鍵的 prefix 綁定。** 預設鍵 `A` 在 tmux 預設與常見插件中都沒用到；若你自己的 `tmux.conf` 或其他插件綁了同一個鍵，插件載入後以插件為準。如果該鍵後來被改綁，`diagnose` 會回報綁定已被覆寫。
 - **停止與重載的影響**：明確停止（`stop`）時 unbind 觸發鍵、清空 `opencode-status-jump` 表，並清掉所有 `@tos_*`；**不寫回、不還原任何原有綁定**。
   被覆蓋的若是你 `tmux.conf` 的綁定，重載設定即恢復；若是 tmux 內建預設鍵，需要重啟 tmux server。你自己加的 root 別名插件不會動，但停止後它指向的表是空的，按下去等同取消。
 - 綁定完全在 tmux 內執行，不開 shell、不呼叫插件執行檔。設計理由見 [ADR-0004](adr/0004-internal-option-naming.md)、[ADR-0005](adr/0005-keyboard-jump.md)。
@@ -107,7 +107,7 @@ set -g @opencode-status-mode global   # 單一 GLOBAL 群組，對應 OpenCode �
 | `split` | `#404040` | 標題下分隔線 |
 | `project` | `#F2EEE3` | 專案名稱 |
 | `active-tab` | `#cac5b5` | 執行中、等你處理、結束未讀、失敗未讀的 tab 標題 |
-| `inactive-tab` | `#71717A` | 閒置與資料異常的 tab 標題、「無 tab」、右側摘要放不下時補的 `…` |
+| `inactive-tab` | `#71717A` | 閒置與資料異常的 tab 標題、群組沒有 tab 時的提示、右側摘要放不下時補的 `…` |
 | `state-running` | `#4ADE80` | `●` 執行中（含右側摘要中的符號與數字） |
 | `state-ask` | `#FACC15` | `?` 等你處理 |
 | `state-finished` | `#60A5FA` | `◆` 結束未讀 |
@@ -141,7 +141,7 @@ set -g @opencode-status-color-split default          # 終端預設色
 ```
 
 輸出 tmux 版本與能力、插件模式、無效的色票選項、常駐實例狀態、發現的 TUI／tab 數、服務連線狀態與最近錯誤。
-目前以繁體中文輸出。**不含憑證、prompt、對話或 OpenCode 的 session／tab 標題**，也不連 OpenCode、不寫任何選項。
+插件的畫面與指令訊息使用英文；本指南以繁中說明。**診斷不含憑證、prompt、對話或 OpenCode 的 session／tab 標題**，也不連 OpenCode、不寫任何選項。
 
 ### Session 層級覆寫
 
@@ -152,16 +152,16 @@ set -g @opencode-status-color-split default          # 終端預設色
 
 | 現象 | 處理 |
 | --- | --- |
-| 載入時 tmux 顯示 `下載失敗` | 確認網路與 Release 是否存在該版本資產（`VERSION` 對應 tag `v<版本>`）。不會自動編譯；開發者可使用[自行編譯](#自行編譯)的執行檔 |
-| `完整性驗證失敗`／`校驗碼` | 資產的校驗碼不符，或 `SHA256SUMS` 沒有該資產的有效校驗碼，因此拒絕安裝。重試；持續發生請勿使用該版本並回報 |
-| `不支援的架構`／`不支援的平台` | 只提供 macOS arm64 與 x86_64 |
-| `缺少必要能力` | 升級到 tmux 3.9（需 `side-status` 系列選項）；`tmux -V` 查看版本 |
+| 載入插件時下載失敗 | 確認網路與 Release 是否存在該版本資產（`VERSION` 對應 tag `v<版本>`）。不會自動編譯；開發者可使用[自行編譯](#自行編譯)的執行檔 |
+| 校驗碼驗證失敗 | 資產的校驗碼不符，或 `SHA256SUMS` 沒有該資產的有效校驗碼，因此拒絕安裝。重試；持續發生請勿使用該版本並回報 |
+| 平台或架構不支援 | 只提供 macOS arm64 與 x86_64 |
+| tmux 缺少必要能力 | 升級到 tmux 3.9（需 `side-status` 系列選項）；`tmux -V` 查看版本 |
 | 側欄沒出現 | 先跑 `diagnose`：看常駐實例、模式、服務連線；確認 `side-status` 不是 `off`；檢查 session override |
-| 一直是灰色 `!` | 資料異常（服務不可連線／清單不可讀等）；`diagnose` 的「最近錯誤」有固定原因。插件不會啟動 OpenCode 服務 |
+| 一直是灰色 `!` | 資料異常（服務不可連線／清單不可讀等）；用 `diagnose` 查看近期錯誤原因。插件不會啟動 OpenCode 服務 |
 | 配色沒生效 | 跑 `diagnose`：無效的色票值會列出並退回預設（側欄不顯示錯誤）；合法格式見「配色」 |
 | 模式不對／清單是空的 | 確認 `@opencode-status-mode` 與 OpenCode 的 scope 一致 |
 | 點側欄沒有跳轉 | 只有目錄群組的列可點；用 `tmux list-keys -T root \| grep MouseDown1SideStatus` 確認綁定是插件的（內容含 `mouse_status_range`），並確認 `mouse` 選項為 `on` |
-| 按觸發鍵沒反應 | 跑 `diagnose` 看「鍵盤跳轉」一行（已綁定／無效設定／綁定失敗／已被覆寫）；再用 `tmux list-keys -T prefix <鍵>` 確認綁定是 `switch-client -T opencode-status-jump`；改了 `@opencode-status-jump-trigger` 要重載 tmux.conf |
+| 按觸發鍵沒反應 | 跑 `diagnose` 查看鍵盤跳轉的綁定狀態，再用 `tmux list-keys -T prefix <鍵>` 確認綁定是 `switch-client -T opencode-status-jump`；改了 `@opencode-status-jump-trigger` 要重載 tmux.conf |
 | 想完全移除 | `tmux-opencode-status stop`（清理本插件資源），再從 `tmux.conf` 移除 `@plugin` 並 `prefix + alt + u` |
 
 常駐程式的錯誤記錄在 `$XDG_RUNTIME_DIR/tmux-opencode-status/`（沒有則 `$TMPDIR/tmux-opencode-status-<uid>/`）下的 `<id>.log`。

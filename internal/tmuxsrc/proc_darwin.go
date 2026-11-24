@@ -49,5 +49,5 @@ func procCwd(pid int) (string, error) {
 			return l[1:], nil
 		}
 	}
-	return "", errors.New("lsof 沒有回報工作目錄")
+	return "", errors.New("lsof did not report a working directory")
 }

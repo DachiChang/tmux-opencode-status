@@ -366,7 +366,7 @@ func TestAbsurdlyLargeCountsNeverPushASummaryPastTheEdge(t *testing.T) {
 }
 
 func TestLongNoticeWrapsInsteadOfOverflowing(t *testing.T) {
-	p := render.PublishView(render.View{Notice: strings.Repeat("無法讀取資料", 8), Empty: "沒有 OpenCode TUI"}, contentWidth, render.DefaultTheme())
+	p := render.PublishView(render.View{Notice: strings.Repeat("無法讀取資料", 8), Empty: "No OpenCode TUI running"}, contentWidth, render.DefaultTheme())
 	for _, l := range plain(strings.Split(p.Options[render.MainOption], "\n")) {
 		if w := cellwidth.String(l); w > 34 {
 			t.Errorf("寬 %d 越界：%q", w, l)

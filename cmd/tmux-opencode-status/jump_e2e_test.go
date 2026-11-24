@@ -203,8 +203,8 @@ func TestClickingTheNoTabRowJumpsLikeTheGroupRow(t *testing.T) {
 	dir := filepath.Join(e.dir, "work", "api")
 	window, tuiPane := e.jumpWorld(dir)
 	e.waitBinding(3*time.Second, "插件綁定", isPluginBinding)
-	e.eventually(3*time.Second, "出現無 tab", func(s string) bool { return strings.Contains(s, "無 tab") })
-	e.click(5, e.sidebarRow("無 tab"))
+	e.eventually(3*time.Second, "出現無 tab", func(s string) bool { return strings.Contains(s, "No tabs") })
+	e.click(5, e.sidebarRow("No tabs"))
 	e.waitWhere(3*time.Second, "點無 tab 列", "work "+window+" "+tuiPane)
 }
 

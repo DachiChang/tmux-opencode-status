@@ -306,7 +306,7 @@ func TestInvalidTriggerBindsNoPrefixKeyAndDiagnoseReportsItAsAProblem(t *testing
 				t.Fatalf("沒有實際綁定的鍵，@tos_jump_trigger = %q", got)
 			}
 			out := e.diagnose(e.in)
-			mustContain(t, out, "鍵盤跳轉：無效設定", "發現 1 項問題")
+			mustContain(t, out, "Keyboard jump: Invalid setting", "Issues found: 1")
 		})
 	}
 }
@@ -320,17 +320,17 @@ func TestDiagnoseReportsTheTriggerAsBoundThenOverwrittenAndOtherSettingsAsExpect
 	e.waitPrefixBinding(3*time.Second, "A", switchToJump)
 	e.eventually(3*time.Second, "已發布", func(string) bool { return e.globalOption("@tos_jump_trigger") == "A" })
 	out := e.diagnose(e.in)
-	mustContain(t, out, "鍵盤跳轉：已綁定", "未設定，預設", "實際綁定的鍵 A", "結論：未發現問題")
+	mustContain(t, out, "Keyboard jump: Bound", "A (default; not configured)", "bound key: A", "Result: No issues found")
 
 	e.inTmux("bind", "-T", "prefix", "A", "display-message", "taken")
 	out = e.diagnose(e.in)
-	mustContain(t, out, "鍵盤跳轉：已被覆寫", "發現 1 項問題")
+	mustContain(t, out, "Keyboard jump: Overwritten", "Issues found: 1")
 
 	// 改了設定但尚未重載：顯示設定與實際綁定的差異，不算問題
 	e.inTmux("bind", "-T", "prefix", "A", "switch-client", "-T", jumpTable)
 	e.inTmux("set", "-g", "@opencode-status-jump-trigger", "M-j")
 	out = e.diagnose(e.in)
-	mustContain(t, out, "鍵盤跳轉：設定的觸發鍵 M-j，實際綁定的鍵 A", "重新載入 tmux 設定後生效", "結論：未發現問題")
+	mustContain(t, out, "Keyboard jump: Configured trigger key: M-j; bound key: A", "reload the tmux configuration", "Result: No issues found")
 }
 
 func TestDiagnoseReportsABindingFailureWhenTmuxRefusesTheTrigger(t *testing.T) {
@@ -343,7 +343,7 @@ func TestDiagnoseReportsABindingFailureWhenTmuxRefusesTheTrigger(t *testing.T) {
 	// 模擬「常駐程式在執行但沒有實際綁定的鍵」：實際綁定的記錄消失，設定的鍵仍有效。
 	e.inTmux("set", "-gu", "@tos_jump_trigger")
 	out := e.diagnose(e.in)
-	mustContain(t, out, "鍵盤跳轉：綁定失敗", "發現 1 項問題")
+	mustContain(t, out, "Keyboard jump: Binding failed", "Issues found: 1")
 }
 
 func TestDiagnoseSaysNotYetAppliedWhenTheTriggerWasInvalidAtStartAndFixedWithoutReloading(t *testing.T) {
@@ -354,13 +354,13 @@ func TestDiagnoseSaysNotYetAppliedWhenTheTriggerWasInvalidAtStartAndFixedWithout
 	}
 	e.waitDaemons(e.in, 1, 3*time.Second, "start")
 	e.eventually(3*time.Second, "常駐程式已發布", func(string) bool { return len(e.tosOptions()) > 0 })
-	mustContain(t, e.diagnose(e.in), "鍵盤跳轉：無效設定", "發現 1 項問題")
+	mustContain(t, e.diagnose(e.in), "Keyboard jump: Invalid setting", "Issues found: 1")
 
 	// 使用者改成合法值但沒有重載：設定尚未套用，不是綁定失敗，也不計入問題
 	e.inTmux("set", "-g", "@opencode-status-jump-trigger", "M-j")
 	out := e.diagnose(e.in)
-	mustContain(t, out, "鍵盤跳轉：設定的觸發鍵 M-j", "設定尚未套用", "結論：未發現問題")
-	if strings.Contains(out, "綁定失敗") {
+	mustContain(t, out, "Keyboard jump: Configured trigger key: M-j", "Setting not applied", "Result: No issues found")
+	if strings.Contains(out, "Binding failed") {
 		t.Fatalf("不應報綁定失敗：\n%s", out)
 	}
 }

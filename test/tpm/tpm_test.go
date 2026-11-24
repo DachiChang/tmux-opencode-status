@@ -447,7 +447,7 @@ func TestUnsupportedArchitectureFailsLoudlyWithoutDownloading(t *testing.T) {
 	e.extraEnv = []string{"TMUX_OPENCODE_STATUS_RELEASE_URL=" + rs.URL}
 	e.writeShim("uname", "if [ \"$1\" = -m ]; then echo i386; else exec /usr/bin/uname \"$@\"; fi\n")
 	out, err := e.load()
-	if err == nil || !strings.Contains(out, "不支援的架構") || !strings.Contains(out, "i386") {
+	if err == nil || !strings.Contains(out, "Unsupported architecture") || !strings.Contains(out, "i386") {
 		t.Fatalf("應明確報錯：%v\n%s", err, out)
 	}
 	if rs.total() != 0 {
@@ -474,10 +474,10 @@ func TestDownloadFailureIsLoudAndDoesNotCompileOrChangeArchitecture(t *testing.T
 			rs := setup(e)
 			e.extraEnv = []string{"TMUX_OPENCODE_STATUS_RELEASE_URL=" + rs.URL}
 			out, err := e.load()
-			if err == nil || !strings.Contains(out, "下載失敗") {
+			if err == nil || !strings.Contains(out, "Download failed") {
 				t.Fatalf("應明確報下載失敗：%v\n%s", err, out)
 			}
-			if strings.Contains(out, "go build") && !strings.Contains(out, "不會改用本機編譯") {
+			if strings.Contains(out, "go build") && !strings.Contains(out, "no local build fallback") {
 				t.Fatalf("訊息不應暗示會自動編譯：%s", out)
 			}
 			other := "amd64"
@@ -516,7 +516,7 @@ func TestVerificationFailureRefusesToInstallOrStart(t *testing.T) {
 			rs := newReleaseServer(t, d)
 			e.extraEnv = []string{"TMUX_OPENCODE_STATUS_RELEASE_URL=" + rs.URL}
 			out, err := e.load()
-			if err == nil || !(strings.Contains(out, "完整性驗證失敗") || strings.Contains(out, "校驗碼")) {
+			if err == nil || !(strings.Contains(out, "Integrity verification failed") || strings.Contains(out, "No valid checksum")) {
 				t.Fatalf("應明確報驗證失敗：%v\n%s", err, out)
 			}
 			e.assertNothingInstalledOrStarted()
@@ -547,7 +547,7 @@ func TestEntryPointRejectsAnArchiveWhoseBinaryIsTheWrongArchitecture(t *testing.
 	rs := newReleaseServer(t, d)
 	e.extraEnv = []string{"TMUX_OPENCODE_STATUS_RELEASE_URL=" + rs.URL}
 	out, lerr := e.load()
-	if lerr == nil || !strings.Contains(out, "不是 darwin/"+hostArch()) {
+	if lerr == nil || !strings.Contains(out, "is not darwin/"+hostArch()) {
 		t.Fatalf("應拒絕錯誤架構：%v\n%s", lerr, out)
 	}
 	e.assertNothingInstalledOrStarted()
@@ -624,7 +624,7 @@ func TestMissingTmuxCapabilityFailsLoudlyBeforeDownloadingOrStarting(t *testing.
 	e.writeShim("tmux", fmt.Sprintf("case \"$*\" in *show-options*side-status-width*) echo \"invalid option: side-status-width\" >&2; exit 1;; esac\nexec %q \"$@\"\n", real))
 	e.path = e.shimDir + ":" + e.path
 	out, err := e.load()
-	if err == nil || !strings.Contains(out, "缺少必要能力") || !strings.Contains(out, "side-status-width") {
+	if err == nil || !strings.Contains(out, "missing required capabilities") || !strings.Contains(out, "side-status-width") {
 		t.Fatalf("應明確報缺少能力：%v\n%s", err, out)
 	}
 	if rs.total() != 0 {
@@ -638,7 +638,7 @@ func TestRunningOutsideTmuxIsRefusedInsteadOfUsingTheDefaultServer(t *testing.T)
 	rs := newReleaseServer(t, dist)
 	e.extraEnv = []string{"TMUX_OPENCODE_STATUS_RELEASE_URL=" + rs.URL}
 	out, err := e.loadWith(false)
-	if err == nil || !strings.Contains(out, "必須在 tmux 內執行") {
+	if err == nil || !strings.Contains(out, "Run this inside tmux") {
 		t.Fatalf("應拒絕：%v\n%s", err, out)
 	}
 	if rs.total() != 0 {
@@ -697,7 +697,7 @@ func TestFailuresAreAlsoShownThroughTmuxDisplayMessageWhenLoadedByRunShell(t *te
 	cmd.Env = e.environ(false)
 	_, _ = cmd.CombinedOutput()
 	msgs := e.rawTmux("show-messages")
-	if !strings.Contains(msgs, "下載失敗") {
+	if !strings.Contains(msgs, "Download failed") {
 		t.Fatalf("失敗原因應出現在 tmux 訊息：\n%s", msgs)
 	}
 	e.assertNothingInstalledOrStarted()

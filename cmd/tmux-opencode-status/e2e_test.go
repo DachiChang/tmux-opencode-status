@@ -241,12 +241,12 @@ func TestSidebarFollowsTUIAndTabChangesOnARealTmux(t *testing.T) {
 	e := newEnv(t)
 	api := filepath.Join(e.dir, "work", "api")
 
-	e.eventually(3*time.Second, "啟動後顯示沒有 TUI", func(s string) bool { return strings.Contains(s, "沒有 OpenCode TUI") })
+	e.eventually(3*time.Second, "啟動後顯示沒有 TUI", func(s string) bool { return strings.Contains(s, "No OpenCode TUI running") })
 
 	// TUI 出現：保留群組並顯示「無 tab」（尚無任何 tab 資料）
 	e.tui(api, "--server", "http://127.0.0.1:1")
 	d := e.eventually(time.Second, "新增 TUI 於 1 秒內出現", func(s string) bool {
-		return strings.Contains(s, "api") && strings.Contains(s, "無 tab")
+		return strings.Contains(s, "api") && strings.Contains(s, "No tabs")
 	})
 	t.Logf("TUI 出現 → 畫面：%v", d)
 
@@ -286,7 +286,7 @@ func TestMissedNotificationIsCaughtByBackstopWithin10Seconds(t *testing.T) {
 	e.tuiUnderShell(dir)
 	e.eventually(10*time.Second, "shell 內啟動的 TUI（無 hook）於 10 秒內出現", func(s string) bool { return strings.Contains(s, "! a") })
 	must(t, exec.Command("pkill", "-KILL", "-f", e.bin).Run())
-	d := e.eventually(10*time.Second, "漏通知於 10 秒內修正", func(s string) bool { return strings.Contains(s, "沒有 OpenCode TUI") })
+	d := e.eventually(10*time.Second, "漏通知於 10 秒內修正", func(s string) bool { return strings.Contains(s, "No OpenCode TUI running") })
 	if d < time.Second {
 		t.Fatalf("%v 就更新了，代表這不是漏通知情境", d)
 	}
@@ -315,7 +315,7 @@ func TestNonTUIOpencodeCommandsAreNotListed(t *testing.T) {
 	e.tui(dir, "serve")
 	e.tui(dir, "session", "list")
 	time.Sleep(1500 * time.Millisecond)
-	if s := e.sidebar(); !strings.Contains(s, "沒有 OpenCode TUI") || strings.Contains(s, "svc") {
+	if s := e.sidebar(); !strings.Contains(s, "No OpenCode TUI running") || strings.Contains(s, "svc") {
 		t.Fatalf("非 TUI 被列入：\n%s", s)
 	}
 }
@@ -328,7 +328,7 @@ func TestIncompatibleTabsFileShowsNoticeAndKeepsLastList(t *testing.T) {
 	e.eventually(2*time.Second, "初始顯示", func(s string) bool { return strings.Contains(s, "keep me") })
 	e.writeTabs(`{"version":9}`)
 	e.eventually(2*time.Second, "不相容時提示並保留", func(s string) bool {
-		return strings.Contains(s, "無法讀取 tab 清單") && strings.Contains(s, "keep me") && !strings.Contains(s, "無 tab")
+		return strings.Contains(s, "Cannot read tab list") && strings.Contains(s, "keep me") && !strings.Contains(s, "No tabs")
 	})
 }
 
@@ -397,11 +397,11 @@ func TestSessionLifecycleOnARealTmuxWithFakeOpenCodeService(t *testing.T) {
 	e.tui(dir, "--server", "http://127.0.0.1:1")
 
 	e.eventually(3*time.Second, "服務尚未開啟：保持 ! 並提示，不顯示閒置", func(s string) bool {
-		return strings.Contains(s, "! 修正登入") && strings.Contains(s, "無法連線 OpenCode 服務")
+		return strings.Contains(s, "! 修正登入") && strings.Contains(s, "Cannot connect to OpenCode")
 	})
 	svc.WriteServiceFile(e.servicePath)
 	e.eventually(5*time.Second, "服務出現後自動接上", func(s string) bool {
-		return strings.Contains(s, "· 修正登入") && strings.Contains(s, "· write tests") && !strings.Contains(s, "無法連線")
+		return strings.Contains(s, "· 修正登入") && strings.Contains(s, "· write tests") && !strings.Contains(s, "Cannot connect")
 	})
 
 	svc.Start("ses_0")
@@ -428,7 +428,7 @@ func TestSessionLifecycleOnARealTmuxWithFakeOpenCodeService(t *testing.T) {
 	_ = os.Remove(e.servicePath)
 	svc.Drop()
 	e.eventually(3*time.Second, "斷線後為 !", func(s string) bool {
-		return strings.Contains(s, "! 修正登入") && strings.Contains(s, "無法連線 OpenCode 服務")
+		return strings.Contains(s, "! 修正登入") && strings.Contains(s, "Cannot connect to OpenCode")
 	})
 	svc.WriteServiceFile(e.servicePath)
 	e.eventually(5*time.Second, "自動恢復", func(s string) bool { return strings.Contains(s, "· 修正登入") })
@@ -674,7 +674,7 @@ func TestGlobalModeMultipleTUIsAndLastClosedOnARealTmux(t *testing.T) {
 	}
 	e.inTmux("kill-window", "-t", w3)
 	e.eventually(time.Second, "最後一個 TUI 關閉後呈現空畫面", func(s string) bool {
-		return strings.Contains(s, "沒有 OpenCode TUI") && !strings.Contains(s, "shared a") && !strings.Contains(s, "GLOBAL")
+		return strings.Contains(s, "No OpenCode TUI running") && !strings.Contains(s, "shared a") && !strings.Contains(s, "GLOBAL")
 	})
 }
 
@@ -686,9 +686,9 @@ func TestInvalidModeNeverStartsTrackingThenReloadKeepsValidMode(t *testing.T) {
 	e.writeTabs(e.bothScopesJSON(map[string][]string{api: {"api tab"}}, []string{"shared a"}))
 	e.tui(api)
 	e.eventually(2*time.Second, "首次無效值提示且不追蹤", func(s string) bool {
-		return strings.Contains(s, "模式設定無效") && strings.Contains(s, "尚未開始追蹤")
+		return strings.Contains(s, "▲ Invalid mode; not tracking\n")
 	})
-	if s := e.sidebar(); strings.Contains(s, "api tab") || strings.Contains(s, "shared a") || strings.Contains(s, "沒有 OpenCode TUI") {
+	if s := e.sidebar(); strings.Contains(s, "api tab") || strings.Contains(s, "shared a") || strings.Contains(s, "No OpenCode TUI running") {
 		t.Fatalf("首次無效設定不得開始追蹤：\n%s", s)
 	}
 	// 修正後開始追蹤
@@ -697,10 +697,10 @@ func TestInvalidModeNeverStartsTrackingThenReloadKeepsValidMode(t *testing.T) {
 	// 重載時無效：保留 global 並提示未套用
 	e.reload("set -g " + modeOpt + " bogus\n")
 	e.eventually(time.Second, "重載無效值保留原模式並回報", func(s string) bool {
-		return strings.Contains(s, "未套用") && strings.Contains(s, "shared a") && !strings.Contains(s, "api tab")
+		return strings.Contains(s, "▲ Invalid mode; using global\n") && strings.Contains(s, "shared a") && !strings.Contains(s, "api tab")
 	})
 	e.reload("set -g " + modeOpt + " cwd\n")
-	e.eventually(time.Second, "修正後套用且提示消失", func(s string) bool { return strings.Contains(s, "api tab") && !strings.Contains(s, "未套用") })
+	e.eventually(time.Second, "修正後套用且提示消失", func(s string) bool { return strings.Contains(s, "api tab") && !strings.Contains(s, "Invalid mode") })
 }
 
 func TestModeSwitchDoesNotForceAHiddenSidebarOpen(t *testing.T) {
@@ -759,7 +759,7 @@ func TestModeChangeDuringDaemonStartupIsNotLeftToTheBackstop(t *testing.T) {
 	e.inTmux("set", "-g", modeOpt, "globl")
 	e.writeTabs(e.bothScopesJSON(map[string][]string{api: {"api tab"}}, []string{"shared a"}))
 	e.tui(api)
-	e.eventually(5*time.Second, "常駐程式首次讀到設定", func(s string) bool { return strings.Contains(s, "模式設定無效") })
+	e.eventually(5*time.Second, "常駐程式首次讀到設定", func(s string) bool { return strings.Contains(s, "Invalid mode") })
 	e.reload("set -g " + modeOpt + " global\n")
 	d := e.eventually(time.Second, "啟動空窗內的重載於 1 秒內套用", func(s string) bool { return strings.Contains(s, "shared a") })
 	t.Logf("重載 → 畫面：%v", d)
@@ -783,7 +783,7 @@ func TestTUIStartedAndStoppedInAnExistingShellFollowsWithin1SecondWhenTitlesAreO
 	e := newEnv(t)
 	dir := filepath.Join(e.dir, "work", "api")
 	e.writeTabs(e.tabsJSON(map[string][]string{dir: {"a"}}))
-	e.eventually(3*time.Second, "啟動", func(s string) bool { return strings.Contains(s, "沒有 OpenCode TUI") })
+	e.eventually(3*time.Second, "啟動", func(s string) bool { return strings.Contains(s, "No OpenCode TUI running") })
 	win := e.shellWindow(dir)
 
 	e.shellRun(win, "FAKE_TITLE=1 "+e.bin)
@@ -791,7 +791,7 @@ func TestTUIStartedAndStoppedInAnExistingShellFollowsWithin1SecondWhenTitlesAreO
 	t.Logf("shell 內啟動 → 畫面：%v", d)
 
 	e.inTmux("send-keys", "-t", win, "C-c")
-	d = e.eventually(time.Second, "shell 內結束 TUI 於 1 秒內消失", func(s string) bool { return strings.Contains(s, "沒有 OpenCode TUI") })
+	d = e.eventually(time.Second, "shell 內結束 TUI 於 1 秒內消失", func(s string) bool { return strings.Contains(s, "No OpenCode TUI running") })
 	t.Logf("shell 內結束 → 畫面：%v", d)
 }
 
@@ -800,13 +800,13 @@ func TestTUIInAnExistingShellStillFollowsViaBackstopWhenTitlesAreOff(t *testing.
 	e := newEnv(t)
 	dir := filepath.Join(e.dir, "work", "api")
 	e.writeTabs(e.tabsJSON(map[string][]string{dir: {"a"}}))
-	e.eventually(3*time.Second, "啟動", func(s string) bool { return strings.Contains(s, "沒有 OpenCode TUI") })
+	e.eventually(3*time.Second, "啟動", func(s string) bool { return strings.Contains(s, "No OpenCode TUI running") })
 	win := e.shellWindow(dir)
 
 	e.shellRun(win, e.bin)
 	e.eventually(10*time.Second, "標題關閉時啟動於 10 秒內出現", func(s string) bool { return strings.Contains(s, "! a") })
 	e.inTmux("send-keys", "-t", win, "C-c")
-	e.eventually(10*time.Second, "標題關閉時結束於 10 秒內消失", func(s string) bool { return strings.Contains(s, "沒有 OpenCode TUI") })
+	e.eventually(10*time.Second, "標題關閉時結束於 10 秒內消失", func(s string) bool { return strings.Contains(s, "No OpenCode TUI running") })
 }
 
 // 辨識以前景行程為準：非 TUI 的 opencode 指令改標題、任意行程把標題設成 OpenCode，都不算 TUI。
@@ -819,7 +819,8 @@ func TestTitleChangesNeverMakeANonTUIProcessLookLikeATUI(t *testing.T) {
 	win2 := e.shellWindow(dir)
 	e.shellRun(win2, `printf '\033]0;OpenCode\007'; sleep 60`)
 	time.Sleep(1500 * time.Millisecond)
-	if s := e.sidebar(); !strings.Contains(s, "沒有 OpenCode TUI") || strings.Contains(s, "svc") || strings.Contains(s, "x") {
+	tabRow := regexp.MustCompile(`(?m)^[ \t]*[●?◆✗!·] x[ \t]*$`)
+	if s := e.sidebar(); !strings.Contains(s, "No OpenCode TUI running") || strings.Contains(s, "svc") || tabRow.MatchString(s) {
 		t.Fatalf("非 TUI 因標題被列入：\n%s", s)
 	}
 }
@@ -903,7 +904,7 @@ func TestSilentDisconnectAndServiceRestartRecoverOnARealTmuxWithFakeOpenCodeServ
 	svc.Drop()
 	_ = os.Remove(e.servicePath)
 	e.eventually(3*time.Second, "重啟空窗為 !", func(s string) bool {
-		return strings.Contains(s, "! 修正登入") && strings.Contains(strings.Join(strings.Fields(s), ""), "無法連線OpenCode服務")
+		return strings.Contains(s, "! 修正登入") && strings.Contains(strings.Join(strings.Fields(s), ""), "CannotconnecttoOpenCode")
 	})
 	next.WriteServiceFile(e.servicePath)
 	e.eventually(5*time.Second, "重新探索並同步", func(s string) bool { return strings.Contains(s, "✗ 修正登入") })

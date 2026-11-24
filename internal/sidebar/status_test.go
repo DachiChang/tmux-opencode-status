@@ -238,7 +238,7 @@ func TestServiceOutageShowsUnknownAndOneSharedNoticeThenRecovers(t *testing.T) {
 	_ = os.Remove(lw.svcFile)
 	lw.svc.Drop()
 	got := lw.eventually(t, "斷線後為 !", func(s string) bool { return hasLine(s, "! one") && hasLine(s, "! two") })
-	if strings.Count(got, "無法連線 OpenCode 服務") != 1 {
+	if strings.Count(got, "Cannot connect to OpenCode") != 1 {
 		t.Fatalf("斷線提示應只出現一次：\n%s", got)
 	}
 
@@ -246,7 +246,7 @@ func TestServiceOutageShowsUnknownAndOneSharedNoticeThenRecovers(t *testing.T) {
 	lw.svc.Finish("ses_1", "succeeded")
 	lw.publishService()
 	got = lw.eventually(t, "重連後完整同步", func(s string) bool { return hasLine(s, "◆ one") && hasLine(s, "· two") })
-	if strings.Contains(got, "無法連線") {
+	if strings.Contains(got, "Cannot connect") {
 		t.Fatalf("恢復後提示應消失：\n%s", got)
 	}
 }
@@ -287,7 +287,7 @@ func TestNoTrackedTabsMeansNoSessionQueries(t *testing.T) {
 	lw.publishService()
 	lw.panes.set() // 沒有 TUI
 	lw.wake <- struct{}{}
-	lw.eventually(t, "沒有 TUI", func(s string) bool { return strings.Contains(s, "沒有 OpenCode TUI") })
+	lw.eventually(t, "沒有 TUI", func(s string) bool { return strings.Contains(s, "No OpenCode TUI running") })
 	time.Sleep(100 * time.Millisecond)
 	if n := lw.svc.SessionRequests(); n != 0 {
 		t.Fatalf("沒有追蹤項目卻查詢了 session 資料 %d 次：%v", n, lw.svc.Requests())
@@ -315,7 +315,7 @@ func TestInvalidInitialModeDoesNotQueryTheService(t *testing.T) {
 	lw.publishService()
 	lw.svc.AddSession("ses_1", "")
 	lw.openTabs(t, "/work/api", [2]string{"ses_1", "x"})
-	lw.eventually(t, "提示", func(s string) bool { return strings.Contains(s, "模式設定無效") })
+	lw.eventually(t, "提示", func(s string) bool { return strings.Contains(s, "Invalid mode") })
 	time.Sleep(100 * time.Millisecond)
 	if n := lw.svc.SessionRequests(); n != 0 || lw.svc.Connects() != 0 {
 		t.Fatalf("尚未開始追蹤卻連線／查詢服務：%v", lw.svc.Requests())

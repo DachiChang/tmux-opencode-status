@@ -53,7 +53,7 @@ func TestGlobalModeStopsIncludingTheListOnceTheLastTUIIsGone(t *testing.T) {
 	assertLines(t, w.out.screen(20), []string{
 		"OPENCODE",
 		"─────────────────────────────────",
-		"沒有 OpenCode TUI",
+		"No OpenCode TUI running",
 	})
 }
 
@@ -67,7 +67,7 @@ func TestGlobalModeWithTUIButNoSharedTabsKeepsTheGlobalGroup(t *testing.T) {
 		"OPENCODE",
 		"─────────────────────────────────",
 		"GLOBAL",
-		"無 tab",
+		"No tabs",
 	})
 }
 
@@ -136,10 +136,10 @@ func TestInvalidModeOnFirstSyncDoesNotStartTrackingAndSaysSo(t *testing.T) {
 			t.Fatalf("%q：無效設定必須回報錯誤", bad)
 		}
 		got := strings.Join(w.out.screen(20), "\n")
-		if !strings.Contains(got, "模式設定無效") || !strings.Contains(got, "尚未開始追蹤") {
+		if !strings.Contains(got, "▲ Invalid mode; not tracking") {
 			t.Fatalf("%q：應提示無效且未開始追蹤：\n%s", bad, got)
 		}
-		for _, leak := range []string{"沒有 OpenCode TUI", "無 tab", "api tab", "GLOBAL", "global one"} {
+		for _, leak := range []string{"No OpenCode TUI running", "No tabs", "api tab", "GLOBAL", "global one"} {
 			if strings.Contains(got, leak) {
 				t.Fatalf("%q：不應開始追蹤或顯示 %q：\n%s", bad, leak, got)
 			}
@@ -162,14 +162,14 @@ func TestInvalidModeAfterAValidOneKeepsTheValidModeAndReportsNotApplied(t *testi
 		t.Fatal("重載時無效設定必須回報錯誤")
 	}
 	got := strings.Join(w.out.screen(20), "\n")
-	if !strings.Contains(flat(got), flat("未套用，仍用 global")) || !strings.Contains(got, "global one") || strings.Contains(got, "api tab") {
+	if !strings.Contains(got, "▲ Invalid mode; using global") || !strings.Contains(got, "global one") || strings.Contains(got, "api tab") {
 		t.Fatalf("應保留 global 並提示未套用：\n%s", got)
 	}
 
 	w.mode.use("cwd") // 修正後恢復，提示消失
 	w.sync(t)
 	got = strings.Join(w.out.screen(20), "\n")
-	if strings.Contains(got, "未套用") || !strings.Contains(got, "api tab") {
+	if strings.Contains(got, "Invalid mode") || !strings.Contains(got, "api tab") {
 		t.Fatalf("修正後應套用 cwd 且提示消失：\n%s", got)
 	}
 }

@@ -26,48 +26,48 @@ func diagnose(o *options, w io.Writer) int {
 	p := func(format string, a ...any) { fmt.Fprintf(w, format+"\n", a...) }
 	info, err := tm.Server()
 	if err != nil {
-		p("tmux server：無法連線（server 不存在或暫時無回應）")
+		p("tmux server: Cannot connect (server not found or temporarily unresponsive)")
 		return 1
 	}
-	p("tmux server：pid %d，版本 %s", info.PID, info.Version)
+	p("tmux server: PID %d, version %s", info.PID, info.Version)
 
 	problems := 0
 	missing, merr := tm.MissingCapabilities()
 	switch {
 	case merr != nil:
-		p("必要能力：無法確認（tmux 暫時無回應）")
+		p("Required capabilities: Cannot verify (tmux temporarily unresponsive)")
 	case len(missing) > 0:
 		problems++
-		p("必要能力：缺少 %s——需要 tmux 3.9 的原生 side-status；插件不會改用其他方式顯示", strings.Join(missing, "、"))
+		p("Required capabilities: Missing %s. Native side-status from tmux 3.9 is required; there is no fallback.", strings.Join(missing, ", "))
 	default:
-		p("必要能力：side-status、side-status-width、side-status-format 皆可用")
+		p("Required capabilities: side-status, side-status-width, and side-status-format are available")
 	}
 
 	if v, err := tm.GlobalValue(sidebar.ModeOption); err != nil {
-		p("插件模式設定：無法讀取")
+		p("Configured plugin mode: Cannot read")
 	} else if v == "" {
-		p("插件模式設定：未設定（預設 cwd）")
+		p("Configured plugin mode: Not set (default: cwd)")
 	} else if v == "cwd" || v == "global" {
-		p("插件模式設定：%s", v)
+		p("Configured plugin mode: %s", v)
 	} else {
 		problems++
-		p("插件模式設定：無效值（只接受 cwd 或 global）；有效模式前不會開始追蹤，已有有效模式時保留原模式")
+		p("Configured plugin mode: Invalid value (expected cwd or global). Tracking requires a valid mode; any previous valid mode stays active.")
 	}
 	if raw, err := tm.Swatches(); err != nil {
-		p("色票設定：無法讀取")
+		p("Theme settings: Cannot read")
 	} else if _, invalid := render.ParseTheme(raw); len(invalid) > 0 {
 		for _, name := range invalid {
 			problems++
-			p("色票設定：%s%s 的值無效，已退回預設（其餘色票照常套用；側欄不顯示此錯誤）", sidebar.ThemeOptionPrefix, name)
+			p("Theme settings: Invalid value for %s%s; using its default (other colors are unaffected; no sidebar error)", sidebar.ThemeOptionPrefix, name)
 		}
 	}
 	if v, err := tm.GlobalValue("side-status"); err == nil {
-		p("全域 side-status：%s%s", valueOr(v, "（未設定）"), map[bool]string{true: "（側欄隱藏；常駐程式仍持續追蹤，重新顯示不需重啟）", false: ""}[v == "off" || v == ""])
+		p("Global side-status: %s%s", valueOr(v, "(not set)"), map[bool]string{true: " (sidebar hidden; tracking continues and no restart is needed to show it again)", false: ""}[v == "off" || v == ""])
 	}
 
 	paths, err := instance.PathsFor(info.SocketPath)
 	if err != nil {
-		p("常駐實例：無法判斷（%v）", err)
+		p("Daemon: Cannot determine status (%v)", err)
 		return 1
 	}
 	pid, held := instance.Holder(paths.Lock)
@@ -81,32 +81,32 @@ func diagnose(o *options, w io.Writer) int {
 	switch {
 	case !held:
 		problems++
-		p("常駐實例：未執行——不會顯示任何工作；請重新載入 tmux 設定（會呼叫 start）或執行 start")
+		p("Daemon: Not running. Nothing is displayed; reload the tmux configuration to invoke start, or run start manually.")
 	case !haveState:
-		p("常駐實例：執行中（pid %d），尚未回報狀態", pid)
+		p("Daemon: Running (PID %d), status not yet available", pid)
 	default:
-		p("常駐實例：執行中（pid %d），已執行 %s", pid, since(st.Started))
+		p("Daemon: Running (PID %d), uptime %s", pid, since(st.Started))
 		if st.Tracking {
-			p("生效模式：%s", st.Mode)
+			p("Active mode: %s", st.Mode)
 		} else {
 			problems++
-			p("生效模式：尚未開始追蹤（%s）", valueOr(st.ModeIssue, "模式設定無效"))
+			p("Active mode: Tracking not started (%s)", diagnosticLine(valueOr(st.ModeIssue, "invalid plugin mode")))
 		}
-		p("發現的 TUI：%d 個；追蹤的 tab：%d 個", st.TUIs, st.Tabs)
-		p("服務連線：%s", serviceText(st))
+		p("TUI clients found: %d; tabs tracked: %d", st.TUIs, st.Tabs)
+		p("Service connection: %s", serviceText(st))
 		if st.Service == sidebar.ServiceDown {
 			problems++
 		}
 		for _, i := range st.Issues {
 			problems++
-			p("目前問題：%s", i)
+			p("Current issue: %s", diagnosticLine(i))
 		}
 		if len(st.Recent) == 0 {
-			p("最近錯誤：無")
+			p("Recent errors: None")
 		} else {
-			p("最近錯誤：")
+			p("Recent errors:")
 			for _, r := range st.Recent {
-				p("  %s  [%s] %s", r.At.Local().Format("15:04:05"), r.Source, r.Message)
+				p("  %s  [%s] %s", r.At.Local().Format("15:04:05"), r.Source, diagnosticLine(r.Message))
 			}
 		}
 	}
@@ -116,23 +116,28 @@ func diagnose(o *options, w io.Writer) int {
 	ov, oerr := tm.SessionOverrides()
 	switch {
 	case oerr != nil:
-		p("session 層級覆寫：無法讀取")
+		p("Session overrides: Cannot read")
 	case len(ov) == 0:
-		p("session 層級覆寫：無")
+		p("Session overrides: None")
 	default:
-		p("session 層級覆寫：%d 個 session 自行設定了 side-status 選項。這些 session 不跟隨全域設定：", len(ov))
+		p("Session overrides: %d tmux session(s) override global side-status options:", len(ov))
 		for _, x := range ov {
-			p("  session %s：%s", x.TmuxSession, strings.Join(x.Options, "、"))
+			p("  session %s: %s", x.TmuxSession, strings.Join(x.Options, ", "))
 		}
-		p("  影響：覆寫 side-status=off 的 session 看不到側欄；覆寫 side-status-width／format 的 session 會用自己的寬度或格式，")
-		p("  不會顯示插件內容。插件不會清除或修改這些覆寫；要讓該 session 顯示，請自行 `set -u -t <session> <選項>`。")
+		p("  A session with side-status=off hides the sidebar. Overriding side-status-width or side-status-format can prevent the plugin from displaying as configured.")
+		p("  The plugin does not change these overrides. To inherit the global setting, run `set -u -t <session> <option>`.")
 	}
 	if problems == 0 {
-		p("結論：未發現問題")
+		p("Result: No issues found")
 	} else {
-		p("結論：發現 %d 項問題（見上）", problems)
+		p("Result: Issues found: %d (see above)", problems)
 	}
 	return 0
+}
+
+// diagnosticLine keeps each status record on a single line.
+func diagnosticLine(s string) string {
+	return strings.NewReplacer("\r\n", " ", "\n", " ", "\r", " ").Replace(s)
 }
 
 // diagnoseJump 輸出「鍵盤跳轉」一行並回傳要計入的問題數（無效設定、綁定失敗、已被覆寫各算一項）。
@@ -142,54 +147,54 @@ func diagnose(o *options, w io.Writer) int {
 func diagnoseJump(tm *tmuxsrc.Client, running, haveState bool, startSetting string, p func(string, ...any)) int {
 	set := tm.JumpTriggerSetting()
 	if set.Unreadable {
-		p("鍵盤跳轉：無法讀取觸發鍵設定")
+		p("Keyboard jump: Cannot read the trigger key setting")
 		return 0
 	}
 	configured := set.Key()
 	shown := configured
 	if !set.Set {
-		shown = configured + "（未設定，預設）"
+		shown = configured + " (default; not configured)"
 	}
 	actual := tm.ActualJumpTrigger()
 	switch {
 	case configured == "" || tm.JumpKeyInvalid(configured):
-		p("鍵盤跳轉：無效設定（%s 的值 %q 不是 tmux 認得的鍵名）；不綁任何觸發鍵，也不退回預設 A", tmuxsrc.JumpTriggerOption, configured)
+		p("Keyboard jump: Invalid setting (%s value %q is not a tmux key name). No trigger key is bound; there is no fallback to A.", tmuxsrc.JumpTriggerOption, configured)
 		return 1
 	case actual == "" && running && !haveState:
-		p("鍵盤跳轉：設定的觸發鍵 %s；常駐程式尚未回報狀態", shown)
+		p("Keyboard jump: Configured trigger key: %s; daemon status not yet available", shown)
 		return 0
 	case actual == "" && running && startSetting != set.String():
-		p("鍵盤跳轉：設定的觸發鍵 %s，實際綁定的鍵：無——設定尚未套用，重新載入 tmux 設定後生效", shown)
+		p("Keyboard jump: Configured trigger key: %s; bound key: none. Setting not applied; reload the tmux configuration.", shown)
 		return 0
 	case actual == "" && running:
-		p("鍵盤跳轉：綁定失敗（設定的觸發鍵 %s，實際綁定的鍵：無）；tmux 拒絕了這個綁定", shown)
+		p("Keyboard jump: Binding failed (configured trigger key: %s; bound key: none). tmux rejected the binding.", shown)
 		return 1
 	case actual == "":
-		p("鍵盤跳轉：未綁定（設定的觸發鍵 %s；常駐程式未執行）", shown)
+		p("Keyboard jump: Not bound (configured trigger key: %s; daemon not running)", shown)
 		return 0
 	case actual != configured:
-		p("鍵盤跳轉：設定的觸發鍵 %s，實際綁定的鍵 %s——設定尚未套用，重新載入 tmux 設定後生效", shown, actual)
+		p("Keyboard jump: Configured trigger key: %s; bound key: %s. Setting not applied; reload the tmux configuration.", shown, actual)
 		return 0
 	case !tm.PrefixBindingIsJump(actual):
-		p("鍵盤跳轉：已被覆寫（設定的觸發鍵 %s；prefix 表的這個鍵已不是跳轉綁定，可能被 tmux.conf 或其他插件改綁）", shown)
+		p("Keyboard jump: Overwritten (configured trigger key: %s). The prefix binding no longer enters jump mode; check tmux.conf and other plugins.", shown)
 		return 1
 	}
-	p("鍵盤跳轉：已綁定（設定的觸發鍵 %s，實際綁定的鍵 %s；按 prefix 再按 %s 進入跳轉模式）", shown, actual, actual)
+	p("Keyboard jump: Bound (configured trigger key: %s; bound key: %s). Press prefix, then %s, to enter jump mode.", shown, actual, actual)
 	return 0
 }
 
 func serviceText(s instance.State) string {
 	switch s.Service {
 	case sidebar.ServiceConnected:
-		return "已連線（唯讀）"
+		return "Connected (read-only)"
 	case sidebar.ServiceConnecting:
-		return "連線中"
+		return "Connecting"
 	case sidebar.ServiceDown:
-		return "無法連線——" + valueOr(s.ServiceReason, "原因不明") + "；自動重試中（插件不會啟動或重啟 OpenCode 服務）"
+		return "Cannot connect: " + valueOr(s.ServiceReason, "unknown reason") + ". Retrying automatically; the plugin does not start or restart the OpenCode service."
 	case sidebar.ServiceIdle:
-		return "待命（沒有追蹤項目，刻意不連線、不查詢 session）"
+		return "Standby (nothing to track; no connection or session queries)"
 	}
-	return "未設定"
+	return "Not configured"
 }
 
 func valueOr(v, fallback string) string {

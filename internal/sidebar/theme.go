@@ -25,7 +25,7 @@ func (unsetTheme) Swatches() (map[string]string, error) { return nil, nil }
 func (d *Daemon) resolveTheme() error {
 	raw, err := d.deps.Theme.Swatches()
 	if err != nil {
-		return fmt.Errorf("讀取色票設定：%w", err)
+		return fmt.Errorf("read theme settings: %w", err)
 	}
 	d.theme, _ = render.ParseTheme(raw)
 	return nil

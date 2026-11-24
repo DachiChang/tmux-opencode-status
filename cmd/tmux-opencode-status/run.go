@@ -61,14 +61,14 @@ func runDaemon(o *options) int {
 
 	info, err := tm.Server()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "找不到 tmux server：", err)
+		fmt.Fprintln(os.Stderr, "Cannot find tmux server:", err)
 		return 1
 	}
 	if missing, err := tm.MissingCapabilities(); err != nil {
-		fmt.Fprintln(os.Stderr, "無法確認 tmux 能力：", err)
+		fmt.Fprintln(os.Stderr, "Cannot verify tmux capabilities:", err)
 		return 1
 	} else if len(missing) > 0 {
-		fmt.Fprintf(os.Stderr, "tmux %s 缺少必要能力：%v（需要 tmux 3.9 的 side-status）；不啟動\n", info.Version, missing)
+		fmt.Fprintf(os.Stderr, "tmux %s is missing required capabilities: %v (requires tmux 3.9 side-status); not starting\n", info.Version, missing)
 		return 1
 	}
 	paths, err := instance.PathsFor(info.SocketPath)
@@ -78,7 +78,7 @@ func runDaemon(o *options) int {
 	}
 	lock, err := instance.Acquire(paths.Lock, 0)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "此 tmux server 已有常駐實例，不啟動第二個")
+		fmt.Fprintln(os.Stderr, "A daemon is already running for this tmux server; not starting another")
 		return 0
 	}
 	defer lock.Release()
@@ -131,15 +131,15 @@ func runDaemon(o *options) int {
 	go func() {
 		defer close(events)
 		if err := tm.WatchEvents(ctx, wake); err != nil {
-			fmt.Fprintln(os.Stderr, "tmux 事件通知：", err)
+			fmt.Fprintln(os.Stderr, "tmux event notification:", err)
 		}
 	}()
 	if err := tm.BindJump(); err != nil {
-		fmt.Fprintln(os.Stderr, "點擊跳轉綁定：", err)
+		fmt.Fprintln(os.Stderr, "Click-to-jump binding:", err)
 	}
 	var startup []sidebar.ErrorRecord
 	if msg := tm.BindJumpMode(trigger); msg != "" {
-		fmt.Fprintln(os.Stderr, "鍵盤跳轉綁定：", msg)
+		fmt.Fprintln(os.Stderr, "Keyboard jump binding:", msg)
 		startup = append(startup, sidebar.ErrorRecord{At: time.Now(), Source: "jump", Message: msg})
 	}
 	if o.show {

@@ -50,7 +50,7 @@ type Dialer interface {
 const DefaultIdleTimeout = 45 * time.Second
 
 // ErrIdleTimeout 表示 SSE 連線仍開著但已無聲過久（半開連線）；呼叫端應重新連線並完整重讀。
-var ErrIdleTimeout = errors.New("OpenCode 事件串流無聲逾時")
+var ErrIdleTimeout = errors.New("OpenCode event stream timed out waiting for data")
 
 // DefaultPath 是標準本機共用服務的探索檔。
 func DefaultPath() string {
@@ -77,11 +77,11 @@ type serviceFile struct {
 	Password string `json:"password"`
 }
 
-var ErrNoService = errors.New("找不到 OpenCode 服務探索檔")
+var ErrNoService = errors.New("OpenCode service discovery file not found")
 
 var (
-	ErrBadDiscovery     = errors.New("服務探索檔格式不相容")
-	ErrIdentityMismatch = errors.New("服務身分與探索檔不符（可能已重啟，將重新探索）")
+	ErrBadDiscovery     = errors.New("incompatible service discovery file format")
+	ErrIdentityMismatch = errors.New("service identity does not match the discovery file (the service may have restarted; will rediscover)")
 )
 
 // Reason 把連線錯誤歸類成固定的描述，供診斷使用。原始錯誤文字可能夾帶路徑或回應內容，
@@ -92,17 +92,17 @@ func Reason(err error) string {
 	case err == nil:
 		return ""
 	case errors.Is(err, ErrNoService):
-		return "找不到服務探索檔（OpenCode 服務尚未開啟）"
+		return "service discovery file not found (the OpenCode service is not running yet)"
 	case errors.Is(err, ErrBadDiscovery):
-		return "服務探索檔格式不相容"
+		return "incompatible service discovery file format"
 	case errors.Is(err, ErrIdentityMismatch):
-		return "服務身分與探索檔不符（可能已重啟）"
+		return "service identity mismatch (the service may have restarted)"
 	case errors.Is(err, ErrIdleTimeout):
-		return "事件串流無聲逾時"
+		return "event stream timed out waiting for data"
 	case errors.As(err, &h):
-		return fmt.Sprintf("服務回應 HTTP %d", h.Status)
+		return fmt.Sprintf("service returned HTTP %d", h.Status)
 	default:
-		return "無法連線服務"
+		return "service unreachable"
 	}
 }
 
@@ -113,7 +113,7 @@ func (s Source) Dial(ctx context.Context) (Service, error) {
 		return nil, ErrNoService
 	}
 	if err != nil {
-		return nil, fmt.Errorf("讀取服務探索檔：%w", err)
+		return nil, fmt.Errorf("read service discovery file: %w", err)
 	}
 	var f serviceFile
 	if err := json.Unmarshal(raw, &f); err != nil || f.URL == "" || f.Password == "" {
@@ -121,7 +121,7 @@ func (s Source) Dial(ctx context.Context) (Service, error) {
 	}
 	u, err := url.Parse(f.URL)
 	if err != nil || u.Host == "" {
-		return nil, errors.New("服務探索檔的 url 無效")
+		return nil, errors.New("invalid URL in the service discovery file")
 	}
 	if h := u.Hostname(); h == "0.0.0.0" || h == "" {
 		u.Host = "127.0.0.1:" + u.Port()
@@ -140,7 +140,7 @@ func (s Source) Dial(ctx context.Context) (Service, error) {
 		PID     int    `json:"pid"`
 	}
 	if err := svc.getJSON(ctx, "/api/info", &info); err != nil {
-		return nil, fmt.Errorf("驗證服務身分：%w", err)
+		return nil, fmt.Errorf("verify service identity: %w", err)
 	}
 	if info.PID != f.PID || info.Version != f.Version {
 		return nil, ErrIdentityMismatch

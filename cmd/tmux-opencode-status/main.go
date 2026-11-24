@@ -24,7 +24,7 @@ import (
 	"github.com/DachiChang/tmux-opencode-status/internal/tmuxsrc"
 )
 
-const usage = "用法：tmux-opencode-status [start|run|stop|diagnose] [-L <name> | -S <path>] [旗標]"
+const usage = "Usage: tmux-opencode-status [start|run|stop|diagnose] [-L <name> | -S <path>] [flags]"
 
 // options 是所有子指令共用的旗標。
 type options struct {
@@ -37,33 +37,33 @@ type options struct {
 }
 
 func (o *options) bind(fs *flag.FlagSet) {
-	fs.StringVar(&o.socketName, "L", "", "tmux socket 名稱（-L）")
-	fs.StringVar(&o.socketPath, "S", "", "tmux socket 路徑（-S）")
-	fs.StringVar(&o.config, "f", "", "tmux 設定檔（-f，僅供隔離測試，例如 /dev/null）")
-	fs.StringVar(&o.tabs, "tabs", tabsrc.DefaultPath(), "OpenCode tabs.json 路徑")
-	fs.StringVar(&o.service, "service", ocsrc.DefaultPath(), "OpenCode 服務探索檔 service.json 路徑（唯讀；不啟動或重啟服務）")
+	fs.StringVar(&o.socketName, "L", "", "tmux socket name")
+	fs.StringVar(&o.socketPath, "S", "", "tmux socket path")
+	fs.StringVar(&o.config, "f", "", "tmux configuration file (isolated tests only, e.g. /dev/null)")
+	fs.StringVar(&o.tabs, "tabs", tabsrc.DefaultPath(), "Path to OpenCode tabs.json")
+	fs.StringVar(&o.service, "service", ocsrc.DefaultPath(), "Path to OpenCode service.json (read-only; does not start or restart the service)")
 	fs.IntVar(&o.width, "width", 36, "side-status-width")
-	fs.DurationVar(&o.backstop, "backstop", sidebar.DefaultBackstop, "低頻補漏同步週期")
-	fs.DurationVar(&o.idle, "idle-timeout", ocsrc.DefaultIdleTimeout, "SSE 連續無任何位元組多久視為無聲斷線（服務每 15 秒送心跳）")
-	fs.DurationVar(&o.resync, "resync", sidebar.DefaultResync, "家族補漏重讀週期（低頻，不是輪詢）")
-	fs.DurationVar(&o.serverCheck, "server-check", defaultServerCheck, "多久確認一次 tmux server 行程是否仍在")
-	fs.BoolVar(&o.show, "show", false, "啟動時把 side-status 設為 left（每個 tmux server 只做一次，不會重新打開使用者已隱藏的側欄）")
+	fs.DurationVar(&o.backstop, "backstop", sidebar.DefaultBackstop, "Interval for reconciling missed updates")
+	fs.DurationVar(&o.idle, "idle-timeout", ocsrc.DefaultIdleTimeout, "Time without SSE data before treating the stream as disconnected (the service sends a heartbeat every 15 seconds)")
+	fs.DurationVar(&o.resync, "resync", sidebar.DefaultResync, "Interval for reconciling session families (infrequent, not polling)")
+	fs.DurationVar(&o.serverCheck, "server-check", defaultServerCheck, "Interval for checking whether the tmux server process is still running")
+	fs.BoolVar(&o.show, "show", false, "Set side-status to left on startup, once per tmux server; does not reopen a sidebar you hid afterward")
 }
 
 // validate 在套用任何設定前先驗證；無效時 start 不得觸碰既有實例。
 func (o *options) validate() error {
-	bad := func(name, why string) error { return fmt.Errorf("設定無效：%s %s", name, why) }
+	bad := func(name, why string) error { return fmt.Errorf("invalid setting: %s %s", name, why) }
 	switch {
 	case o.width < 4:
-		return bad("-width", "必須至少 4")
+		return bad("-width", "must be at least 4")
 	case o.backstop <= 0:
-		return bad("-backstop", "必須大於 0")
+		return bad("-backstop", "must be greater than 0")
 	case o.idle <= 0:
-		return bad("-idle-timeout", "必須大於 0")
+		return bad("-idle-timeout", "must be greater than 0")
 	case o.resync <= 0:
-		return bad("-resync", "必須大於 0")
+		return bad("-resync", "must be greater than 0")
 	case o.serverCheck <= 0:
-		return bad("-server-check", "必須大於 0")
+		return bad("-server-check", "must be greater than 0")
 	}
 	return nil
 }
@@ -72,13 +72,13 @@ func (o *options) validate() error {
 // start／stop／diagnose 在沒有旗標時可沿用 $TMUX（TPM 在 run-shell 內執行時，它指向載入設定的那個 server）。
 func (o *options) client(allowEnv bool) (*tmuxsrc.Client, error) {
 	if o.socketName != "" && o.socketPath != "" {
-		return nil, fmt.Errorf("-L 與 -S 只能擇一")
+		return nil, fmt.Errorf("-L and -S are mutually exclusive")
 	}
 	if o.socketName == "" && o.socketPath == "" && allowEnv {
 		o.socketPath = socketFromEnv(os.Getenv("TMUX"))
 	}
 	if o.socketName == "" && o.socketPath == "" {
-		return nil, fmt.Errorf("必須明確指定 -L <name> 或 -S <path> 其中之一，不使用預設 tmux server")
+		return nil, fmt.Errorf("specify -L <name> or -S <path> explicitly; the default tmux server is not used")
 	}
 	tm := &tmuxsrc.Client{Width: o.width}
 	if o.socketName != "" {

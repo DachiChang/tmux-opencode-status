@@ -39,19 +39,19 @@ func ParseTabs(raw []byte) (*TabsFile, error) {
 		Cwd    *json.RawMessage `json:"cwd"`
 	}
 	if err := json.Unmarshal(raw, &probe); err != nil {
-		return nil, fmt.Errorf("tabs.json 不是有效 JSON：%w", err)
+		return nil, fmt.Errorf("tabs.json is not valid JSON: %w", err)
 	}
 	if probe.Global == nil || probe.Cwd == nil {
-		return nil, errors.New("tabs.json 缺少 global 或 cwd")
+		return nil, errors.New("tabs.json is missing global or cwd")
 	}
 	var f TabsFile
 	if err := json.Unmarshal(raw, &f); err != nil {
-		return nil, fmt.Errorf("tabs.json 結構不相容：%w", err)
+		return nil, fmt.Errorf("incompatible tabs.json structure: %w", err)
 	}
 	check := func(where string, l tabList) error {
 		for i, t := range l.Tabs {
 			if t.SessionID == "" {
-				return fmt.Errorf("tabs.json %s.tabs[%d] 缺少 sessionID", where, i)
+				return fmt.Errorf("tabs.json %s.tabs[%d] is missing sessionID", where, i)
 			}
 		}
 		return nil

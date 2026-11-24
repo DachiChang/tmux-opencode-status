@@ -64,8 +64,8 @@ func (c *Client) ActualJumpTrigger() string {
 
 // 綁定跳轉模式失敗的固定描述（寫進最近錯誤；不含原始錯誤或鍵名）。
 const (
-	JumpTriggerInvalidMessage = "觸發鍵設定無效，未綁定任何觸發鍵"
-	JumpTriggerFailedMessage  = "觸發鍵綁定失敗，未綁定任何觸發鍵"
+	JumpTriggerInvalidMessage = "Invalid trigger key setting; no trigger key bound"
+	JumpTriggerFailedMessage  = "Trigger key binding failed; no trigger key bound"
 )
 
 // jumpTableBinding 是跳轉按鍵表所有字母（render.JumpLetters）的綁定：只在 tmux 內執行（不開 shell、不呼叫插件執行檔），
