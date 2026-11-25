@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/DachiChang/tmux-opencode-status/internal/fakeoc"
+	"github.com/DachiChang/tmux-opencode-status/internal/sidebar"
 )
 
 // Process-external lifecycle tests (issue #11): the real daemon + an isolated tmux server (-L … -f /dev/null).
@@ -736,6 +737,26 @@ func TestDiagnoseMentionsTheSidebarIsHiddenButStillTracking(t *testing.T) {
 	}
 	e.waitDaemons(e.in, 1, 3*time.Second, "start")
 	mustContain(t, e.diagnose(e.in), "sidebar hidden", "no restart")
+}
+
+// TUI detection depends on the alternate screen (ADR-0006): turning it off is a problem; turning off titles only delays detection.
+func TestDiagnoseReportsTUIDetectionPrerequisites(t *testing.T) {
+	e := newLifecycleEnv(t)
+	if out, err := e.start(e.in, "-show"); err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	e.waitDaemons(e.in, 1, 3*time.Second, "start")
+	time.Sleep(300 * time.Millisecond)
+	mustNotContain(t, e.diagnose(e.in), "TUI detection")
+
+	e.inTmux("set", "-g", "allow-set-title", "off")
+	out := e.diagnose(e.in)
+	mustContain(t, out, "TUI detection: allow-set-title is off",
+		fmt.Sprintf("periodic check (every %s by default)", sidebar.DefaultBackstop), "Result: No issues found")
+
+	e.inTmux("set", "-g", "alternate-screen", "off")
+	out = e.diagnose(e.in)
+	mustContain(t, out, "TUI detection: alternate-screen is off", "set -g alternate-screen on", "Result: Issues found: 1")
 }
 
 // Service disconnects and tab list problems must both appear under "Recent errors", with fixed descriptions only.

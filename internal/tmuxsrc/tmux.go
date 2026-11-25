@@ -32,28 +32,6 @@ type Client struct {
 	lastFormat string
 	// jumpTrigger is the trigger key this instance actually bound successfully; an empty string means nothing is bound (invalid or failed). It is written to @tos_jump_trigger on every publish.
 	jumpTrigger string
-	// proc is the source of foreground-process facts; nil uses the local implementation (tests substitute a controlled one).
-	proc procReader
-}
-
-// procReader reads a foreground process's argv and working directory; alive reports whether the process still exists.
-type procReader interface {
-	Argv(pid int) ([]string, error)
-	Cwd(pid int) (string, error)
-	Alive(pid int) bool
-}
-
-type localProc struct{}
-
-func (localProc) Argv(pid int) ([]string, error) { return procArgv(pid) }
-func (localProc) Cwd(pid int) (string, error)    { return procCwd(pid) }
-func (localProc) Alive(pid int) bool             { return ProcessAlive(pid) }
-
-func (c *Client) procs() procReader {
-	if c.proc != nil {
-		return c.proc
-	}
-	return localProc{}
 }
 
 const (
@@ -102,93 +80,44 @@ func (c *Client) tmux(stdin string, args ...string) ([]byte, error) {
 	return out.Bytes(), nil
 }
 
-// Panes lists the foreground-process facts of every pane on the same server; a pane listed repeatedly through a linked window is taken only once.
+// paneFormat is everything pane discovery needs; tmux resolves the command and path from the foreground process group of each pane's tty.
+const paneFormat = "#{pane_id}\t#{pane_current_command}\t#{alternate_on}\t#{pane_current_path}"
+
+// Panes lists the facts of every pane on the same server with a single `list-panes` (see ADR-0006).
 func (c *Client) Panes() ([]sidebar.PaneFact, error) {
-	out, err := c.tmux("", "list-panes", "-a", "-F", "#{pane_id}\t#{pane_tty}\t#{pane_current_path}\t#{pane_current_command}\t#{alternate_on}")
+	out, err := c.tmux("", "list-panes", "-a", "-F", paneFormat)
 	if err != nil {
 		return nil, err
 	}
-	procs, err := foregroundProcs()
-	if err != nil {
-		return nil, err
-	}
+	return parsePanes(out)
+}
+
+// parsePanes parses paneFormat output. A pane listed repeatedly through a linked window is taken only once.
+// A TUI client whose directory tmux cannot report is a read error (the caller keeps the last usable data and shows a notice);
+// an empty string is never used as a directory identity. Other panes without a path do not affect the result.
+func parsePanes(out []byte) ([]sidebar.PaneFact, error) {
 	seen := map[string]bool{}
 	facts := []sidebar.PaneFact{}
 	var unresolved []string
 	for _, line := range strings.Split(strings.TrimRight(string(out), "\n"), "\n") {
-		f := strings.Split(line, "\t")
-		if len(f) != 5 || seen[f[0]] {
+		f := strings.SplitN(line, "\t", 4)
+		if len(f) != 4 || seen[f[0]] {
 			continue
 		}
 		seen[f[0]] = true
 		fact := sidebar.PaneFact{PaneID: f[0], Pane: contract.Pane{
-			PaneCurrentPath: f[2], PaneCurrentCommand: f[3], AlternateOn: f[4] == "1",
+			PaneCurrentCommand: f[1], AlternateOn: f[2] == "1", PaneCurrentPath: f[3],
 		}}
-		if pid, ok := procs[strings.TrimPrefix(f[1], "/dev/")]; ok {
-			if err := c.readForeground(&fact, pid); err != nil {
-				unresolved = append(unresolved, f[0])
-				continue
-			}
+		if contract.IsTUIClient(fact.Pane) && fact.Pane.PaneCurrentPath == "" {
+			unresolved = append(unresolved, f[0])
+			continue
 		}
 		facts = append(facts, fact)
 	}
 	if len(unresolved) > 0 {
-		return nil, fmt.Errorf("cannot identify foreground processes for %d pane(s) (%s)", len(unresolved), strings.Join(unresolved, ", "))
+		return nil, fmt.Errorf("cannot read the working directory of %d TUI pane(s) (%s)", len(unresolved), strings.Join(unresolved, ", "))
 	}
 	return facts, nil
-}
-
-// readForeground reads the foreground process's argv and (for TUI candidates) its working directory.
-//   - Process has exited: a normal disappearance, not an error; the pane currently has no identifiable foreground process, and the next scan will see the new facts.
-//   - Process is alive but unreadable: only a pane whose foreground command tmux itself reports as opencode is an undeterminable candidate,
-//     so report an error (the caller keeps the last usable data and shows a notice); other panes (for example processes owned by other users)
-//     cannot be the user's OpenCode TUI and must not invalidate the whole sidebar.
-func (c *Client) readForeground(fact *sidebar.PaneFact, pid int) error {
-	pr := c.procs()
-	candidate := fact.PaneCurrentCommand == "opencode"
-	argv, err := pr.Argv(pid)
-	if err != nil {
-		if !pr.Alive(pid) || !candidate {
-			return nil
-		}
-		return fmt.Errorf("read process argv: %w", err)
-	}
-	fact.ForegroundArgv = argv
-	if !contract.IsTUICandidate(fact.Pane) {
-		return nil
-	}
-	cwd, err := pr.Cwd(pid)
-	if err != nil {
-		if !pr.Alive(pid) {
-			fact.ForegroundArgv = nil
-			return nil
-		}
-		return fmt.Errorf("read process working directory: %w", err)
-	}
-	fact.ForegroundCwd = cwd
-	return nil
-}
-
-// foregroundProcs returns tty name → foreground process group leader (pgid == tpgid). pane_pid is usually the shell and cannot be used.
-func foregroundProcs() (map[string]int, error) {
-	out, err := exec.Command("ps", "-axo", "pid=,pgid=,tpgid=,tty=").Output()
-	if err != nil {
-		return nil, fmt.Errorf("ps：%w", err)
-	}
-	res := map[string]int{}
-	for _, line := range strings.Split(string(out), "\n") {
-		f := strings.Fields(line)
-		if len(f) != 4 {
-			continue
-		}
-		pid, _ := strconv.Atoi(f[0])
-		pgid, _ := strconv.Atoi(f[1])
-		tpgid, _ := strconv.Atoi(f[2])
-		if pid > 0 && pgid == tpgid && pid == pgid {
-			res[f[3]] = pid
-		}
-	}
-	return res, nil
 }
 
 // Publish writes the layout options and side-status-format in a single source-file (the same command queue),

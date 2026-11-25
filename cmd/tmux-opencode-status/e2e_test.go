@@ -54,8 +54,10 @@ func (e *env) outTmux(args ...string) string {
 	return string(b)
 }
 
-// fakeOpencodeSrc is a fake opencode: by default it only sleeps. When FAKE_TITLE is non-empty it sets the terminal title at startup like a real TUI,
-// restores the title and exits on SIGINT / SIGTERM; FAKE_CHURN_MS makes it change the title frequently and continuously.
+// fakeOpencodeSrc is a fake opencode. Like the real TUI it enters the alternate screen at startup, then sets the terminal title,
+// and on SIGINT / SIGTERM leaves the alternate screen and restores the title; with "serve" as its first argument it stays on the
+// main screen like the real non-TUI commands. FAKE_NO_TITLE=1 simulates terminal titles being disabled; FAKE_CHURN_MS makes it
+// change the title frequently and continuously.
 const fakeOpencodeSrc = `package main
 
 import (
@@ -68,12 +70,16 @@ import (
 )
 
 func title(s string) {
-	if os.Getenv("FAKE_TITLE") != "" {
+	if os.Getenv("FAKE_NO_TITLE") == "" {
 		fmt.Fprintf(os.Stdout, "\033]0;%s\007", s)
 	}
 }
 
 func main() {
+	tui := len(os.Args) < 2 || os.Args[1] != "serve"
+	if tui {
+		fmt.Fprint(os.Stdout, "\033[?1049h")
+	}
 	title("OpenCode")
 	if ms, _ := strconv.Atoi(os.Getenv("FAKE_CHURN_MS")); ms > 0 {
 		go func() {
@@ -87,6 +93,9 @@ func main() {
 	signal.Notify(c, syscall.SIGINT, syscall.SIGTERM)
 	select {
 	case <-c:
+		if tui {
+			fmt.Fprint(os.Stdout, "\033[?1049l")
+		}
 		title("shell")
 	case <-time.After(time.Hour):
 	}
@@ -123,7 +132,7 @@ func newBareEnv(t *testing.T, daemonEnv, daemonArgs []string) *env {
 	must(t, os.MkdirAll(filepath.Dir(e.tabsPath), 0o755))
 	must(t, os.MkdirAll(e.binDir, 0o755))
 
-	// Fake opencode: just a sleeping process whose argv[0] basename is opencode.
+	// Fake opencode: a sleeping process named opencode that enters the alternate screen (see fakeOpencodeSrc).
 	src := filepath.Join(root, "fake", "main.go")
 	must(t, os.MkdirAll(filepath.Dir(src), 0o755))
 	must(t, os.WriteFile(src, []byte(fakeOpencodeSrc), 0o644))
@@ -187,12 +196,11 @@ func (e *env) tui(dir string, extra ...string) string {
 	return e.tuiCmd("exec", dir, extra...)
 }
 
-// tuiUnderShell starts a TUI inside an interactive shell (with job control): when it is killed the pane still exists and tmux emits no hook.
+// tuiUnderShell starts a TUI with terminal titles disabled inside an interactive shell (with job control): neither its start nor,
+// when it is killed, its exit emits a hook (the pane still exists), so only the low-frequency catch-up can notice.
 func (e *env) tuiUnderShell(dir string) string {
-	must(e.t, os.MkdirAll(dir, 0o755))
-	win := strings.TrimSpace(e.inTmux("new-window", "-d", "-P", "-F", "#{window_id}", "-c", dir))
-	time.Sleep(400 * time.Millisecond) // wait for the shell to be ready
-	e.inTmux("send-keys", "-t", win, e.bin, "Enter")
+	win := e.shellWindow(dir)
+	e.shellRun(win, "FAKE_NO_TITLE=1 "+e.bin)
 	return win
 }
 
@@ -308,15 +316,33 @@ func TestStoppingDaemonRemovesItsHooksOnly(t *testing.T) {
 	}
 }
 
+// An opencode command that stays on the main screen is not a TUI client (ADR-0006).
 func TestNonTUIOpencodeCommandsAreNotListed(t *testing.T) {
 	e := newEnv(t)
 	dir := filepath.Join(e.dir, "work", "svc")
 	e.writeTabs(e.tabsJSON(map[string][]string{dir: {"x"}}))
 	e.tui(dir, "serve")
-	e.tui(dir, "session", "list")
 	time.Sleep(1500 * time.Millisecond)
 	if s := e.sidebar(); !strings.Contains(s, "No OpenCode TUI running") || strings.Contains(s, "svc") {
 		t.Fatalf("non-TUI listed:\n%s", s)
+	}
+}
+
+// A cwd-mode group opened through a symlink shows the physical directory's tabs: tmux reports the kernel-resolved cwd,
+// which is the key OpenCode stores (ADR-0006).
+func TestTUIOpenedThroughASymlinkShowsThePhysicalDirectoryTabs(t *testing.T) {
+	e := newEnv(t)
+	real := filepath.Join(e.dir, "work", "api")
+	link := filepath.Join(e.dir, "work", "api-link")
+	must(t, os.MkdirAll(real, 0o755))
+	must(t, os.Symlink(real, link))
+	e.writeTabs(e.tabsJSON(map[string][]string{real: {"physical tab"}, link: {"link tab"}}))
+	e.tui(link)
+	e.eventually(3*time.Second, "group shows the physical directory's tabs", func(s string) bool {
+		return strings.Contains(s, "physical tab")
+	})
+	if s := e.sidebar(); strings.Contains(s, "link tab") {
+		t.Fatalf("the symlink path must not be used as the directory identity:\n%s", s)
 	}
 }
 
@@ -786,7 +812,7 @@ func TestTUIStartedAndStoppedInAnExistingShellFollowsWithin1SecondWhenTitlesAreO
 	e.eventually(3*time.Second, "startup", func(s string) bool { return strings.Contains(s, "No OpenCode TUI running") })
 	win := e.shellWindow(dir)
 
-	e.shellRun(win, "FAKE_TITLE=1 "+e.bin)
+	e.shellRun(win, e.bin)
 	d := e.eventually(time.Second, "TUI started in a shell appears within 1 second", func(s string) bool { return strings.Contains(s, "! a") })
 	t.Logf("started in a shell → screen: %v", d)
 
@@ -803,19 +829,20 @@ func TestTUIInAnExistingShellStillFollowsViaBackstopWhenTitlesAreOff(t *testing.
 	e.eventually(3*time.Second, "startup", func(s string) bool { return strings.Contains(s, "No OpenCode TUI running") })
 	win := e.shellWindow(dir)
 
-	e.shellRun(win, e.bin)
+	e.shellRun(win, "FAKE_NO_TITLE=1 "+e.bin)
 	e.eventually(10*time.Second, "start with titles disabled appears within 10 seconds", func(s string) bool { return strings.Contains(s, "! a") })
 	e.inTmux("send-keys", "-t", win, "C-c")
 	e.eventually(10*time.Second, "exit with titles disabled disappears within 10 seconds", func(s string) bool { return strings.Contains(s, "No OpenCode TUI running") })
 }
 
-// Identification is based on the foreground process: a non-TUI opencode command changing the title, or any process setting the title to OpenCode, does not count as a TUI.
+// Identification is based on the foreground command and the alternate screen, never the title: a non-TUI opencode command changing the title,
+// or any process setting the title to OpenCode, does not count as a TUI.
 func TestTitleChangesNeverMakeANonTUIProcessLookLikeATUI(t *testing.T) {
 	e := newEnv(t)
 	dir := filepath.Join(e.dir, "work", "svc")
 	e.writeTabs(e.tabsJSON(map[string][]string{dir: {"x"}}))
 	win := e.shellWindow(dir)
-	e.shellRun(win, "FAKE_TITLE=1 "+e.bin+" serve")
+	e.shellRun(win, e.bin+" serve")
 	win2 := e.shellWindow(dir)
 	e.shellRun(win2, `printf '\033]0;OpenCode\007'; sleep 60`)
 	time.Sleep(1500 * time.Millisecond)
@@ -857,7 +884,7 @@ func TestFrequentTitleChangesDoNotCauseAWakeStormOrTmuxWrites(t *testing.T) {
 	dir := filepath.Join(e.dir, "work", "api")
 	e.writeTabs(e.tabsJSON(map[string][]string{dir: {"a"}}))
 	win := e.shellWindow(dir)
-	e.shellRun(win, "FAKE_TITLE=1 FAKE_CHURN_MS=20 "+e.bin)
+	e.shellRun(win, "FAKE_CHURN_MS=20 "+e.bin)
 	e.eventually(2*time.Second, "TUI appears", func(s string) bool { return strings.Contains(s, "! a") })
 
 	time.Sleep(500 * time.Millisecond)
