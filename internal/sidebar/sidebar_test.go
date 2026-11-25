@@ -203,7 +203,6 @@ func newWorld(t *testing.T) *world {
 func tui(id, cwd string) sidebar.PaneFact {
 	return sidebar.PaneFact{PaneID: id, Pane: contract.Pane{
 		PaneCurrentCommand: "opencode", AlternateOn: true, PaneCurrentPath: cwd,
-		ForegroundArgv: []string{"opencode"}, ForegroundCwd: cwd,
 	}}
 }
 
@@ -262,7 +261,7 @@ func (w *world) setTabs(t *testing.T, raw string) { t.Helper(); w.tabs.set(mustT
 
 func TestNoTUIShowsEmptyFrameNotAnErrorOrBlank(t *testing.T) {
 	w := newWorld(t)
-	w.panes.set(sidebar.PaneFact{PaneID: "%1", Pane: contract.Pane{PaneCurrentCommand: "zsh", ForegroundArgv: []string{"zsh"}, ForegroundCwd: "/work/api"}})
+	w.panes.set(sidebar.PaneFact{PaneID: "%1", Pane: contract.Pane{PaneCurrentCommand: "zsh", PaneCurrentPath: "/work/api"}})
 	w.setTabs(t, `{"global":{"tabs":[]},"cwd":{"/work/api":{"tabs":[{"sessionID":"ses_1","title":"歷史目錄不應出現"}]}}}`)
 	w.sync(t)
 	assertLines(t, w.out.screen(20), []string{
@@ -287,18 +286,22 @@ func TestTUIWithoutTabsKeepsGroupAndSaysNoTab(t *testing.T) {
 
 func TestOnlyRunningTUIDirectoriesAreListedAndDuplicatesCollapse(t *testing.T) {
 	w := newWorld(t)
-	nonTUI := func(id string, argv ...string) sidebar.PaneFact {
-		return sidebar.PaneFact{PaneID: id, Pane: contract.Pane{PaneCurrentCommand: "opencode", AlternateOn: true, ForegroundArgv: argv, ForegroundCwd: "/work/api"}}
+	pane := func(id, cmd string, alt bool, cwd string) sidebar.PaneFact {
+		return sidebar.PaneFact{PaneID: id, Pane: contract.Pane{PaneCurrentCommand: cmd, AlternateOn: alt, PaneCurrentPath: cwd}}
 	}
 	w.panes.set(
 		tui("%1", "/work/api"),
-		tui("%1", "/work/api"), // the same pane listed twice through a linked window
-		tui("%2", "/work/api"), // a second TUI in the same directory
-		nonTUI("%3", "opencode", "serve"),
-		nonTUI("%4", "opencode", "session", "list"),
+		tui("%1", "/work/api"),                     // the same pane listed twice through a linked window
+		tui("%2", "/work/api"),                     // a second TUI in the same directory
+		pane("%3", "opencode", false, "/work/svc"), // serve / run / mini stay on the main screen
+		pane("%4", "zsh", true, "/work/shell"),     // a shell left on the alternate screen
+		pane("%5", "nvim", true, "/work/editor"),   // another full-screen program
 	)
 	w.setTabs(t, `{"global":{"tabs":[]},"cwd":{
 		"/work/api":{"tabs":[{"sessionID":"ses_1","title":"one"}]},
+		"/work/svc":{"tabs":[{"sessionID":"ses_7","title":"svc"}]},
+		"/work/shell":{"tabs":[{"sessionID":"ses_8","title":"shell"}]},
+		"/work/editor":{"tabs":[{"sessionID":"ses_6","title":"editor"}]},
 		"/work/old":{"tabs":[{"sessionID":"ses_9","title":"history"}]}}}`)
 	w.sync(t)
 	assertLines(t, w.out.screen(20), []string{

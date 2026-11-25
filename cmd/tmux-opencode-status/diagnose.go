@@ -64,6 +64,7 @@ func diagnose(o *options, w io.Writer) int {
 	if v, err := tm.GlobalValue("side-status"); err == nil {
 		p("Global side-status: %s%s", valueOr(v, "(not set)"), map[bool]string{true: " (sidebar hidden; tracking continues and no restart is needed to show it again)", false: ""}[v == "off" || v == ""])
 	}
+	problems += diagnoseDetection(tm, p)
 
 	paths, err := instance.PathsFor(info.SocketPath)
 	if err != nil {
@@ -133,6 +134,25 @@ func diagnose(o *options, w io.Writer) int {
 		p("Result: Issues found: %d (see above)", problems)
 	}
 	return 0
+}
+
+// diagnoseDetection checks the global tmux options TUI client detection depends on (ADR-0006) and returns the number of problems.
+// alternate-screen off hides every TUI client, so it counts as a problem; allow-set-title off only delays detection to the
+// low-frequency catch-up, so it is reported without counting. Per-window and per-pane overrides are not checked.
+func diagnoseDetection(tm *tmuxsrc.Client, p func(string, ...any)) int {
+	problems := 0
+	if v, err := tm.GlobalValue("alternate-screen"); err != nil {
+		p("TUI detection: Cannot read alternate-screen")
+	} else if v == "off" {
+		problems++
+		p("TUI detection: alternate-screen is off. TUI clients are identified by the alternate screen, so none can be detected; run `set -g alternate-screen on`.")
+	}
+	if v, err := tm.GlobalValue("allow-set-title"); err != nil {
+		p("TUI detection: Cannot read allow-set-title")
+	} else if v == "off" {
+		p("TUI detection: allow-set-title is off. A newly started TUI client appears, and one exited in an existing shell disappears, only on the periodic check (every %s by default).", sidebar.DefaultBackstop)
+	}
+	return problems
 }
 
 // diagnosticLine keeps each status record on a single line.

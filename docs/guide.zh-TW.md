@@ -12,6 +12,20 @@
 - OpenCode 標準 **latest** channel、**預設資料位置**（`$XDG_STATE_HOME` 或 `~/.local/state` 下的 `opencode/`）與本機共用背景服務。
   不支援其他 release channel、自訂資料位置、遠端或獨立私有服務，也不彙整多套資料環境。
 
+### TUI 的辨識方式
+
+tmux pane 的前景命令是 `opencode`，且處於 alternate screen 時，才算是 TUI client。插件以該 pane 的目前目錄作為 client 的目錄，因此透過 symlink 開啟的 TUI 會顯示實體目錄的 tab。OpenCode 新增 subcommand 或 flag 時，插件不需要更新。設計理由見 [ADR-0006](adr/0006-identify-tui-by-alternate-screen.md)。
+
+| 設定 | 影響 |
+| --- | --- |
+| tmux `alternate-screen off` | 偵測不到任何 TUI；`diagnose` 會回報並計入問題數 |
+| OpenCode 環境中有 `OTUI_USE_ALTERNATE_SCREEN=0` | 偵測不到該 TUI |
+| tmux `allow-set-title off`，或 OpenCode `terminal.title: false` | 仍能偵測，但新啟動的 TUI 要等定期檢查（約 5 秒）才會出現；在既有 shell 中結束的 TUI 也要等定期檢查才會消失；`diagnose` 會提示 tmux 設定 |
+
+- **已接受的誤判**：`opencode session list` 的分頁器開著時，該 pane 也會被列為 TUI。
+- **偵測不到**：透過其他名稱的包裝程式啟動，或經由 `ssh` 執行的 TUI。
+- `diagnose` 只檢查 tmux 全域設定，不檢查個別 window 或 pane 的覆寫。
+
 ## 安裝細節
 
 ```tmux
@@ -142,7 +156,9 @@ set -g @opencode-status-color-split default          # 終端預設色
 ~/.tmux/plugins/tmux-opencode-status/bin/<版本>-darwin-<arch>/tmux-opencode-status diagnose
 ```
 
-輸出 tmux 版本與能力、插件模式、無效的色票選項、常駐實例狀態、發現的 TUI／tab 數、服務連線狀態與最近錯誤。
+輸出 tmux 版本與能力、插件模式、無效的色票選項、TUI 偵測問題與提示、常駐實例狀態、發現的 TUI／tab 數、服務連線狀態與最近錯誤。
+全域 tmux 設定 `alternate-screen off` 會計入問題數，`allow-set-title off` 則只顯示提示；不檢查這兩個選項在 window 或 pane 層級的覆寫。
+
 插件的畫面與指令訊息使用英文；本指南以繁中說明。**診斷不含憑證、prompt、對話或 OpenCode 的 session／tab 標題**，也不連 OpenCode、不寫任何選項。
 
 ### Session 層級覆寫

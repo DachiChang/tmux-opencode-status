@@ -12,6 +12,20 @@ The plugin is read-only with respect to OpenCode: it does not install an OpenCod
 - macOS (Apple Silicon `arm64` or Intel `x86_64`). **Go is not required for normal use.**
 - OpenCode on the standard **latest** channel, using the **default state directory** (`opencode/` under `$XDG_STATE_HOME` or `~/.local/state`) and the local shared background service. Other release channels, custom state directories, remote or private service instances, and aggregation across separate data environments are not supported.
 
+### How TUI clients are detected
+
+A tmux pane counts as a TUI client when its foreground command is `opencode` and it is on the alternate screen. The plugin uses the pane's current directory as the client's directory, so a TUI opened through a symlink shows the physical directory's tabs. New OpenCode subcommands and flags need no plugin update. See [ADR-0006](adr/0006-identify-tui-by-alternate-screen.md).
+
+| Setting | Effect |
+| --- | --- |
+| tmux `alternate-screen off` | No TUI client is detected. `diagnose` reports it as an issue. |
+| `OTUI_USE_ALTERNATE_SCREEN=0` in OpenCode's environment | That client is not detected. |
+| tmux `allow-set-title off`, or OpenCode `terminal.title: false` | Detection still works, but a newly started TUI appears only on the periodic check (about 5 seconds), and a TUI exited in an existing shell disappears only on the periodic check. `diagnose` notes the tmux setting. |
+
+- **Accepted false positive:** while the `opencode session list` pager is open, its pane is listed like a TUI client.
+- **Not detected:** a TUI launched through a wrapper whose process is not named `opencode`, or running over `ssh`.
+- `diagnose` checks only the global tmux settings, not per-window or per-pane overrides.
+
 ## Installation details
 
 ```tmux
@@ -129,7 +143,9 @@ Setting or unsetting an option (`set -gu`) or reloading `tmux.conf` updates the 
 ~/.tmux/plugins/tmux-opencode-status/bin/<version>-darwin-<arch>/tmux-opencode-status diagnose
 ```
 
-`diagnose` reports the tmux version and capabilities, plugin mode, invalid color options, daemon status, discovered TUI client and tab counts, service connectivity, and recent errors. **It does not include credentials, prompts, conversations, or OpenCode session or tab titles.** It does not connect to OpenCode or write any options.
+`diagnose` reports the tmux version and capabilities, plugin mode, invalid color options, TUI detection issues and notices, daemon status, discovered TUI client and tab counts, service connectivity, and recent errors. For TUI detection, a global tmux `alternate-screen off` counts as an issue; a global `allow-set-title off` is a notice only. Per-window and per-pane overrides of these options are not checked.
+
+**The output does not include credentials, prompts, conversations, or OpenCode session or tab titles.** The command does not connect to OpenCode or write any options.
 
 ### Session overrides
 

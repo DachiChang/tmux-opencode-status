@@ -5,7 +5,7 @@ Shows the status of open OpenCode TUI tabs across working directories on the sam
 ## Language
 
 **TUI client**:
-A running instance of the OpenCode terminal interface. Multiple TUI clients can run in the same directory.
+A running instance of the OpenCode terminal interface. A tmux pane hosts one when its foreground command is `opencode` and it is on the alternate screen. Multiple TUI clients can run in the same directory.
 _Avoid_: Agent (when referring to the terminal interface)
 
 **Tab**:
@@ -22,7 +22,7 @@ A session and all its descendants at any depth. Descendant activity contributes 
 The set of tabs for a working directory with at least one running TUI client. TUI clients in the same directory belong to the same group.
 
 **Directory identity**:
-The identifier OpenCode uses to store a directory's tab list. Directories are not merged merely because symlinks resolve to the same location or because they belong to the same Git repository; separate worktrees remain distinct.
+The identifier OpenCode uses to store a directory's tab list: the TUI client's physical working directory. TUI clients opened through a symlink share the physical directory's tab list. Directories are not merged because they belong to the same Git repository; separate worktrees remain distinct.
 
 **Jump target**:
 The tmux pane hosting the TUI client that a group jumps to, not a tab inside the TUI. If several clients qualify, the target is the pane with the lowest numeric ID (`N` in `%N`), among clients in the directory group or among all TUI clients in global mode.

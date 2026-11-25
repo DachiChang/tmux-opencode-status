@@ -235,7 +235,7 @@ func (d *Daemon) report() {
 	}
 	if d.havePanes {
 		for _, p := range d.panes {
-			if contract.IsTUICandidate(p.Pane) {
+			if contract.IsTUIClient(p.Pane) {
 				st.TUIs++
 			}
 		}
@@ -332,9 +332,10 @@ func (d *Daemon) view(mode contract.Mode) render.View {
 	dirs := map[string]bool{}
 	var jumps jumpTargets
 	for _, p := range d.panes {
-		if contract.IsTUICandidate(p.Pane) {
-			dirs[p.ForegroundCwd] = true
-			jumps.add(p.ForegroundCwd, p.PaneID)
+		if contract.IsTUIClient(p.Pane) {
+			dir := p.Pane.PaneCurrentPath
+			dirs[dir] = true
+			jumps.add(dir, p.PaneID)
 		}
 	}
 	var names []string
