@@ -183,6 +183,6 @@ Run `go test -count=1 ./...` on macOS with the required tmux capabilities. The e
 
 ## Documentation
 
-- [OpenCode integration contract](contracts/opencode-2.3.0.md)
+- [OpenCode integration contract](contracts/opencode-2.4.1.md)
 - [Architecture decision records](adr/)
 - [Project glossary](../GLOSSARY.md)

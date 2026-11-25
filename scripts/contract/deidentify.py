@@ -9,7 +9,7 @@
 - 標題改為 tab-<角色>／form-title／field；自由文字（inbox payload、權限 resources）改為 <redacted>。
 - 時間戳記以最小值為基準重設為 1_000_000 起算（保留相對間距）。
 - 最後以對照表掃過所有 key 與字串，殘留的真實 session ID 變成 ses_UNMAPPED（測試會拒絕該字樣）。
-原始錄製檔（含真實 ID）不入庫；錄製流程見 docs/contracts/opencode-2.3.0.md。
+原始錄製檔（含真實 ID）不入庫；錄製流程見 docs/contracts/opencode-2.4.1.md。
 """
 import json, os, re, sys
 

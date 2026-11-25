@@ -1,5 +1,5 @@
 // Package ocsrc 是 OpenCode 本機共用服務的唯讀客戶端：服務探索、認證、REST（只用 GET）與 SSE。
-// 契約見 docs/contracts/opencode-2.3.0.md。嚴格唯讀：不呼叫任何寫入端點（含標記已讀）、
+// 契約見 docs/contracts/opencode-2.4.1.md。嚴格唯讀：不呼叫任何寫入端點（含標記已讀）、
 // 不啟動或重啟服務；憑證只用於 Authorization header，不進入錯誤訊息。
 package ocsrc
 

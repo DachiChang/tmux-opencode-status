@@ -200,6 +200,6 @@ scripts/build-release.sh [版本]   # 預設讀 VERSION；輸出 dist/*.tar.gz �
 
 ## 文件
 
-- [OpenCode 整合契約](contracts/opencode-2.3.0.md)
+- [OpenCode 整合契約](contracts/opencode-2.4.1.md)
 - [架構決策紀錄](adr/)
 - [專案詞彙表](../GLOSSARY.md)

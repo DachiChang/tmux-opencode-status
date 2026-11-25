@@ -1,5 +1,5 @@
 // Package fakeoc 是受控的假 OpenCode 服務（httptest + SSE），只供測試使用。
-// 它依 v2.3.0 契約（docs/contracts/opencode-2.3.0.md）回應唯讀端點與 /api/event，
+// 它依 v2.3.0 fixtures（testdata/opencode-2.3.0/）回應唯讀端點與 /api/event，
 // 並記錄所有收到的請求，讓測試能斷言「從未呼叫任何寫入 API」。
 package fakeoc
 
