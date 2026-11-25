@@ -1,35 +1,37 @@
-# 側欄只發布一份完整版面，高度不足時由 tmux 從底部截斷
+# Publish one complete sidebar layout and let tmux clip it from the bottom
 
-每次發布只排一份完整版面，寫入單一全域選項 `@tos_sb_main`；`side-status-format` 固定為 `#{@tos_sb_main}`，不含任何高度判斷。內容超過 client 可用高度時，由 tmux 從底部截斷，可能截在群組標題列或 tab 列中間。不顯示「… 還有 N 個 tab」，也不加其他提示。
+Each update renders one complete layout and writes it to a single global option, `@tos_sb_main`. The `side-status-format` is always `#{@tos_sb_main}` and does not check height. When the content exceeds the client's available height, tmux clips it from the bottom and may cut through a group heading or tab row. The sidebar does not display “... N more tabs” or add another hint.
 
-- 頂部摘要照舊計入所有 tab（含畫面外），是「還有內容」的唯一線索。
-- Notice 折行、「無 tab」、空清單提示、點擊跳轉的 range 包裝不變。
-- `render.OptPrefix = "@tos_sb_"` 保留，第一次發布時清掉同前綴舊選項、停止時清理的既有機制不變，不另寫遷移邏輯（使用者重啟 tmux 即可）。
-- `render.FitView` / `Fit` 不再接受高度，也不回傳隱藏數；移除 `RowMore`、`Row.Hidden`、`MinAvail`、`Published.Select`，以及為預留頁尾列而逐一試排的邏輯。
+- The top summary still counts every tab, including off-screen tabs. It is the only indication that more content exists.
+- Notice wrapping, the no-tabs and empty-list messages, and click-to-jump range wrapping are unchanged.
+- Keep `render.OptPrefix = "@tos_sb_"`. Keep the existing cleanup of old options with that prefix on the first update and cleanup on stop. No separate migration is needed; users can restart tmux.
+- `render.FitView` and `Fit` no longer take a height or return a hidden count. Remove `RowMore`, `Row.Hidden`, `MinAvail`, `Published.Select`, and the logic that tried layouts one at a time to reserve a footer row.
 
-## 為何改
+## Why change it?
 
-原做法（#3、#10）為每個「會讓版面改變的可用高度」各排一份，發布成 `@tos_sb_<avail>`，`Format()` 用 `client_height − status 行數` 逐層判斷。排版成本約隨內容總列數平方成長：30 個群組 × 10 個 tab 的規模，單次發布約 515 ms、約 6 MB 寫入 tmux。
+The previous approach (#3 and #10) rendered a separate layout for every available height that changed what fit and published each as `@tos_sb_<avail>`. `Format()` used nested conditions based on `client_height` minus the number of status lines. Layout cost grew roughly with the square of the total number of rows: for 30 groups with 10 tabs each, one update took about 515 ms and wrote about 6 MB to tmux.
 
-## 取捨
+## Trade-offs
 
-- 得到：發布成本降為單份（隨列數線性成長）、format 不含高度判斷、選項只有一個。
-- 失去：畫面外沒有「還有 N 個 tab」提示；截斷處可能落在群組標題或 tab 列中間，而不是只留完整 tab 列。使用者以頂部摘要得知有畫面外的狀態。
-- 不做：捲動、分頁或其他新的「還有內容」提示；效能 benchmark 與防止退回逐高度排版的保護測試。
+- Gains: one layout per update, with cost growing linearly with the row count; no height checks in the format; one option.
+- Losses: no “N more tabs” hint for off-screen content, and clipping can cut through group headings or tab rows rather than showing only complete tab rows. Users rely on the top summary for off-screen status.
+- Out of scope: scrolling, pagination, other hints for hidden content, performance benchmarks, and regression tests to prevent a return to per-height layouts.
 
-## 推翻的既有需求
+## Superseded requirements
 
-- #1 第 60 行：「高度不足時保留頂部摘要…只顯示放得下的完整 tab 行，底部顯示『… 還有 N 個 tab』」。
-- #1 user story 41：「高度不足時看到還有多少 tab 未呈現」。
-- #1 驗收第 20 條：「高度不足只保留完整 tab 行；隱藏數量按 tabs 計算且含完整未顯示群組…」。
-- #1「不以單一最小 client 高度裁切所有人的清單」等相關段落：現在每個 client 看同一份完整版面，各自由 tmux 依自己的高度截斷（仍不是以最小高度裁切，但不再各自重排）。
-- #1 user story 42：「各自尺寸下都保留摘要與完整行」。現在只保證摘要；截斷處可能切在列中間。
-- #1 第 165 行：「既定 UI 是完整行裁切與隱藏 tab 數量」。改為 tmux 從底部截斷，沒有隱藏數量。
-- #1 真實環境驗收：「同 server 多個不同高度／尺寸的 attached client，驗證各自裁切、完整行、全體摘要及剩餘 tab 數量」。現在只驗證各 client 看到同一份版面的前綴與全體摘要，不再有完整行與剩餘 tab 數量。
-- #3 的結論：「每個 attached client 依自己的高度各自裁切；… 『… 還有 N 個 tab』的 N 以 tab 計」。「同一份全域狀態、各 client 各自呈現」仍成立，改由 tmux 截斷達成。
+The excerpts below are translated from the original issues.
 
-不修改 #1 議題本文；以本 ADR 為準。
+- #1, line 60: “When height is limited, keep the top summary ... show only the complete tab rows that fit, with ‘... N more tabs’ at the bottom.”
+- #1, user story 41: “When height is limited, see how many tabs are not shown.”
+- #1, acceptance criterion 20: “When height is limited, keep only complete tab rows; count hidden tabs, including tabs in entirely hidden groups ...”
+- #1, “Do not clip everyone's list to the shortest client,” and related passages: all clients now use the same complete layout, and tmux clips it to each client's own height. It still does not use the shortest client's height, but it no longer renders a separate layout for each height.
+- #1, user story 42: “Preserve the summary and complete rows at each client's size.” Only the summary is now guaranteed; clipping can cut through a row.
+- #1, line 165: “The agreed UI clips at full-row boundaries and shows the number of hidden tabs.” tmux now clips from the bottom, and there is no hidden count.
+- #1, live acceptance test: “With multiple attached clients of different heights or sizes on one server, verify per-client clipping, complete rows, the overall summary, and the remaining tab count.” The test now only verifies that each client sees the start of the same layout and the overall summary. It no longer checks for complete rows or a remaining tab count.
+- #3, conclusion: “Each attached client clips to its own height; ... the N in ‘... N more tabs’ counts tabs.” The shared global state and per-client presentation still apply, but tmux now handles the clipping.
 
-## 與其他決策的關係
+Leave the body of issue #1 unchanged; this ADR takes precedence.
 
-與 ADR-0002 不衝突：點擊跳轉的 range 逐行包住，截斷後可見的列仍帶各自的 range。
+## Relationship to other decisions
+
+This does not conflict with ADR-0002: each row has its own click-to-jump range, so visible rows retain their ranges after clipping.

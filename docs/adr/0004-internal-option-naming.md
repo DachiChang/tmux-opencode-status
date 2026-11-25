@@ -1,20 +1,20 @@
-# 插件內部 tmux 選項統一為 `@tos_<用途>_<名稱>`，清理時清除所有 `@tos_*`
+# Name internal tmux options `@tos_<purpose>_<name>` and clean up all `@tos_*` options
 
-插件自己寫入的 tmux 全域使用者選項一律以 `@tos_` 開頭，後接用途分類與名稱；使用者設定一律是 `@opencode-status-*`，插件只讀不寫、不清。
+Global tmux user options written by the plugin start with `@tos_`, followed by a purpose category and a name. User settings use `@opencode-status-*`. The plugin reads these settings but does not write or clear them.
 
-| 分類 | 選項 | 內容 |
+| Category | Options | Contents |
 | --- | --- | --- |
-| `layout` | `@tos_layout_main`、`@tos_layout_jump` | 側欄版面（一般、跳轉模式） |
-| `jump` | `@tos_jump_trigger`、`@tos_jump_key_<字母>` | 實際綁定的觸發鍵、各跳轉標籤字母對應的 pane |
+| `layout` | `@tos_layout_main`, `@tos_layout_jump` | Sidebar layouts for normal and jump mode |
+| `jump` | `@tos_jump_trigger`, `@tos_jump_key_<letter>` | The bound trigger key and the pane for each jump label |
 
-- 清理範圍由 `@tos_sb_*` 擴大為 `@tos_*`：第一次發布時清掉本次沒有發布的 `@tos_*`（前一實例或崩潰留下的孤兒、舊名稱），明確停止時清掉全部 `@tos_*`。
-- 所有 `@tos_*` 都由每次發布一起寫入（同一個 `source-file`）。只在特定時機產生的狀態（例如 `@tos_jump_trigger`）也每次重寫，否則第一次發布會把它當成孤兒清掉。
-- 舊名稱 `@tos_sb_main` 不寫遷移邏輯，由新版第一次發布當成孤兒清掉。ADR-0003 原文保留，其中的 `@tos_sb_main` 以本 ADR 的 `@tos_layout_main` 為準。
+- Cleanup expands from `@tos_sb_*` to `@tos_*`. On the first update, remove any `@tos_*` option not written by that update, including stale options from a previous instance or crash and options with old names. On an explicit stop, remove all `@tos_*` options.
+- Write all `@tos_*` options together on each update, in the same `source-file` call. Rewrite even state that is only set at certain points, such as `@tos_jump_trigger`; otherwise the first update would treat it as stale and remove it.
+- Do not add migration logic for the old name `@tos_sb_main`: the first update from the new version removes it as stale. ADR-0003 retains the historical name; this ADR replaces it with `@tos_layout_main`.
 
-## 為何改
+## Why change it?
 
-`@tos_sb_` 原意是「sidebar 版面」。加入鍵盤跳轉（ADR-0005）後會出現不是版面的內部狀態（觸發鍵、字母對應）；塞進 `sb` 語意不符。用途寫進名稱，`show-options -g` 一眼看得出各選項做什麼；清理只認一個前綴，新增選項不必改清理邏輯。
+`@tos_sb_` originally meant “sidebar layout.” Keyboard jumping (ADR-0005) adds internal state that is not layout data: the trigger key and letter-to-pane mappings. Putting that state under `sb` would be misleading. Including the purpose in each option's name makes `show-options -g` easier to read. A single cleanup prefix means new options do not require changes to the cleanup logic.
 
-## 與其他決策的關係
+## Relationship to other decisions
 
-與 ADR-0001（對 OpenCode 唯讀）不衝突：只動 tmux 選項。`@opencode-status-shown`（首次打開側欄標記）不屬於 `@tos_`，維持既有處理。
+This does not conflict with ADR-0001 (read-only access to OpenCode): it changes only tmux options. The `@opencode-status-shown` marker for the sidebar's first open is outside the `@tos_` namespace and is handled as before.
