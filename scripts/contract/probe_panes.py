@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""唯讀探針：列出指定 tmux socket 內每個 pane 的 TUI 辨識事實（JSON 輸出）。
+"""Read-only probe: report TUI detection inputs for each pane as JSON.
 
-用法：probe_panes.py <tmux-socket-name> [路徑前綴=替換字串 ...]
+Usage: probe_panes.py <tmux-socket-name> [<path-prefix>=<replacement> ...]
 
-只讀 tmux（list-panes）、ps（tty 前景行程組）、lsof（cwd）與 sysctl KERN_PROCARGS2（精確 argv）。
-前景行程 = 該 tty 上 pgid == tpgid 的行程。不寫入任何東西，也不連線 OpenCode。
+Reads tmux list-panes, ps for the tty's foreground process group, lsof for
+the working directory, and sysctl KERN_PROCARGS2 for the exact argv.
+A foreground process on the tty has pgid == tpgid. The probe does not write
+files or connect to OpenCode.
 """
 import ctypes, ctypes.util, json, subprocess, sys
 

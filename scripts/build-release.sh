@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# 建置並封裝 macOS arm64／amd64 發布檔，輸出到 $DIST_DIR（預設 ./dist）：
-#   tmux-opencode-status_<版本>_darwin_<arch>.tar.gz   （內容只有一個執行檔 tmux-opencode-status）
-#   SHA256SUMS                                          （shasum -a 256 格式，TPM 入口腳本以它驗證）
-# 用法：scripts/build-release.sh [版本]      版本預設讀 VERSION 檔
-# 環境變數：DIST_DIR 輸出目錄；ARCHS 要建的架構（預設 "arm64 amd64"）。
-# 可重現：CGO_ENABLED=0、-trimpath、清除 build id、固定的封存中繼資料（tools/pack）；
-# 相同原始碼與 Go 版本應得到逐位元組相同的產物（Go 版本由 go.mod 釘住）。
+# Build and package macOS arm64 and amd64 release assets in $DIST_DIR:
+#   tmux-opencode-status_<version>_darwin_<arch>.tar.gz (one tmux-opencode-status binary)
+#   SHA256SUMS (shasum -a 256 format, used by the TPM entry script)
+# Usage: scripts/build-release.sh [version] (defaults to the VERSION file)
+# Environment: DIST_DIR defaults to ./dist; ARCHS defaults to "arm64 amd64".
+# Reproducible builds use CGO_ENABLED=0, -trimpath, no build ID, and fixed archive
+# metadata from tools/pack. The same source and Go version should produce
+# byte-for-byte identical assets. The Go version is pinned in go.mod.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -15,8 +16,8 @@ DIST="${DIST_DIR:-$ROOT/dist}"
 ARCHS="${ARCHS:-arm64 amd64}"
 
 vre='^[0-9]+\.[0-9]+\.[0-9]+([-.+][0-9A-Za-z.-]+)?$'
-[[ "$VERSION" =~ $vre ]] || { echo "build-release：版本格式無效：$VERSION" >&2; exit 2; }
-command -v go >/dev/null || { echo "build-release：需要 Go（建置者才需要；使用者安裝不需要）" >&2; exit 1; }
+[[ "$VERSION" =~ $vre ]] || { echo "build-release: invalid version: $VERSION" >&2; exit 2; }
+command -v go >/dev/null || { echo "build-release: Go is required to build releases, not to install them" >&2; exit 1; }
 
 mkdir -p "$DIST"
 DIST="$(cd "$DIST" && pwd)"
@@ -28,11 +29,11 @@ go build -trimpath -o "$work/pack" ./tools/pack
 
 assets=()
 for arch in $ARCHS; do
-  case "$arch" in arm64) want="arm64" ;; amd64) want="x86_64" ;; *) echo "build-release：不支援的架構 $arch" >&2; exit 2 ;; esac
+  case "$arch" in arm64) want="arm64" ;; amd64) want="x86_64" ;; *) echo "build-release: unsupported architecture: $arch" >&2; exit 2 ;; esac
   CGO_ENABLED=0 GOOS=darwin GOARCH="$arch" go build -trimpath -buildvcs=false -ldflags="-s -w -buildid=" \
     -o "$work/$arch-$NAME" ./cmd/tmux-opencode-status
   if command -v file >/dev/null && ! file "$work/$arch-$NAME" | grep -q "Mach-O.*$want"; then
-    echo "build-release：產物不是 darwin/$want：$(file "$work/$arch-$NAME")" >&2
+    echo "build-release: expected a darwin/$want binary: $(file "$work/$arch-$NAME")" >&2
     exit 1
   fi
   asset="${NAME}_${VERSION}_darwin_${arch}.tar.gz"
@@ -41,5 +42,5 @@ for arch in $ARCHS; do
 done
 
 ( cd "$DIST" && rm -f SHA256SUMS && shasum -a 256 "${assets[@]}" > SHA256SUMS )
-echo "已建置 ${VERSION}（$(go version)）→ ${DIST}"
+echo "Built ${VERSION} ($(go version)) -> ${DIST}"
 cat "$DIST/SHA256SUMS"

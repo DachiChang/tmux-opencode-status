@@ -1,6 +1,8 @@
-# 發布流程（尚未啟用：此檔只是備妥；推 tag 屬外部動作，需維護者明確執行）。
-# 推 v<VERSION> tag 時：驗證 tag 與 VERSION 檔一致 → 跑測試 → 建置兩種 macOS 架構 → 建立 GitHub Release 並附上
-# 兩個 .tar.gz 與 SHA256SUMS。TPM 入口腳本依 VERSION 檔取得 releases/download/v<VERSION>/ 下的資產。
+# A maintainer triggers this workflow by pushing a v<VERSION> tag.
+# It verifies the tag against VERSION, runs tests, builds for both macOS
+# architectures, and publishes a GitHub release with two .tar.gz files and
+# SHA256SUMS. The TPM entry script uses VERSION to find the assets under
+# releases/download/v<VERSION>/.
 name: release
 
 on:
@@ -18,14 +20,14 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - name: tag 必須與 VERSION 檔一致
+      - name: Verify the tag matches VERSION
         run: |
-          [ "v$(tr -d '[:space:]' < VERSION)" = "$GITHUB_REF_NAME" ] || { echo "tag $GITHUB_REF_NAME 與 VERSION 不符" >&2; exit 1; }
+          [ "v$(tr -d '[:space:]' < VERSION)" = "$GITHUB_REF_NAME" ] || { echo "Tag $GITHUB_REF_NAME does not match VERSION" >&2; exit 1; }
       - run: go vet ./...
       - run: go test -race -count=1 ./...
-      - name: 建置與封裝
+      - name: Build and package release assets
         run: scripts/build-release.sh
-      - name: 建立 Release
+      - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release create "$GITHUB_REF_NAME" dist/*.tar.gz dist/SHA256SUMS --title "$GITHUB_REF_NAME" --generate-notes
