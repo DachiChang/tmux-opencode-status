@@ -13,7 +13,7 @@ import (
 func isolated(t *testing.T) *Client {
 	t.Helper()
 	if _, err := exec.LookPath("tmux"); err != nil {
-		t.Skip("沒有 tmux")
+		t.Skip("tmux not available")
 	}
 	sock := fmt.Sprintf("tos-theme-%d-%d", os.Getpid(), time.Now().UnixNano()%100000)
 	c := &Client{SocketArgs: []string{"-L", sock}, ConfigArgs: []string{"-f", "/dev/null"}}
@@ -54,7 +54,7 @@ func TestSwatchesReadsOnlyThePluginPrefixedOptionsWithRawValues(t *testing.T) {
 		"state-idle": " red ",
 	}
 	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("原始值與前綴過濾不符\n got: %q\nwant: %q", got, want)
+		t.Fatalf("raw values do not match the prefix filter\n got: %q\nwant: %q", got, want)
 	}
 }
 
@@ -62,12 +62,12 @@ func TestSwatchesWithNoneSetIsEmptyAndUnsetIsGone(t *testing.T) {
 	c := isolated(t)
 	got, err := c.Swatches()
 	if err != nil || len(got) != 0 {
-		t.Fatalf("未設定應為空：%v %v", got, err)
+		t.Fatalf("unset should be empty: %v %v", got, err)
 	}
 	_, _ = c.tmux("", "set-option", "-g", "@opencode-status-color-project", "red")
 	_, _ = c.tmux("", "set-option", "-gu", "@opencode-status-color-project")
 	if got, err := c.Swatches(); err != nil || len(got) != 0 {
-		t.Fatalf("取消後應為空：%v %v", got, err)
+		t.Fatalf("should be empty after unsetting: %v %v", got, err)
 	}
 }
 
@@ -75,7 +75,7 @@ func TestSwatchesReportsAnUnreachableServerAsAnError(t *testing.T) {
 	c := isolated(t)
 	_, _ = c.tmux("", "kill-server")
 	if got, err := c.Swatches(); err == nil {
-		t.Fatalf("server 不在時必須回報錯誤，不得當成全部未設定：%v", got)
+		t.Fatalf("must report an error when the server is gone instead of treating everything as unset: %v", got)
 	}
 }
 
@@ -88,12 +88,12 @@ func TestSwatchesIsReadOnly(t *testing.T) {
 	}
 	after, _ := c.tmux("", "show-options", "-g")
 	if string(before) != string(after) {
-		t.Fatal("讀取不得改變任何選項")
+		t.Fatal("reading must not change any option")
 	}
 }
 
-// 安裝與正式相同的 after-set-option hook 命令，再觀察各選項變更是否留下喚醒訊號
-// （tmux 會記住沒有等待者時的 signal，之後的 wait-for 會立即返回）。
+// Installs the same after-set-option hook command as production, then checks whether each option change leaves a wake-up signal
+// (tmux remembers a signal sent while nobody is waiting, so a later wait-for returns immediately).
 func TestAfterSetOptionHookWakesForModeAndEverySwatchButNotOtherOptions(t *testing.T) {
 	c := isolated(t)
 	if _, err := c.tmux("", "set-hook", "-g", optionHook+"[41700]", optionHookCmd()); err != nil {
@@ -110,13 +110,13 @@ func TestAfterSetOptionHookWakesForModeAndEverySwatchButNotOtherOptions(t *testi
 			t.Fatal(err)
 		}
 		if !woken() {
-			t.Errorf("設定 %s 應喚醒", name)
+			t.Errorf("setting %s should wake", name)
 		}
 		if _, err := c.tmux("", "set-option", "-gu", name); err != nil {
 			t.Fatal(err)
 		}
 		if !woken() {
-			t.Errorf("取消 %s 應喚醒", name)
+			t.Errorf("unsetting %s should wake", name)
 		}
 	}
 	for _, name := range []string{"@other", "@opencode-status-colour-x", "@tos_layout_5", "@opencode-status-shown", "status-left"} {
@@ -124,7 +124,7 @@ func TestAfterSetOptionHookWakesForModeAndEverySwatchButNotOtherOptions(t *testi
 			t.Fatal(err)
 		}
 		if woken() {
-			t.Errorf("設定 %s 不應喚醒（避免常駐程式自己寫入造成回授）", name)
+			t.Errorf("setting %s should not wake (avoids feedback from the daemon's own writes)", name)
 		}
 	}
 }

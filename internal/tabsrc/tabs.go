@@ -1,4 +1,4 @@
-// Package tabsrc 讀取並監看 OpenCode TUI 保存的 tab 清單（唯讀）。
+// Package tabsrc reads and watches the tab list persisted by the OpenCode TUI (read-only).
 package tabsrc
 
 import (
@@ -14,7 +14,7 @@ import (
 	"github.com/DachiChang/tmux-opencode-status/internal/contract"
 )
 
-// DefaultPath 是標準 latest channel 的預設資料位置。
+// DefaultPath is the default data location for the standard latest channel.
 func DefaultPath() string {
 	state := os.Getenv("XDG_STATE_HOME")
 	if state == "" {
@@ -26,8 +26,9 @@ func DefaultPath() string {
 
 type Source struct{ Path string }
 
-// Read 解析 tab 清單。檔案不存在代表尚無任何 TUI 保存過 tab（全新環境），視為空清單；
-// 其他讀取或格式錯誤都回報錯誤，呼叫端不得當成空清單。
+// Read parses the tab list. A missing file means no TUI has ever persisted tabs (fresh
+// environment) and is treated as an empty list;
+// any other read or format error is returned, and callers must not treat it as an empty list.
 func (s Source) Read() (*contract.TabsFile, error) {
 	raw, err := os.ReadFile(s.Path)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -39,8 +40,10 @@ func (s Source) Read() (*contract.TabsFile, error) {
 	return contract.ParseTabs(raw)
 }
 
-// Watch 監看檔案所在目錄（OpenCode 以 tmp 檔 rename 更新，inode 每次都變，不能監看檔案本身），
-// 目錄內任何變動就送出一次通知。目錄暫時不存在時定期重試。內容是否真的改變由呼叫端判斷。
+// Watch watches the directory containing the file (OpenCode updates it by renaming a tmp
+// file, so the inode changes every time and the file itself cannot be watched) and sends one
+// notification on any change in the directory. It retries periodically while the directory
+// is missing. Callers decide whether the content actually changed.
 func (s Source) Watch(ctx context.Context, wake chan<- struct{}) {
 	dir := filepath.Dir(s.Path)
 	for ctx.Err() == nil {
@@ -61,8 +64,9 @@ func (s Source) Watch(ctx context.Context, wake chan<- struct{}) {
 		}
 		func() {
 			defer w.Close()
-			// watcher 裝好之前的變動不會有事件；就緒後補一次喚醒（目錄稍後才出現而重試成功時亦同），
-			// 讓啟動空窗內的變動不必等低頻補漏。
+			// Changes before the watcher was installed produce no events; send one wake once ready
+			// (including when a retry succeeds after the directory appears later),
+			// so changes during the startup gap need not wait for the low-frequency catch-up.
 			select {
 			case wake <- struct{}{}:
 			default:

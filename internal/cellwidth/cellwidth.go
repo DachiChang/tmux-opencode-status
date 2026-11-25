@@ -1,8 +1,10 @@
-// Package cellwidth 以 tmux 實際繪製側欄的方式計算終端格寬。
+// Package cellwidth computes terminal cell widths the way tmux actually draws the sidebar.
 //
-// 逐碼點寬度表（table.go）取自 tmux next-3.9（utf8proc）的全碼點掃描；群集合併規則
-// 對應 tmux 的 screen_write_combine：零寬字元、ZWJ、VS16、國旗、膚色修飾與 Hangul jamo
-// 會併入前一格，所以 👨‍👩‍👧 只佔 2 格，而不是 tmux 的 #{w:} 逐碼點加總得到的 6。
+// The per-code-point width table (table.go) comes from a scan of every code point in
+// tmux next-3.9 (utf8proc). The cluster merging rules follow tmux's screen_write_combine:
+// zero-width characters, ZWJ, VS16, flags, skin tone modifiers, and Hangul jamo merge into
+// the previous cell, so 👨‍👩‍👧 takes only 2 cells rather than the 6 that tmux's #{w:} gets by
+// summing code points.
 package cellwidth
 
 import "sort"
@@ -38,7 +40,7 @@ func isRI(r rune) bool { return r >= 0x1F1E6 && r <= 0x1F1FF }
 
 func isSkinTone(r rune) bool { return r >= 0x1F3FB && r <= 0x1F3FF }
 
-// skinToneBase 是 tmux 允許與膚色修飾合併的 emoji（utf8_should_combine）。
+// skinToneBase is the set of emoji that tmux allows to merge with a skin tone modifier (utf8_should_combine).
 func skinToneBase(r rune) bool {
 	switch r {
 	case 0x261D, 0x26F9, 0x270A, 0x270B, 0x270C, 0x270D, 0x1F44B, 0x1F44C, 0x1F44D, 0x1F44E, 0x1F44F, 0x1F450,
@@ -56,9 +58,9 @@ func skinToneBase(r rune) bool {
 type cell struct {
 	text  string
 	width int
-	first rune // 群集的第一個碼點（tmux 用它判斷膚色、國旗）
+	first rune // first code point of the cluster (tmux uses it to detect skin tones and flags)
 	last  rune
-	ri    int // 國旗符號數
+	ri    int // number of regional indicator (flag) symbols
 }
 
 type jamo int
@@ -70,7 +72,7 @@ const (
 	jongseong
 )
 
-// jamoClass 對應 tmux hanguljamo_get_class（含填充字元與古韓文）。
+// jamoClass corresponds to tmux hanguljamo_get_class (including filler characters and archaic Hangul).
 func jamoClass(r rune) jamo {
 	switch {
 	case r >= 0x1100 && r <= 0x115F, r >= 0xA960 && r <= 0xA97C:
@@ -83,9 +85,11 @@ func jamoClass(r rune) jamo {
 	return notJamo
 }
 
-// Standalone 回報 r 放在字串開頭時是否會自己佔格：零寬字元、ZWJ、VS16、Hangul filler
-// 與不接在前一個 jamo 後面的中／終聲都不會，渲染端用它清掉標題開頭的這類字元，
-// 讓開頭一定是能獨立繪製的字元，不論前面是否已有其他格。
+// Standalone reports whether r takes a cell of its own when placed at the start of a string.
+// Zero-width characters, ZWJ, VS16, the Hangul filler, and a jungseong/jongseong that does
+// not follow a preceding jamo do not. The renderer uses it to strip such characters from
+// the start of a title, so the start is always a character that can be drawn on its own,
+// whether or not other cells precede it.
 func Standalone(r rune) bool {
 	if r == zwj || r == vs16 || r == hangulFiller {
 		return false
@@ -96,8 +100,9 @@ func Standalone(r rune) bool {
 	return rune_(r) > 0
 }
 
-// cells 把字串切成 tmux 會畫在同一格的群集（對應 screen_write_combine）。
-// 開頭沒有前一格可併入的零寬字元不畫、不佔格，以空寬群集保留在原位。
+// cells splits a string into the clusters that tmux draws in the same cell (corresponding
+// to screen_write_combine). Zero-width characters at the start, with no previous cell to
+// merge into, are not drawn and take no cell; they stay in place as a zero-width cluster.
 func cells(s string) []cell {
 	var out []cell
 	for _, r := range s {
@@ -119,7 +124,7 @@ func cells(s string) []cell {
 				}
 				continue
 			}
-			// 前面只有不畫的字元：這是第一個真正的格，開頭的不畫字元併進它的文字。
+			// Only undrawn characters precede this one: it is the first real cell, and the leading undrawn characters merge into its text.
 			var prefix string
 			if len(out) == 1 && out[0].width == 0 {
 				prefix, out = out[0].text, nil
@@ -133,7 +138,7 @@ func cells(s string) []cell {
 				continue
 			}
 		} else if r < 0x80 {
-			// tmux 不把單位元組字元併入前一格（screen_write_combine：ud->size < 2）
+			// tmux does not merge single-byte characters into the previous cell (screen_write_combine: ud->size < 2)
 		} else {
 			if r == vs16 {
 				last.text += string(r)
@@ -154,7 +159,7 @@ func cells(s string) []cell {
 				if jamoClass(last.last) == choseong {
 					last.text += string(r)
 					last.last = r
-				} // 否則 tmux 丟棄
+				} // otherwise tmux discards it
 				continue
 			case jongseong:
 				if jamoClass(last.last) == jungseong {
@@ -197,7 +202,7 @@ func b2i(b bool) int {
 	return 0
 }
 
-// Clusters 回傳 s 的群集，保證不會在群集中間切開。
+// Clusters returns the clusters of s and guarantees that none is split in the middle.
 func Clusters(s string) []string {
 	cs := cells(s)
 	out := make([]string, len(cs))
@@ -207,10 +212,10 @@ func Clusters(s string) []string {
 	return out
 }
 
-// Width 回傳單一群集的格寬。
+// Width returns the cell width of a single cluster.
 func Width(cluster string) int { return String(cluster) }
 
-// String 回傳 s 在 tmux 側欄中佔的格數。
+// String returns the number of cells s takes in the tmux sidebar.
 func String(s string) int {
 	n := 0
 	for _, c := range cells(s) {

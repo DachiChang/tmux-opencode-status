@@ -1,23 +1,23 @@
-# 鍵盤跳轉：`prefix A` 進入跳轉模式，側欄依 `client_key_table` 切換兩份版面
+# Keyboard jumping: enter jump mode with `prefix A` and select the sidebar layout by `client_key_table`
 
-按觸發鍵（預設 `prefix A`，`@opencode-status-jump-trigger` 可改）後，client 進入跳轉模式：側欄目錄群組列的 `▎` 換成跳轉標籤 ` a `、` b `…，按字母切到該群組的跳轉目標（與點擊跳轉相同），按其他鍵離開。
+Pressing the trigger key (default `prefix A`, configurable via `@opencode-status-jump-trigger`) puts the tmux client in jump mode. The sidebar replaces `▎` on directory group rows with jump labels such as ` a ` and ` b `. Pressing a letter switches to that group's jump target, just as clicking the group does. Any other key exits jump mode.
 
-- 觸發鍵綁定為 `bind-key -T prefix <鍵> switch-client -T opencode-status-jump`。按鍵表名稱 `opencode-status-jump` 是對外承諾：使用者自行在 root 表綁別名（例如 `bind -n M-a switch-client -T opencode-status-jump`），插件不提供、不管理 root 鍵。
-- 每次發布兩份版面 `@tos_layout_main`、`@tos_layout_jump`（ADR-0004 命名），`side-status-format` 為 `#{?#{==:#{client_key_table},opencode-status-jump},#{@tos_layout_jump},#{@tos_layout_main}}`。`client_key_table` 逐 client 展開，所以只有按下觸發鍵的 client 看到標籤。版面以 `#{@…}` 展開一次，標題中的逗號或 `#{` 不會破壞條件。
-- 跳轉按鍵表的 `a`–`z` 只在啟動時綁一次，按下時讀取 `@tos_jump_key_<字母>`（pane id `%N`）並以 `run-shell -C` 在 tmux 內執行 `switch-client`，不開 shell；選項為空時不動作。字母對應與版面同一次 `source-file` 寫入，畫面上的標籤與實際跳轉一致。
-- 跳轉版面的群組列由 render 依標籤寬度（3 格標籤＋1 格空白）重新截斷名稱，群組摘要不被擠掉。沒有字母的群組（第 27 個以後、沒有跳轉目標）維持 `▎`。標籤用 `emphasis` 底、`title` 字，不新增色票。
-- 實際綁定的鍵寫入 `@tos_jump_trigger`。交接時新實例讀取它，鍵不同就先 unbind 舊鍵再綁新鍵；明確停止時依它 unbind，並清空跳轉按鍵表。**不寫回任何東西、不保存或還原原有綁定**；被覆蓋的若是使用者 tmux.conf 的綁定，重載設定即恢復，若是 tmux 內建預設則要重啟 server。
-- 觸發鍵設定無效（空字串、tmux 不認得的鍵名）時不綁定、不退回預設 `A`；`diagnose` 回報設定的鍵、實際綁定的鍵與成功／失敗／已被覆寫，無效計入問題數。
+- Bind the trigger key with `bind-key -T prefix <key> switch-client -T opencode-status-jump`. The jump key table name `opencode-status-jump` is part of the public interface. Users can bind their own root-table key (for example, `bind -n M-a switch-client -T opencode-status-jump`); the plugin neither provides nor manages such a key.
+- Publish two layouts on each update, `@tos_layout_main` and `@tos_layout_jump` (named in ADR-0004). Set `side-status-format` to `#{?#{==:#{client_key_table},opencode-status-jump},#{@tos_layout_jump},#{@tos_layout_main}}`. tmux expands `client_key_table` per client, so only the client in jump mode sees the labels. The format expands the layout once via `#{@…}`, so commas and `#{` in titles do not break the conditional.
+- Bind `a`–`z` in the jump key table once at startup. When pressed, each binding reads `@tos_jump_key_<letter>` (pane ID `%N`) and uses `run-shell -C` to execute `switch-client` within tmux without starting a shell. If the option is empty, the binding does nothing. Write the letter mappings and layouts in the same `source-file` call so the visible labels match their jump targets.
+- In the jump layout, the renderer truncates group names to allow for the label width (three cells for the label plus one for a space), without squeezing out the group summary. Groups without a letter (the 27th eligible group onward, or groups without a jump target) retain `▎`. Labels use `emphasis` for the background and `title` for the foreground; no new colors are added.
+- Record the bound trigger key in `@tos_jump_trigger`. On handoff, the incoming instance reads it and, if the key has changed, unbinds the old key before binding the new one. On an explicit stop, the daemon uses the recorded key to unbind it and clears the jump key table. **The plugin does not install a replacement binding or save or restore any previous binding.** Reloading `tmux.conf` restores an overwritten binding from that file. Restoring a built-in tmux binding requires restarting the server.
+- If the trigger key is invalid (empty or unrecognized by tmux), do not bind it or fall back to the default `A`. `diagnose` reports the configured key, the bound key, and whether the binding succeeded, failed, or was overwritten. An invalid setting counts as a problem.
 
-## 為何這樣做
+## Why this approach?
 
-- 不加 `refresh-client`：tmux 處理按鍵時，切換按鍵表會先要求重繪再執行綁定，進入與離開都會即時重繪（next-3.9 原始碼與實機試玩確認）。
-- 預設 `A`：tmux next-3.9 預設 prefix 表、TPM、resurrect、continuum 與常見插件（pain-control、sessionist、yank、logging、fzf、floax、fingers、sidebar、urlview 等）都沒用到。`o`（next pane）、`g`（3.9 浮動 pane 的 move 表）、`Space`、`Tab` 為 tmux 預設；`a` 常被 `C-a` prefix 的使用者綁成 send-prefix。
-- root 鍵不預設綁：root 鍵會在所有程式之前被攔截，影響比 prefix 鍵大，交給使用者決定。
-- 停止時直接 unbind 而非寫回預設（與 ADR-0002 對 `MouseDown1SideStatus` 不同）：預設 `A` 不是 tmux 預設鍵，沒有可寫回的內容；使用者改鍵屬自行選擇。
+- No `refresh-client`: when tmux handles a key, switching key tables requests a redraw before executing the binding. Entering and leaving jump mode both redraw immediately, as confirmed by next-3.9 source inspection and hands-on testing.
+- Default to `A`: it was unused in the tmux next-3.9 default prefix table, TPM, resurrect, continuum, and common plugins such as pain-control, sessionist, yank, logging, fzf, floax, fingers, sidebar, and urlview. `o` (next pane), `g` (the floating-pane move table in 3.9), `Space`, and `Tab` are tmux defaults. Users with a `C-a` prefix often bind `a` to `send-prefix`.
+- Do not bind a root-table key by default: tmux intercepts root-table keys before applications see them. This has a wider impact than a prefix-table key, so leave the choice to users.
+- On stop, unbind instead of restoring a default (unlike `MouseDown1SideStatus` in ADR-0002). `A` is not a built-in tmux binding, so there is no default to restore. Changing the trigger key is the user's choice.
 
-## 與其他決策的關係
+## Relationship to other decisions
 
-- 取代 README「唯一的 tmux 綁定是接管 `MouseDown1SideStatus`、不新增任何鍵盤綁定」的承諾。
-- 建立在 ADR-0003（單一版面）之上：只需一般與跳轉兩份版面。
-- 與 ADR-0001 不衝突：只動 tmux。
+- Supersedes the earlier README promise that the only tmux binding change was taking over `MouseDown1SideStatus` and that no keyboard bindings would be added.
+- Builds on ADR-0003: only the normal and jump-mode layouts are needed.
+- Does not conflict with ADR-0001: it changes only tmux.

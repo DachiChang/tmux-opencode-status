@@ -105,12 +105,12 @@ func TestRenderTitleRowIsExactlyWidthWithSummaryOnTheRight(t *testing.T) {
 func TestNoticeLinesPrecedeTheListAndNothingIsDropped(t *testing.T) {
 	rows := FitView(View{Groups: sample(), Notice: "一\n二\n三\n四\n五"})
 	if rows[0].Kind != RowTitle || rows[1].Kind != RowRule {
-		t.Fatalf("開頭應是標題與分隔線：%+v", rows[:2])
+		t.Fatalf("should start with the title and rule: %+v", rows[:2])
 	}
 	if n := countKind(rows, RowNotice); n != 5 {
-		t.Fatalf("Notice 應有 5 行，實際 %d", n)
+		t.Fatalf("Notice should have 5 lines, got %d", n)
 	}
 	if got := len(tabTitles(rows)); got != 7 {
-		t.Fatalf("tab 應全數保留，實際 %d", got)
+		t.Fatalf("all tabs should be kept, got %d", got)
 	}
 }

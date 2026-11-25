@@ -25,8 +25,8 @@ type bootstrapFixture struct {
 	Form     map[string]struct{ Data []contract.Form }              `json:"form"`
 }
 
-// fakeAPI 以錄製資料回應，並重現實測行為：只要本頁有資料，cursor.next 就存在
-// （即使已是最後一頁），所以呼叫端必須以「本頁筆數 < limit」或「空頁」判斷結束。
+// fakeAPI answers from recorded data and reproduces observed behavior: cursor.next exists whenever the page has data
+// (even on the last page), so callers must detect the end by "page size < limit" or an "empty page".
 type fakeAPI struct {
 	fx          bootstrapFixture
 	calls       []string
@@ -93,17 +93,17 @@ func newFake(t *testing.T) *fakeAPI {
 	return &fakeAPI{fx: fx}
 }
 
-// 中途啟動：R 的孫輩 G 在啟動前就有待核准、孫輩 C2 有待回答。
-// 只查 tab 本身（R）看不到任何阻塞；沿 parentID 向下發現整個家族才能得到 WaitingApproval。
+// Mid-flight start: R's grandchild G already has a pending approval before startup, and grandchild C2 has a pending answer.
+// Querying only the tab itself (R) shows no blocker; only discovering the whole family down via parentID yields WaitingApproval.
 func TestDiscoverFamilyFindsPreexistingDescendantsAndBlockers(t *testing.T) {
 	api := newFake(t)
 	roots := api.fx.Roots
 
-	// 對照組：只查 tab 本身，什麼都看不到（這正是 spec 禁止的做法）。
+	// Control: querying only the tab itself sees nothing (which is exactly what the spec forbids).
 	own, _ := api.Permissions(roots["R"])
 	ownForms, _ := api.Forms(roots["R"])
 	if len(own)+len(ownForms) != 0 {
-		t.Fatalf("fixture 前提不成立：tab 本身不應有待處理事項")
+		t.Fatalf("fixture precondition failed: the tab itself should have no pending items")
 	}
 
 	snap, err := contract.DiscoverFamily(api, roots["R"], 100)
@@ -119,32 +119,32 @@ func TestDiscoverFamilyFindsPreexistingDescendantsAndBlockers(t *testing.T) {
 	}
 	for _, want := range []string{"ses_R", "ses_C", "ses_G", "ses_C2"} {
 		if !ids[want] {
-			t.Errorf("家族缺少 %s：%v", want, ids)
+			t.Errorf("family is missing %s: %v", want, ids)
 		}
 	}
 	if ids["ses_X"] {
-		t.Errorf("無關的 ses_X 不應被納入家族")
+		t.Errorf("unrelated ses_X must not be included in the family")
 	}
 }
 
-// 家族只往下追後代，不往上追祖先、不納入兄弟。
+// A family follows descendants downward only; it does not follow ancestors or include siblings.
 func TestDiscoverFamilyOfADescendantTabExcludesAncestorsAndSiblings(t *testing.T) {
 	api := newFake(t)
 	snap, err := contract.DiscoverFamily(api, "ses_C", 100)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := snap.TabStatus("ses_C"); got != contract.WaitingApproval { // 來自孫輩 G
+	if got := snap.TabStatus("ses_C"); got != contract.WaitingApproval { // from grandchild G
 		t.Fatalf("ses_C = %v", got)
 	}
 	for _, s := range snap.Sessions {
 		if s.ID == "ses_R" || s.ID == "ses_C2" {
-			t.Fatalf("不應納入祖先／兄弟：%s", s.ID)
+			t.Fatalf("ancestors/siblings must not be included: %s", s.ID)
 		}
 	}
 }
 
-// 分頁：limit=1 逐頁走訪也要找齊所有子層。
+// Pagination: walking page by page with limit=1 must still find all children.
 func TestDiscoverFamilyWalksEveryPage(t *testing.T) {
 	api := newFake(t)
 	snap, err := contract.DiscoverFamily(api, "ses_R", 1)
@@ -158,24 +158,24 @@ func TestDiscoverFamilyWalksEveryPage(t *testing.T) {
 		}
 	}
 	if n != 2 {
-		t.Fatalf("R 的直接子層 = %d, want 2", n)
+		t.Fatalf("R's direct children = %d, want 2", n)
 	}
 }
 
-// 單項查詢失敗不能被當成「沒有待處理事項」，否則會把資料不完整誤報成閒置。
+// A failed single query must not be treated as "no pending items", otherwise incomplete data would be misreported as idle.
 func TestDiscoverFamilyReportsIncompleteDataInsteadOfIdle(t *testing.T) {
 	api := newFake(t)
 	api.failPermFor = "ses_G"
 	_, err := contract.DiscoverFamily(api, "ses_R", 100)
 	if err == nil {
-		t.Fatal("權限查詢失敗時應回報錯誤")
+		t.Fatal("a failed permission query should report an error")
 	}
 	if errors.Is(err, contract.ErrSessionNotFound) {
-		t.Fatal("暫時性錯誤不應被誤判為 session 不存在")
+		t.Fatal("a transient error must not be misjudged as the session not existing")
 	}
 }
 
-// 明確的「session 不存在」要與一般錯誤區分（tab 保留、顯示資料異常）。
+// An explicit "session does not exist" must be distinguished from ordinary errors (keep the tab and show a data problem).
 func TestDiscoverFamilyDistinguishesMissingSession(t *testing.T) {
 	api := newFake(t)
 	_, err := contract.DiscoverFamily(api, "ses_missing", 100)

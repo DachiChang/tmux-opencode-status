@@ -11,14 +11,16 @@ import (
 	"github.com/DachiChang/tmux-opencode-status/internal/cellwidth"
 )
 
-// 與真實 tmux 對照：把每個樣本放進隔離 server 的 side-status，由 attached client 實際繪製，
-// 以最右側標記的位置反推該樣本佔幾格。只動隔離 socket，不碰使用者的預設 server。
+// Compare against a real tmux: put each sample into the side-status of an isolated server,
+// let an attached client draw it, and infer how many cells the sample takes from the
+// position of the rightmost marker. Only the isolated socket is touched, never the user's
+// default server.
 func TestWidthAgreesWithARealAttachedTmuxClient(t *testing.T) {
 	if testing.Short() {
 		t.Skip("-short")
 	}
 	if _, err := exec.LookPath("tmux"); err != nil {
-		t.Skip("沒有 tmux")
+		t.Skip("tmux not found")
 	}
 	in, out := fmt.Sprintf("tos-cw-in-%d", os.Getpid()), fmt.Sprintf("tos-cw-out-%d", os.Getpid())
 	tm := func(sock string, a ...string) string {
@@ -44,19 +46,19 @@ func TestWidthAgreesWithARealAttachedTmuxClient(t *testing.T) {
 		"ｶﾞ", "가나다", "اب", "שלום", "ไทย", "तो",
 	}
 	for _, s := range samples {
-		// 以 #{l:} 字面值避免 format 展開；最右標記的位置 = 40-1 格內容寬度中剩下的空白
+		// Use #{l:} literals to avoid format expansion; the rightmost marker's position = the blank space left in the 40-1 cell content width
 		tm(in, "set", "-g", "side-status-format", "#{l:"+strings.ReplaceAll(s, "#", "##")+"}#[align=right]|")
 		time.Sleep(120 * time.Millisecond)
 		line := strings.SplitN(strings.SplitN(tm(out, "capture-pane", "-p", "-t", "hold"), "\n", 2)[0], "│", 2)[0]
 		trim := strings.TrimRight(line, " ")
 		if !strings.HasSuffix(trim, "|") {
-			t.Fatalf("%q：找不到標記：%q", s, line)
+			t.Fatalf("%q: marker not found: %q", s, line)
 		}
 		body := strings.TrimSuffix(trim, "|")
 		pad := len(body) - len(strings.TrimRight(body, " "))
 		drawn := 39 - 1 - pad
 		if got := cellwidth.String(s); got != drawn {
-			t.Errorf("%q：cellwidth=%d，tmux 實際畫 %d", s, got, drawn)
+			t.Errorf("%q: cellwidth=%d, tmux actually draws %d", s, got, drawn)
 		}
 	}
 }

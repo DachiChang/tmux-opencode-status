@@ -1,5 +1,6 @@
-// pack 把單一執行檔封裝成可重現的 .tar.gz：固定權限、擁有者與時間戳，gzip 不帶檔名與時間，
-// 因此相同輸入在任何主機上都產生逐位元組相同的封存（供 SHA-256 完整性資料與可重現建置使用）。
+// Command pack archives a single executable in a reproducible .tar.gz.
+// It fixes tar permissions, ownership, and timestamps and omits the gzip
+// filename and timestamp so identical inputs produce the same SHA-256 hash.
 package main
 
 import (
@@ -12,16 +13,16 @@ import (
 )
 
 func main() {
-	in := flag.String("in", "", "要封裝的執行檔")
-	out := flag.String("out", "", "輸出的 .tar.gz")
-	name := flag.String("name", "tmux-opencode-status", "封存內的檔名")
+	in := flag.String("in", "", "executable to package")
+	out := flag.String("out", "", "output .tar.gz path")
+	name := flag.String("name", "tmux-opencode-status", "filename inside the archive")
 	flag.Parse()
 	if *in == "" || *out == "" {
-		fmt.Fprintln(os.Stderr, "用法：pack -in <執行檔> -out <.tar.gz> [-name <封存內檔名>]")
+		fmt.Fprintln(os.Stderr, "Usage: pack -in <executable> -out <archive.tar.gz> [-name <filename>]")
 		os.Exit(2)
 	}
 	if err := pack(*in, *out, *name); err != nil {
-		fmt.Fprintln(os.Stderr, "pack：", err)
+		fmt.Fprintln(os.Stderr, "pack:", err)
 		os.Exit(1)
 	}
 }
@@ -40,7 +41,7 @@ func pack(in, out, name string) error {
 	if err != nil {
 		return err
 	}
-	gz.Header = gzip.Header{} // 無檔名、無時間
+	gz.Header = gzip.Header{} // Omit the filename and timestamp.
 	tw := tar.NewWriter(gz)
 	hdr := &tar.Header{Typeflag: tar.TypeReg, Name: name, Mode: 0o755, Size: int64(len(data)),
 		ModTime: time.Unix(0, 0), Format: tar.FormatUSTAR}

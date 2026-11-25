@@ -1,100 +1,100 @@
-# OpenCode 狀態側欄
+# OpenCode Status Sidebar
 
-彙整同一 tmux server 中正在開啟的 OpenCode TUI 工作，讓使用者掌握各目錄與 tab 的狀態。
+Shows the status of open OpenCode TUI tabs across working directories on the same tmux server.
 
 ## Language
 
 **TUI client**:
-一個正在執行的 OpenCode 終端介面；同一目錄可以同時有多個 TUI client。
-_Avoid_: Agent（用來指終端介面）
+A running instance of the OpenCode terminal interface. Multiple TUI clients can run in the same directory.
+_Avoid_: Agent (when referring to the terminal interface)
 
 **Tab**:
-OpenCode TUI 中開啟的工作項目，對應一個 session；不是所有歷史 session 的集合。
-_Avoid_: Session（用來泛指目前開啟的 tab）
+An open work item in the OpenCode TUI that corresponds to one session. Open tabs are not the same as the full session history.
+_Avoid_: Session (as a synonym for an open tab)
 
 **Session**:
-OpenCode 的一份對話與執行紀錄，可以是 tab 對應的 session，也可以是其後代。
+An OpenCode conversation and its execution history. A session can be the one associated with a tab or a descendant of that session.
 
-**Session 家族**:
-一個 session 及其所有層級的後代 session；後代的運作狀態彙整到對應 tab，不另列為 subagent 項目。
+**Session family**:
+A session and all its descendants at any depth. Descendant activity contributes to the corresponding tab's status rather than appearing as separate subagent entries.
 
-**目錄群組**:
-依正在執行的 TUI client 所在目錄彙整的 tab 集合；同一目錄的多個 TUI client 屬於同一群組。
+**Directory group**:
+The set of tabs for a working directory with at least one running TUI client. TUI clients in the same directory belong to the same group.
 
-**目錄身分**:
-OpenCode 保存 tab 清單時使用的目錄識別；不因 symlink 指向相同位置或屬於同一 Git repository 而自行合併，不同 worktree 也保持獨立。
+**Directory identity**:
+The identifier OpenCode uses to store a directory's tab list. Directories are not merged merely because symlinks resolve to the same location or because they belong to the same Git repository; separate worktrees remain distinct.
 
-**跳轉目標**:
-點擊目錄群組時切換到的 TUI client 所在 tmux pane；同一目錄群組有多個 TUI client 時取 pane 編號（`%N` 的 N）最小者，以數字比較；global 模式取全部 TUI client 中最小者。跳轉單位是 pane，不涉及 TUI 內的 tab。
+**Jump target**:
+The tmux pane hosting the TUI client that a group jumps to, not a tab inside the TUI. If several clients qualify, the target is the pane with the lowest numeric ID (`N` in `%N`), among clients in the directory group or among all TUI clients in global mode.
 
-**跳轉模式**:
-按下觸發鍵後、按下一個鍵之前，該 tmux client 所處的狀態；期間這個 client 的狀態側欄在目錄群組列顯示跳轉標籤，按標籤字母即切到對應的跳轉目標，按其他鍵則離開。只影響按下觸發鍵的那個 client。
+**Jump mode**:
+A per-tmux-client state between pressing the trigger key and pressing the next key. Only that client's sidebar shows jump labels on group rows; pressing a label's letter jumps to its target, and any other key exits the mode.
 
-**觸發鍵**:
-進入跳轉模式的 prefix 鍵，預設 `A`（即 `prefix + A`）；不含使用者自行加在 root 表、直接切到跳轉按鍵表的別名。
-_Avoid_: 快捷鍵（不分 prefix 或 root 時容易混淆）
+**Trigger key**:
+The key in the tmux prefix table that enters jump mode, defaulting to `A` (`prefix + A`). A user-defined binding in the root table that directly enters the jump key table is not the trigger key.
+_Avoid_: Shortcut (ambiguous between prefix and root bindings)
 
-**跳轉按鍵表**:
-跳轉模式下接收下一個鍵的 tmux 按鍵表，名稱固定為 `opencode-status-jump`（對外承諾）；a–z 各綁定一個跳轉標籤字母。使用者可自行在 root 表綁別名切到它（例如 `bind -n M-a switch-client -T opencode-status-jump`），不經過觸發鍵。
-_Avoid_: 跳轉鍵盤、跳轉快捷表
+**Jump key table**:
+The tmux key table that receives the next key in jump mode and binds `a`–`z` to the corresponding jump labels. Its name is fixed as `opencode-status-jump` and is part of the plugin's public interface; users can enter it directly through a binding in the root table (for example, `bind -n M-a switch-client -T opencode-status-jump`).
+_Avoid_: Jump keyboard, jump shortcut table
 
-**跳轉標籤**:
-跳轉模式中取代目錄群組列 `▎` 的字母標示，依側欄群組順序從 `a` 分配到 `z`，只分配給有跳轉目標的群組；分完為止，沒有字母的群組維持 `▎`。字母與側欄高度無關：群組被截到畫面外時，按它的字母仍會跳轉。
+**Jump label**:
+A letter that replaces `▎` on a group row in jump mode, assigned from `a` through `z` in sidebar order only to groups with jump targets; groups without a letter keep `▎`. Sidebar height does not affect assignment: a group's letter still works even when its row is off-screen.
 
-**狀態側欄**:
-同一 tmux server 內跨 tmux session 共用的 OpenCode 工作狀態總覽；不同 tmux server 的總覽互相獨立。
+**Status sidebar**:
+An overview of OpenCode activity shared across tmux sessions on the same server. Each tmux server has its own overview.
 
-**Tab 狀態**:
-一個 tab 當下呈現的單一狀態，優先順序為等你核准、等你回答、執行中、失敗未讀、結束未讀、閒置。初版不把排隊中的 prompt 納入判斷。
+**Tab status**:
+The single status shown for a tab, in priority order: waiting for approval, waiting for an answer, running, failed unread, finished unread, and idle. The initial version does not consider queued prompts.
 
-**等你核准**:
-Session 家族中至少有一個待核准的權限請求。
+**Waiting for approval**:
+The session family has at least one pending permission request.
 
-**等你回答**:
-Session 家族中至少有一個待回答的問題，且沒有待核准的權限請求。
+**Waiting for an answer**:
+The session family has at least one unanswered question and no pending permission requests.
 
-**執行中**:
-Session 家族中至少有一個 session 正在執行，且沒有需要核准或回答的事項。
+**Running**:
+At least one session in the family is running, and nothing is waiting for approval or an answer.
 
-**未讀**:
-Tab 本身最近一次執行結束尚未被 OpenCode 標記為已讀；此狀態由各 OpenCode client 共用，不另計側欄自己的已讀狀態。
+**Unread**:
+OpenCode has not marked the end of the tab's own most recent run as read. OpenCode clients share this state; the sidebar keeps no read state of its own.
 
-**失敗未讀**:
-Tab 本身最近一次執行失敗且未讀，並且家族沒有更高優先的狀態。
+**Failed unread**:
+The tab's own most recent run failed and is unread, and its session family has no higher-priority status.
 
-**結束未讀**:
-Tab 本身最近一次執行已結束且未讀、結果不是失敗，並且家族沒有更高優先的狀態；包括成功與中斷，不代表成功完成。
-_Avoid_: 完成未讀（容易被誤解為成功完成）
+**Finished unread**:
+The tab's own most recent run ended without failure and is unread, and its session family has no higher-priority status. This includes both successful and interrupted runs.
+_Avoid_: Completed unread (can imply success)
 
-**閒置**:
-已確認 tab 沒有任何更高優先的狀態；無法取得最新資料不算閒置。
+**Idle**:
+The tab is confirmed to have no higher-priority status. A tab is not idle just because current data is unavailable.
 
-**等你處理**:
-等你核准與等你回答的統稱；畫面共用問號符號，但兩種狀態的內部判斷與優先順序仍然分開。
+**Needs attention**:
+The collective term for waiting for approval and waiting for an answer. Both appear as `?`, but remain distinct statuses with separate priority levels.
 
-**狀態未知**:
-因資料不可用而無法確認 tab 當下狀態；不代表閒置、執行失敗或最後已知狀態仍然有效。
+**Unknown status**:
+The tab's current status cannot be verified because data is unavailable. This does not imply that the tab is idle, that a run failed, or that its last known status still applies.
 
-**Session 不存在**:
-Tab 仍然存在，但 OpenCode 已明確回報其對應 session 不存在；不同於暫時無法取得資料，不因此移除 tab。
+**Missing session**:
+The tab still exists, but OpenCode has explicitly reported that its corresponding session does not exist. This is distinct from temporary data unavailability and does not remove the tab.
 
-**資料異常**:
-狀態未知與 session 不存在的統稱；畫面共用驚嘆號符號，不在 tab 標題旁附加異常文字，也不等同於執行失敗。
+**Data problem**:
+The collective term for unknown status and missing session. Both appear as `!` without extra text next to the tab title, and neither implies a failed run.
 
 **Tab scope**:
-OpenCode TUI 的 tab 清單共享範圍，包含 cwd scope 與 global scope。
+The scope within which OpenCode TUI clients share a tab list: either cwd scope or global scope.
 
 **Cwd scope**:
-依 TUI 工作目錄分開保存 tab 清單的共享範圍。
+The tab scope that maintains a separate shared tab list for each TUI working directory.
 
 **Global scope**:
-不依 TUI 工作目錄區分、全域共享 tab 清單的範圍。
+The tab scope that shares one tab list regardless of TUI working directory.
 
-**插件模式**:
-插件明確選用的 tab 清單來源，cwd 與 global 互斥；不代表自動偵測到的 TUI 有效 scope。
+**Plugin mode**:
+The plugin's explicitly configured tab list source: either cwd or global, never both. It does not reflect an automatically detected TUI tab scope.
 
-**Cwd 模式**:
-只納入正在執行 TUI 的目錄所對應的 cwd tab 清單；同一目錄的多個 TUI client 共用一份清單。
+**Cwd mode**:
+The plugin mode that includes only cwd tab lists for directories with running TUI clients. Multiple TUI clients in the same directory share one list.
 
-**Global 模式**:
-有 TUI 正在執行時，納入一份 global 共享 tab 清單，不以個別 session 的所在目錄過濾。
+**Global mode**:
+The plugin mode that includes one shared global tab list whenever at least one TUI client is running, without filtering by individual session directories.

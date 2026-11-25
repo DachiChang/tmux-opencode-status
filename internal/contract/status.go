@@ -1,13 +1,13 @@
 package contract
 
-// Session 是 GET /api/session/{id} 與 GET /api/session（data[]）的欄位子集。
-// time.idle／time.viewed 缺漏時為 0（實際時間戳記為 epoch 毫秒，恆大於 0）。
+// Session is the subset of fields of GET /api/session/{id} and GET /api/session (data[]).
+// A missing time.idle/time.viewed is 0 (real timestamps are epoch milliseconds and always greater than 0).
 type Session struct {
 	ID       string `json:"id"`
 	ParentID string `json:"parentID"`
-	// Title 是 session 的即時標題；tabs.json 的 title 只是備援。
+	// Title is the session's live title; the title in tabs.json is only a fallback.
 	Title string `json:"title"`
-	// Outcome 只在 session 曾結束一次執行後出現：succeeded | failed | interrupted。
+	// Outcome appears only after the session has finished a run: succeeded | failed | interrupted.
 	Outcome string `json:"outcome"`
 	Time    struct {
 		Busy   int64 `json:"busy"`
@@ -16,19 +16,19 @@ type Session struct {
 	} `json:"time"`
 }
 
-// PermissionRequest 是 GET /api/permission/request 與 /api/session/{id}/permission 的項目。
+// PermissionRequest is an item of GET /api/permission/request and /api/session/{id}/permission.
 type PermissionRequest struct {
 	ID        string `json:"id"`
 	SessionID string `json:"sessionID"`
 }
 
-// Form 是 GET /api/form 與 /api/session/{id}/form 的項目（OpenCode 稱「問題」為 form）。
+// Form is an item of GET /api/form and /api/session/{id}/form (OpenCode calls a question a form).
 type Form struct {
 	ID        string `json:"id"`
 	SessionID string `json:"sessionID"`
 }
 
-// Status 是父 spec 的 tab 狀態（不含資料異常；資料異常由呼叫端依資料完整性另行判定）。
+// Status is the parent spec's tab status (excluding data problems; callers determine data problems separately from data completeness).
 type Status int
 
 const (
@@ -44,8 +44,8 @@ func (s Status) String() string {
 	return [...]string{"Idle", "FinishedUnread", "FailedUnread", "Running", "WaitingAnswer", "WaitingApproval"}[s]
 }
 
-// Snapshot 是同一時刻對 API 讀到的資料。Running 來自 GET /api/session/active
-// （`{"data":{"<id>":{"type":"running"}}}`，不在其中的 session 即非執行中）。
+// Snapshot is the data read from the API at a single point in time. Running comes from GET /api/session/active
+// (`{"data":{"<id>":{"type":"running"}}}`; a session not listed there is not running).
 type Snapshot struct {
 	Sessions    []Session
 	Running     map[string]bool
@@ -67,9 +67,9 @@ func (s Snapshot) family(root string) map[string]bool {
 	return members
 }
 
-// TabStatus 以父 spec 的優先序推導 tab 狀態。家族 = tab 對應 session 與所有層級後代
-// （依 parentID，不靠標題或位置）；未讀只看 tab 本身，沿用 OpenCode TUI 的定義：
-// time.idle 存在，且 time.viewed 缺漏或早於 time.idle。
+// TabStatus derives the tab status using the parent spec's priority order. Family = the tab's session and all descendants at any depth
+// (by parentID, not by title or position); unread looks only at the tab itself, following the OpenCode TUI definition:
+// time.idle is present, and time.viewed is missing or earlier than time.idle.
 func (s Snapshot) TabStatus(tabSession string) Status {
 	fam := s.family(tabSession)
 	for _, p := range s.Permissions {

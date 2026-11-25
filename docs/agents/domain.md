@@ -1,23 +1,19 @@
 # Domain Docs
 
-## 探索前閱讀
+## Before exploring the codebase
 
-本專案採 single-context：
-- 根目錄 GLOSSARY.md：領域詞彙。
-- docs/adr/：閱讀與目前工作範圍相關的決策紀錄。
+This repository has a single domain context. Read:
+- `GLOSSARY.md` for domain terminology.
+- Relevant decision records in `docs/adr/` for the current task.
 
-若檔案不存在，安靜繼續，不提醒缺少文件，也不預先建議建立。
-由 domain-modeling 在詞彙或決策實際確立時按需建立。
+If a file does not exist, continue silently without mentioning it or suggesting its creation. The `domain-modeling` skill creates these files as needed once a term or decision is settled.
 
-## 使用領域詞彙
+## Use domain terminology
 
-議題標題、重構提案、假設與測試名稱應沿用 GLOSSARY.md 的定義，
-避免使用詞彙表明確排除的同義詞。
+Use the terms defined in `GLOSSARY.md` in issue titles, refactoring proposals, hypotheses, and test names. Avoid synonyms the glossary explicitly excludes.
 
-若缺少所需概念，先判斷是否引入了專案未使用的語言；
-若確有缺口，記錄供 domain-modeling 處理。
+If a concept is missing, first check whether you are introducing terminology the project does not use. Record genuine gaps for the `domain-modeling` skill to address.
 
-## 揭露 ADR 衝突
+## Surface ADR conflicts
 
-若產出與既有 ADR 矛盾，明確指出 ADR 編號、衝突內容及重新討論的理由，
-不要默默覆蓋既有決策。
+If your work conflicts with an existing ADR, state the ADR number, describe the conflict, and explain why the decision should be revisited. Do not silently override an existing decision.

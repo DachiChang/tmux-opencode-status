@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
-"""把沙盒錄製的資料去識別化為 testdata fixture。
+"""De-identify sandbox recordings for use as test fixtures.
 
-用法：deidentify.py <scenario.json> <scenario.sse> <bootstrap.json> <輸出目錄>
+Usage: deidentify.py <scenario.json> <scenario.sse> <bootstrap.json> <output-dir>
 
-規則：
-- session／permission／form／event／inbox ID 改為穩定的合成 ID（角色名稱，例如 ses_R）。
-- 目錄一律改為 /work/demo；project ID 改為 proj_demo。
-- 標題改為 tab-<角色>／form-title／field；自由文字（inbox payload、權限 resources）改為 <redacted>。
-- 時間戳記以最小值為基準重設為 1_000_000 起算（保留相對間距）。
-- 最後以對照表掃過所有 key 與字串，殘留的真實 session ID 變成 ses_UNMAPPED（測試會拒絕該字樣）。
-原始錄製檔（含真實 ID）不入庫；錄製流程見 docs/contracts/opencode-2.3.0.md。
+- Replace session, permission, form, event, and inbox IDs with stable synthetic
+  IDs. Use role names for named sessions (for example, ses_R).
+- Replace directories with /work/demo and project IDs with proj_demo.
+- Replace titles with tab-<role>, form-title, or field. Replace free text such
+  as inbox payload text and permission resources with <redacted>.
+- Rebase timestamps so the earliest is 1_000_000, preserving relative intervals.
+- Scan keys and strings for remaining IDs. Unmapped session IDs matching the
+  session ID pattern become ses_UNMAPPED, which fixture tests reject.
+
+Do not commit raw recordings containing real IDs. See the recording workflow
+in docs/contracts/opencode-2.4.1.md.
 """
 import json, os, re, sys
 
@@ -112,7 +116,7 @@ def clean(o):
 
 
 def final(o):
-    """以對照表替換 key 與字串中殘留的真實 ID。"""
+    """Replace remaining real IDs in keys and strings using the ID map."""
     def sub(text):
         for real in sorted(idmap, key=len, reverse=True):
             text = text.replace(real, idmap[real])
@@ -150,11 +154,11 @@ def scrub(o):
             scrub(x)
 
 
-# 先固定所有角色 session 的合成 ID，確保 key 與值一致
+# Assign synthetic IDs to named sessions first so keys and values agree.
 for real in list(scn['roots'].values()) + list(boot['roots'].values()):
     sid(real)
 
-# --- 場景快照 ---
+# --- Scenario snapshots ---
 snaps = clean(scn['snapshots'])
 scrub(snaps)
 snaps = final(snaps)
@@ -163,7 +167,7 @@ json.dump({'directory': DIR, 'roots': {k: sid(v) for k, v in scn['roots'].items(
            'deleted_get': {'status': scn['deleted_get']['status'], 'body': deleted}},
           open(os.path.join(out, 'snapshots.json'), 'w'), indent=1, ensure_ascii=False)
 
-# --- SSE 事件（保留 heartbeat 與順序）---
+# --- SSE events (preserve heartbeats and order) ---
 evs = clean(events)
 scrub(evs)
 evs = final(evs)
@@ -176,7 +180,7 @@ for l in sse_lines:
         sse_out += [l, '']
 open(os.path.join(out, 'events.sse'), 'w').write('\n'.join(sse_out) + '\n')
 
-# --- 中途啟動探索素材 ---
+# --- Bootstrap discovery data ---
 bclean = clean({k: v for k, v in boot.items() if k not in ('dir', 'roots')})
 scrub(bclean)
 bclean = final(bclean)

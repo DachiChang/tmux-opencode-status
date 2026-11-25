@@ -1,6 +1,6 @@
-// Package fakeoc 是受控的假 OpenCode 服務（httptest + SSE），只供測試使用。
-// 它依 v2.3.0 契約（docs/contracts/opencode-2.3.0.md）回應唯讀端點與 /api/event，
-// 並記錄所有收到的請求，讓測試能斷言「從未呼叫任何寫入 API」。
+// Package fakeoc is a controlled fake OpenCode service (httptest + SSE) for tests only.
+// It serves the read-only endpoints and /api/event from the v2.3.0 fixtures (testdata/opencode-2.3.0/)
+// and records every request it receives, so tests can assert that no write API was ever called.
 package fakeoc
 
 import (
@@ -25,7 +25,7 @@ const (
 	Version  = "2.3.0"
 )
 
-// 與契約文件相同的合法 types；未知 type 回 400（重現實測行為）。
+// Valid types, same as the contract document; an unknown type returns 400 (reproducing observed behavior).
 var knownTypes = map[string]bool{
 	"session.created": true, "session.deleted": true, "session.moved": true, "session.renamed": true,
 	"session.archived": true, "session.unarchived": true, "session.forked": true,
@@ -39,7 +39,7 @@ var knownTypes = map[string]bool{
 
 type session struct {
 	id, parent string
-	title      string // 空 = REST 資料不帶 title（模擬舊資料；側欄退回 tabs.json 的標題）
+	title      string // empty = REST data carries no title (simulates old data; the sidebar falls back to the title in tabs.json)
 	outcome    string
 	idle, view int64
 	running    bool
@@ -56,7 +56,7 @@ type sub struct {
 	ch      chan event
 	types   map[string]bool
 	done    chan struct{}
-	stalled bool // 無聲：連線仍開著，但不再送出任何位元組（事件遺失、心跳停止）
+	stalled bool // silent: the connection stays open but sends no more bytes (events lost, heartbeat stopped)
 }
 
 type Server struct {
@@ -72,13 +72,13 @@ type Server struct {
 	clock    int64
 	seq      int
 	requests []string // "METHOD path"
-	writes   []string // 非 GET 的請求（必須永遠為空）
+	writes   []string // non-GET requests (must always be empty)
 	connects int
-	eventQs  []string // 每次 /api/event 連線的 query
-	broken   []string // 請求 URI 含其中任一字串的 REST GET 回 500（模擬暫時性失敗）
-	holds    []*hold  // 尚未攔截到請求的 Hold
+	eventQs  []string // query of each /api/event connection
+	broken   []string // REST GETs whose request URI contains any of these strings return 500 (simulates a transient failure)
+	holds    []*hold  // Holds that have not intercepted a request yet
 
-	heartbeat time.Duration // 每隔多久送一次 ": heartbeat"；0 表示不送
+	heartbeat time.Duration // how often to send ": heartbeat"; 0 means never
 }
 
 func New(t testing.TB) *Server {
@@ -94,12 +94,12 @@ func (s *Server) Close() {
 	s.srv.Close()
 }
 
-// URL 是 service.json 會寫的 url：host 用 0.0.0.0（與實際服務相同），呼叫端必須改連 127.0.0.1。
+// URL is the url that service.json would contain: the host is 0.0.0.0 (same as the real service), and callers must connect to 127.0.0.1 instead.
 func (s *Server) URL() string {
 	return strings.Replace(s.srv.URL, "127.0.0.1", "0.0.0.0", 1)
 }
 
-// WriteServiceFile 以 0600 寫出 service.json。
+// WriteServiceFile writes service.json with mode 0600.
 func (s *Server) WriteServiceFile(path string) {
 	s.t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -111,21 +111,21 @@ func (s *Server) WriteServiceFile(path string) {
 	}
 }
 
-// Writes 回傳收到的所有非 GET 請求；唯讀契約下必須為空。
+// Writes returns all non-GET requests received; under the read-only contract it must be empty.
 func (s *Server) Writes() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return append([]string(nil), s.writes...)
 }
 
-// Requests 回傳到目前為止所有請求（"METHOD path"）。
+// Requests returns all requests so far ("METHOD path").
 func (s *Server) Requests() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return append([]string(nil), s.requests...)
 }
 
-// SessionRequests 是對 /api/session* 的請求數（用來驗證沒有追蹤項目時不查詢 session 資料）。
+// SessionRequests is the number of requests to /api/session* (used to verify that no session data is queried when nothing is tracked).
 func (s *Server) SessionRequests() int {
 	n := 0
 	for _, r := range s.Requests() {
@@ -136,28 +136,28 @@ func (s *Server) SessionRequests() int {
 	return n
 }
 
-// Connects 是 /api/event 被連線的次數。
+// Connects is the number of times /api/event was connected.
 func (s *Server) Connects() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.connects
 }
 
-// EventQueries 是每次 /api/event 連線帶的 query（用來驗證 types 過濾）。
+// EventQueries is the query of each /api/event connection (used to verify types filtering).
 func (s *Server) EventQueries() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return append([]string(nil), s.eventQs...)
 }
 
-// Subscribers 是目前連著的 SSE 數量。
+// Subscribers is the number of SSE connections currently open.
 func (s *Server) Subscribers() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return len(s.subs)
 }
 
-// Break 讓 URI（含 query）含 substr 的 REST GET 回 500，直到 Heal；不影響 /api/info 與 /api/event。
+// Break makes REST GETs whose URI (including query) contains substr return 500 until Heal; /api/info and /api/event are unaffected.
 func (s *Server) Break(substr string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -171,8 +171,8 @@ type hold struct {
 	captured bool
 }
 
-// Hold 攔截「下一個」URI 含 substr 的 REST GET：服務照常算出回應（內容固定在攔截當下），
-// 但延遲到 release 被呼叫才送出，模擬延遲抵達的舊回應。arrived 在請求被攔住時關閉。
+// Hold intercepts the "next" REST GET whose URI contains substr: the service computes the response as usual (content fixed at the moment of interception),
+// but delays sending it until release is called, simulating a stale response that arrives late. arrived is closed when the request is held.
 func (s *Server) Hold(substr string) (arrived <-chan struct{}, release func()) {
 	h := &hold{substr: substr, arrived: make(chan struct{}), release: make(chan struct{})}
 	s.mu.Lock()
@@ -194,7 +194,7 @@ func (s *Server) takeHold(uri string) *hold {
 	return nil
 }
 
-// Heal 解除所有 Break。
+// Heal clears all Breaks.
 func (s *Server) Heal() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -212,15 +212,15 @@ func (s *Server) isBroken(uri string) bool {
 	return false
 }
 
-// SetHeartbeat 設定之後新建立的 SSE 連線每隔多久送一次 ": heartbeat"；0 表示不送。
+// SetHeartbeat sets how often SSE connections created afterwards send ": heartbeat"; 0 means never.
 func (s *Server) SetHeartbeat(d time.Duration) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.heartbeat = d
 }
 
-// Stall 讓目前所有 SSE 連線無聲：連線維持開啟（沒有 FIN／RST），但不再送出任何位元組，
-// 之後發生的事件也不補送。模擬半開連線；新建立的連線不受影響。
+// Stall makes all current SSE connections silent: they stay open (no FIN/RST) but send no more bytes,
+// and events occurring afterwards are not replayed. It simulates a half-open connection; newly created connections are unaffected.
 func (s *Server) Stall() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -229,7 +229,7 @@ func (s *Server) Stall() {
 	}
 }
 
-// Drop 斷開所有 SSE 連線（模擬連線中斷；斷線期間發生的事件不會補送）。
+// Drop closes all SSE connections (simulates a connection loss; events occurring while disconnected are not replayed).
 func (s *Server) Drop() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -251,7 +251,7 @@ func (s *Server) get(id string) *session {
 	return x
 }
 
-// emit 在持鎖狀態下呼叫。
+// emit is called with the lock held.
 func (s *Server) emit(typ string, created int64, data map[string]any) {
 	s.seq++
 	b, _ := json.Marshal(map[string]any{"id": fmt.Sprintf("evt_%d", s.seq), "created": created, "type": typ, "data": data})
@@ -266,12 +266,12 @@ func (s *Server) emit(typ string, created int64, data map[string]any) {
 	}
 }
 
-// ---- 狀態變化（同時送出對應事件；沒有 SSE 連線時只改變狀態）----
+// ---- State changes (also emit the matching event; with no SSE connection only the state changes) ----
 
 func (s *Server) AddSession(id, parent string) { s.addSession(id, parent, true) }
 
-// AddSessionWithoutParentInEvent 建立後代，但 session.created 事件缺少 parentID
-// （REST 資料仍有父子關係）：事件單獨無法把它歸入家族。
+// AddSessionWithoutParentInEvent creates a descendant, but its session.created event lacks parentID
+// (REST data still has the parent-child relationship): the event alone cannot place it in the family.
 func (s *Server) AddSessionWithoutParentInEvent(id, parent string) { s.addSession(id, parent, false) }
 
 func (s *Server) addSession(id, parent string, parentInEvent bool) {
@@ -296,15 +296,15 @@ func (s *Server) Start(id string) {
 	s.emit("session.execution.started", s.now(), map[string]any{"sessionID": id})
 }
 
-// Finish 結束一次執行：outcome 為 succeeded | failed | interrupted。
+// Finish ends a run: outcome is succeeded | failed | interrupted.
 func (s *Server) Finish(id, outcome string) { s.finish(id, outcome, "user") }
 
-// FinishInterrupted 以指定的 reason（user | shutdown | superseded | inactivity）中斷一次執行，
-// 同時改變服務資料（不再執行、有 idle 與 outcome）。
+// FinishInterrupted interrupts a run with the given reason (user | shutdown | superseded | inactivity),
+// and also changes the service data (no longer running, with idle and outcome).
 func (s *Server) FinishInterrupted(id, reason string) { s.finish(id, "interrupted", reason) }
 
-// EmitInterrupted 只送出 session.execution.interrupted 事件，不改變服務資料：
-// 用來驗證側欄不把事件本身當成事實，而是以重讀的資料為準。
+// EmitInterrupted emits only the session.execution.interrupted event without changing service data:
+// used to verify that the sidebar does not treat the event itself as fact, but relies on reread data.
 func (s *Server) EmitInterrupted(id, reason string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -326,7 +326,7 @@ func (s *Server) finish(id, outcome, reason string) {
 	s.emit("session.execution."+outcome, x.idle, d)
 }
 
-// View 模擬其他 client 把該 session 標為已讀。
+// View simulates another client marking the session as read.
 func (s *Server) View(id string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -335,7 +335,7 @@ func (s *Server) View(id string) {
 	s.emit("session.viewed", s.now(), map[string]any{"sessionID": id, "idle": x.idle})
 }
 
-// Seed 在不送事件的情況下直接設定 session 狀態（模擬插件啟動前已存在的資料）。
+// Seed sets session state directly without emitting events (simulates data that existed before the plugin started).
 func (s *Server) Seed(id, parent, outcome string, idle, viewed int64, running bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -343,14 +343,14 @@ func (s *Server) Seed(id, parent, outcome string, idle, viewed int64, running bo
 	x.parent, x.outcome, x.idle, x.view, x.running = parent, outcome, idle, viewed, running
 }
 
-// SeedTitle 在不送事件的情況下設定 session 的 API 標題（插件啟動前就已存在的資料）。
+// SeedTitle sets the session's API title without emitting events (data that existed before the plugin started).
 func (s *Server) SeedTitle(id, title string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.get(id).title = title
 }
 
-// Rename 改變 session 的 API 標題並送出 session.renamed（durable；data{sessionID,title}）。
+// Rename changes the session's API title and emits session.renamed (durable; data{sessionID,title}).
 func (s *Server) Rename(id, title string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -358,9 +358,9 @@ func (s *Server) Rename(id, title string) {
 	s.emit("session.renamed", s.now(), map[string]any{"sessionID": id, "title": title})
 }
 
-// ---- 待核准的權限請求與待回答的問題（OpenCode 稱 form）----
-// Ask*／Resolve*／Cancel* 模擬「使用者在 OpenCode 內處理」：改變服務資料並送出事件；
-// 側欄本身永遠不會呼叫這些寫入端點。Seed* 只放資料不送事件（插件啟動前就已存在）。
+// ---- Pending permission requests and unanswered questions (OpenCode calls them forms) ----
+// Ask*/Resolve*/Cancel* simulate "the user handling it inside OpenCode": they change service data and emit events;
+// the sidebar itself never calls these write endpoints. Seed* only places data without emitting events (already present before the plugin started).
 
 func (s *Server) AskPermission(id, sessionID string) {
 	s.mu.Lock()
@@ -369,7 +369,7 @@ func (s *Server) AskPermission(id, sessionID string) {
 	s.emit("permission.asked", s.now(), map[string]any{"id": id, "sessionID": sessionID, "action": "bash", "resources": []string{"x"}, "save": []string{}})
 }
 
-// ReplyPermission 模擬使用者在 OpenCode 回覆（核准或拒絕）該請求。
+// ReplyPermission simulates the user replying to (approving or denying) the request in OpenCode.
 func (s *Server) ReplyPermission(id string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -385,10 +385,10 @@ func (s *Server) AskForm(id, sessionID string) {
 	s.emit("form.created", s.now(), map[string]any{"form": map[string]any{"id": id, "sessionID": sessionID, "title": "q", "fields": []any{}}})
 }
 
-// AnswerForm 模擬使用者回答問題。
+// AnswerForm simulates the user answering the question.
 func (s *Server) AnswerForm(id string) { s.closeForm("form.replied", id) }
 
-// CancelForm 模擬問題被取消。
+// CancelForm simulates the question being cancelled.
 func (s *Server) CancelForm(id string) { s.closeForm("form.cancelled", id) }
 
 func (s *Server) closeForm(typ, id string) {
@@ -416,7 +416,7 @@ func remove(list []item, id string) ([]item, string) {
 	return out, sess
 }
 
-// SeedPermission／SeedForm 不送事件地放入待處理項目。
+// SeedPermission/SeedForm place pending items without emitting events.
 func (s *Server) SeedPermission(id, sessionID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -429,7 +429,7 @@ func (s *Server) SeedForm(id, sessionID string) {
 	s.forms = append(s.forms, item{id, sessionID})
 }
 
-// ForgetPending 模擬服務重啟：待處理請求不持久，重啟後全部消失（不送事件）。
+// ForgetPending simulates a service restart: pending requests are not persisted and all disappear after a restart (no events emitted).
 func (s *Server) ForgetPending() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -565,7 +565,7 @@ func (s *Server) items(list []item, session string) []map[string]any {
 	return out
 }
 
-// listChildren 重現實測的分頁行為：只要本頁有資料，cursor.next 就存在（空頁才結束）。
+// listChildren reproduces the observed pagination behavior: cursor.next exists whenever the page has data (only an empty page ends it).
 func (s *Server) listChildren(w http.ResponseWriter, r *http.Request) {
 	parent := r.URL.Query().Get("parentID")
 	if r.URL.Query().Get("limit") == "0" {

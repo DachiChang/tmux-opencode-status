@@ -1,6 +1,6 @@
-// Package ocsrc 是 OpenCode 本機共用服務的唯讀客戶端：服務探索、認證、REST（只用 GET）與 SSE。
-// 契約見 docs/contracts/opencode-2.3.0.md。嚴格唯讀：不呼叫任何寫入端點（含標記已讀）、
-// 不啟動或重啟服務；憑證只用於 Authorization header，不進入錯誤訊息。
+// Package ocsrc is a read-only client for the local shared OpenCode service: service discovery, authentication, REST (GET only) and SSE.
+// The contract is in docs/contracts/opencode-2.4.1.md. Strictly read-only: it calls no write endpoints (including mark-as-read),
+// never starts or restarts the service; credentials are used only in the Authorization header and never appear in error messages.
 package ocsrc
 
 import (
@@ -21,9 +21,9 @@ import (
 	"github.com/DachiChang/tmux-opencode-status/internal/contract"
 )
 
-// SSETypes 是側欄狀態需要的事件型別（`?types=` 過濾；不帶會有極大流量，未知型別會 400）。
-// 不含 session.status／session.idle：目標版本從未送出，不得依賴。
-// 排隊 prompt（inbox）初版不處理。
+// SSETypes are the event types the sidebar needs (the `?types=` filter; omitting it produces very heavy traffic, and unknown types get a 400).
+// session.status and session.idle are excluded: the target version never emits them, so they must not be relied on.
+// Queued prompts (inbox) are not handled in the initial version.
 var SSETypes = []string{
 	"session.created", "session.deleted", "session.renamed",
 	"session.execution.started", "session.execution.succeeded",
@@ -33,26 +33,26 @@ var SSETypes = []string{
 	"form.created", "form.replied", "form.cancelled",
 }
 
-// Service 是一次已通過身分驗證的連線：唯讀 REST 加一條 SSE。
+// Service is one authenticated connection: read-only REST plus one SSE stream.
 type Service interface {
 	contract.API
-	// Stream 連上 /api/event 並逐個事件呼叫 handle；串流結束（斷線、ctx 取消、handle 回錯誤）才返回。
+	// Stream connects to /api/event and calls handle for each event; it returns only when the stream ends (disconnect, ctx cancellation, or handle returning an error).
 	Stream(ctx context.Context, handle func(contract.Event) error) error
 }
 
-// Dialer 每次呼叫都重新探索服務（不快取 port／密碼／pid）。
+// Dialer rediscovers the service on every call (it does not cache port, password or pid).
 type Dialer interface {
 	Dial(ctx context.Context) (Service, error)
 }
 
-// DefaultIdleTimeout 是無聲斷線的偵測門檻：服務每 15 秒送一次心跳（`: heartbeat`），
-// 連續 45 秒（三個心跳間隔）沒有任何位元組即視為斷線，符合 spec 的 45 秒目標。
+// DefaultIdleTimeout is the threshold for detecting a silent disconnect: the service sends a heartbeat (`: heartbeat`) every 15 seconds,
+// and 45 consecutive seconds (three heartbeat intervals) without any bytes counts as a disconnect, matching the spec's 45-second target.
 const DefaultIdleTimeout = 45 * time.Second
 
-// ErrIdleTimeout 表示 SSE 連線仍開著但已無聲過久（半開連線）；呼叫端應重新連線並完整重讀。
-var ErrIdleTimeout = errors.New("OpenCode 事件串流無聲逾時")
+// ErrIdleTimeout means the SSE connection is still open but has been silent for too long (half-open connection); callers should reconnect and reread everything.
+var ErrIdleTimeout = errors.New("OpenCode event stream timed out waiting for data")
 
-// DefaultPath 是標準本機共用服務的探索檔。
+// DefaultPath is the discovery file of the standard local shared service.
 func DefaultPath() string {
 	state := os.Getenv("XDG_STATE_HOME")
 	if state == "" {
@@ -64,9 +64,9 @@ func DefaultPath() string {
 
 type Source struct {
 	Path string
-	// RequestTimeout 是單一 REST 請求的上限；預設 10 秒。SSE 不受限（由 ctx 控制）。
+	// RequestTimeout caps a single REST request; the default is 10 seconds. SSE is not limited (controlled by ctx).
 	RequestTimeout time.Duration
-	// IdleTimeout 是 SSE 連續沒收到任何位元組就視為無聲斷線的時間；預設 DefaultIdleTimeout。
+	// IdleTimeout is how long SSE may receive no bytes before it is treated as a silent disconnect; the default is DefaultIdleTimeout.
 	IdleTimeout time.Duration
 }
 
@@ -77,43 +77,43 @@ type serviceFile struct {
 	Password string `json:"password"`
 }
 
-var ErrNoService = errors.New("找不到 OpenCode 服務探索檔")
+var ErrNoService = errors.New("OpenCode service discovery file not found")
 
 var (
-	ErrBadDiscovery     = errors.New("服務探索檔格式不相容")
-	ErrIdentityMismatch = errors.New("服務身分與探索檔不符（可能已重啟，將重新探索）")
+	ErrBadDiscovery     = errors.New("incompatible service discovery file format")
+	ErrIdentityMismatch = errors.New("service identity does not match the discovery file (the service may have restarted; will rediscover)")
 )
 
-// Reason 把連線錯誤歸類成固定的描述，供診斷使用。原始錯誤文字可能夾帶路徑或回應內容，
-// 診斷與狀態檔只使用這裡的固定文字，絕不輸出憑證或回應本文。
+// Reason classifies a connection error into a fixed description for diagnostics. The raw error text may carry paths or response content,
+// so diagnostics and the status file use only this fixed text and never output credentials or response bodies.
 func Reason(err error) string {
 	var h *HTTPError
 	switch {
 	case err == nil:
 		return ""
 	case errors.Is(err, ErrNoService):
-		return "找不到服務探索檔（OpenCode 服務尚未開啟）"
+		return "service discovery file not found (the OpenCode service is not running yet)"
 	case errors.Is(err, ErrBadDiscovery):
-		return "服務探索檔格式不相容"
+		return "incompatible service discovery file format"
 	case errors.Is(err, ErrIdentityMismatch):
-		return "服務身分與探索檔不符（可能已重啟）"
+		return "service identity mismatch (the service may have restarted)"
 	case errors.Is(err, ErrIdleTimeout):
-		return "事件串流無聲逾時"
+		return "event stream timed out waiting for data"
 	case errors.As(err, &h):
-		return fmt.Sprintf("服務回應 HTTP %d", h.Status)
+		return fmt.Sprintf("service returned HTTP %d", h.Status)
 	default:
-		return "無法連線服務"
+		return "service unreachable"
 	}
 }
 
-// Dial 讀取探索檔並以 GET /api/info 驗證身分（pid、version 必須與探索檔相符）。
+// Dial reads the discovery file and verifies identity with GET /api/info (pid and version must match the discovery file).
 func (s Source) Dial(ctx context.Context) (Service, error) {
 	raw, err := os.ReadFile(s.Path)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, ErrNoService
 	}
 	if err != nil {
-		return nil, fmt.Errorf("讀取服務探索檔：%w", err)
+		return nil, fmt.Errorf("read service discovery file: %w", err)
 	}
 	var f serviceFile
 	if err := json.Unmarshal(raw, &f); err != nil || f.URL == "" || f.Password == "" {
@@ -121,7 +121,7 @@ func (s Source) Dial(ctx context.Context) (Service, error) {
 	}
 	u, err := url.Parse(f.URL)
 	if err != nil || u.Host == "" {
-		return nil, errors.New("服務探索檔的 url 無效")
+		return nil, errors.New("invalid URL in the service discovery file")
 	}
 	if h := u.Hostname(); h == "0.0.0.0" || h == "" {
 		u.Host = "127.0.0.1:" + u.Port()
@@ -140,7 +140,7 @@ func (s Source) Dial(ctx context.Context) (Service, error) {
 		PID     int    `json:"pid"`
 	}
 	if err := svc.getJSON(ctx, "/api/info", &info); err != nil {
-		return nil, fmt.Errorf("驗證服務身分：%w", err)
+		return nil, fmt.Errorf("verify service identity: %w", err)
 	}
 	if info.PID != f.PID || info.Version != f.Version {
 		return nil, ErrIdentityMismatch
@@ -163,7 +163,7 @@ func (s *service) newReq(ctx context.Context, path string) (*http.Request, error
 	return req, nil
 }
 
-// HTTPError 帶上回應狀態；_tag 取自 OpenCode 的錯誤本文。
+// HTTPError carries the response status; _tag comes from OpenCode's error body.
 type HTTPError struct {
 	Status int
 	Tag    string
@@ -281,7 +281,7 @@ func (s *service) Active() (map[string]bool, error) {
 
 func (s *service) Stream(ctx context.Context, handle func(contract.Event) error) error {
 	q := url.Values{"types": SSETypes}
-	// 無聲偵測：任何位元組（含心跳註解行）都重置計時；逾時就取消這條連線。
+	// Silence detection: any byte (including heartbeat comment lines) resets the timer; on timeout the connection is cancelled.
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	silent := make(chan struct{})
@@ -305,7 +305,7 @@ func (s *service) Stream(ctx context.Context, handle func(contract.Event) error)
 	if err := contract.StreamSSE(body, handle); err != nil {
 		return silentOr(silent, err)
 	}
-	return silentOr(silent, io.EOF) // 伺服器結束串流也是斷線
+	return silentOr(silent, io.EOF) // the server ending the stream also counts as a disconnect
 }
 
 func silentOr(silent <-chan struct{}, err error) error {
@@ -317,7 +317,7 @@ func silentOr(silent <-chan struct{}, err error) error {
 	}
 }
 
-// beatReader 在每次讀到位元組時呼叫 beat（重置無聲計時）。
+// beatReader calls beat (resetting the silence timer) whenever bytes are read.
 type beatReader struct {
 	r    io.Reader
 	beat func()

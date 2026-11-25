@@ -16,19 +16,19 @@ func replay(t *testing.T, name string) (*contract.Tracker, []contract.Event) {
 	return contract.NewTracker(), events
 }
 
-// 錄製的 SSE：第一個事件一定是 server.connected；心跳是註解行（": heartbeat"），
-// 不是 data 事件，解析時不得當成事件。
+// Recorded SSE: the first event is always server.connected; a heartbeat is a comment line (": heartbeat"),
+// not a data event, and the parser must not treat it as an event.
 func TestParseSSERecordedStream(t *testing.T) {
 	_, events := replay(t, "events.sse")
 	if len(events) != 25 {
-		t.Fatalf("events = %d, want 25（心跳不算事件）", len(events))
+		t.Fatalf("events = %d, want 25 (heartbeats are not events)", len(events))
 	}
 	if events[0].Type != contract.EventServerConnected {
-		t.Fatalf("第一個事件 = %q，必須是 server.connected（重連同步的觸發點）", events[0].Type)
+		t.Fatalf("first event = %q, must be server.connected (the trigger for reconnect sync)", events[0].Type)
 	}
 	for _, e := range events {
 		if e.Type == "" {
-			t.Fatal("出現沒有 type 的事件")
+			t.Fatal("found an event without a type")
 		}
 	}
 }
@@ -44,8 +44,8 @@ func TestParseSSEIgnoresCommentsAndHandlesCRLF(t *testing.T) {
 	}
 }
 
-// 依錄製順序重播事件，逐步驗證 tab 狀態：執行 → 失敗未讀；執行 → 成功未讀 → 已讀 → 閒置；
-// 中斷不算失敗。
+// Replays events in recorded order and verifies tab status step by step: running → failed unread; running → succeeded unread → read → idle;
+// an interruption is not a failure.
 func TestTrackerReplayRunningThenUnreadThenViewed(t *testing.T) {
 	tr, events := replay(t, "events.sse")
 	type step struct {
@@ -53,10 +53,10 @@ func TestTrackerReplayRunningThenUnreadThenViewed(t *testing.T) {
 		tab   string
 		want  contract.Status
 	}
-	// 以事件 id 為斷點（fixture 內 id 為 evt_<n>，順序固定）。
+	// Breakpoints are event ids (ids in the fixture are evt_<n>, in a fixed order).
 	checks := map[string][]step{
 		"evt_5":  {{"permission.asked", "ses_R", contract.WaitingApproval}},
-		"evt_7":  {{"permission.replied", "ses_R", contract.WaitingAnswer}}, // form 仍未處理
+		"evt_7":  {{"permission.replied", "ses_R", contract.WaitingAnswer}}, // the form is still unhandled
 		"evt_8":  {{"form.cancelled", "ses_R", contract.Idle}},
 		"evt_11": {{"execution.started", "ses_BAD", contract.Running}},
 		"evt_13": {{"execution.failed", "ses_BAD", contract.FailedUnread}},
@@ -70,84 +70,84 @@ func TestTrackerReplayRunningThenUnreadThenViewed(t *testing.T) {
 		tr.Apply(e)
 		for _, c := range checks[e.ID] {
 			if got := tr.TabStatus(c.tab); got != c.want {
-				t.Fatalf("事件 %s(%s) 後 TabStatus(%s) = %v, want %v", e.ID, c.after, c.tab, got, c.want)
+				t.Fatalf("after event %s(%s) TabStatus(%s) = %v, want %v", e.ID, c.after, c.tab, got, c.want)
 			}
 		}
 	}
 }
 
-// session.created 帶 parentID：家族關係可由事件即時建立；孫輩的核准要彙整到 tab。
+// session.created carries parentID: the family relationship can be built live from events; a grandchild's approval must roll up to the tab.
 func TestTrackerBuildsFamilyFromCreatedEvents(t *testing.T) {
 	tr, events := replay(t, "events.sse")
-	for _, e := range events[:5] { // 到 permission.asked 為止
+	for _, e := range events[:5] { // up to permission.asked
 		tr.Apply(e)
 	}
 	if got := tr.TabStatus("ses_R"); got != contract.WaitingApproval {
-		t.Fatalf("ses_R = %v，孫輩 ses_G 的核准應彙整到 tab", got)
+		t.Fatalf("ses_R = %v, grandchild ses_G's approval should roll up to the tab", got)
 	}
 	if got := tr.TabStatus("ses_C"); got != contract.WaitingApproval {
 		t.Fatalf("ses_C = %v", got)
 	}
 }
 
-// session.deleted 之後 tab 應被標為「不存在」，而不是閒置。
+// After session.deleted the tab should be marked "missing", not idle.
 func TestTrackerTreatsDeletedAsMissingNotIdle(t *testing.T) {
 	tr, events := replay(t, "events.sse")
 	for _, e := range events {
 		tr.Apply(e)
 	}
 	if !tr.Missing("ses_BAD") {
-		t.Fatal("session.deleted 後應標記為不存在")
+		t.Fatal("should be marked missing after session.deleted")
 	}
 	if tr.Missing("ses_OK") {
-		t.Fatal("ses_OK 不應被標為不存在")
+		t.Fatal("ses_OK must not be marked missing")
 	}
 }
 
-// 重連後必須完整同步：server.connected 使事件推導的狀態失效，直到新 snapshot 套用；
-// 失效期間不能沿用舊狀態當成最新事實。
+// After a reconnect it must fully resync: server.connected invalidates event-derived state until a new snapshot is applied;
+// during invalidation the old state must not be treated as the latest fact.
 func TestTrackerInvalidatesOnReconnectUntilSnapshotApplied(t *testing.T) {
 	tr, events := replay(t, "events.sse")
 	tr.Apply(events[0]) // server.connected
 	if tr.Synced() {
-		t.Fatal("尚未套用 snapshot 前不應視為已同步")
+		t.Fatal("must not count as synced before a snapshot is applied")
 	}
 	tr.ApplySnapshot(contract.Snapshot{})
 	if !tr.Synced() {
-		t.Fatal("套用 snapshot 後應視為已同步")
+		t.Fatal("should count as synced after a snapshot is applied")
 	}
 	tr.Apply(contract.Event{Type: contract.EventServerConnected})
 	if tr.Synced() {
-		t.Fatal("再次重連後必須重新失效")
+		t.Fatal("must be invalidated again after another reconnect")
 	}
 }
 
-// 初始化／重讀期間收到的事件，不得被較舊的 snapshot 覆蓋（避免狀態倒退）。
+// Events received during initialization/reread must not be overwritten by an older snapshot (to avoid state regression).
 func TestTrackerSnapshotDoesNotOverwriteNewerEvents(t *testing.T) {
 	tr, events := replay(t, "events.sse")
 	for _, e := range events {
 		tr.Apply(e)
-		if e.ID == "evt_14" { // ses_OK 建立
+		if e.ID == "evt_14" { // ses_OK created
 			break
 		}
 	}
-	tr.Apply(contract.Event{Type: contract.EventServerConnected}) // 重連，開始同步
+	tr.Apply(contract.Event{Type: contract.EventServerConnected}) // reconnect, start syncing
 	tr.Apply(contract.Event{ID: "x1", Type: "session.execution.succeeded", SessionID: "ses_OK", Created: 5000})
 
-	// 較舊的 snapshot（在 succeeded 之前讀取）仍說 ses_OK 執行中。
+	// An older snapshot (read before succeeded) still says ses_OK is running.
 	stale := contract.Snapshot{
 		Sessions: []contract.Session{{ID: "ses_OK"}},
 		Running:  map[string]bool{"ses_OK": true},
 	}
 	tr.ApplySnapshot(stale)
 	if got := tr.TabStatus("ses_OK"); got != contract.FinishedUnread {
-		t.Fatalf("較舊 snapshot 讓狀態倒退：%v", got)
+		t.Fatalf("older snapshot regressed the state: %v", got)
 	}
 }
 
-// 實測契約：執行結束事件的 created 就是 session.time.idle，session.viewed 的 data.idle
-// 是被確認已讀的 idle。因此事件即可推導未讀，不需要額外讀取；
-// 回歸基準取自同一次錄製的 REST 快照與 SSE。
+// Observed contract: the created of a run-finished event is session.time.idle, and data.idle of session.viewed
+// is the idle that was confirmed as read. So unread can be derived from events alone with no extra reads;
+// the regression baseline comes from the REST snapshot and SSE of the same recording.
 func TestEventTimestampsMatchSessionTimesInRecordedData(t *testing.T) {
 	var file snapshotsFile
 	if err := jsonUnmarshal(fixture(t, "snapshots.json"), &file); err != nil {
@@ -170,52 +170,52 @@ func TestEventTimestampsMatchSessionTimesInRecordedData(t *testing.T) {
 				continue
 			}
 			if got, ok := created[s.ID]; ok && got != s.Time.Idle {
-				t.Errorf("%s：結束事件 created=%d，但 REST time.idle=%d", s.ID, got, s.Time.Idle)
+				t.Errorf("%s: finish event created=%d, but REST time.idle=%d", s.ID, got, s.Time.Idle)
 			}
 			if s.Time.Viewed != 0 {
 				if got, ok := viewed[s.ID]; ok && got != s.Time.Viewed {
-					t.Errorf("%s：session.viewed idle=%d，但 REST time.viewed=%d", s.ID, got, s.Time.Viewed)
+					t.Errorf("%s: session.viewed idle=%d, but REST time.viewed=%d", s.ID, got, s.Time.Viewed)
 				}
 			}
 		}
 	}
 }
 
-// 同步期間收到事件的 session，snapshot 仍要補上事件不會帶的靜態／單調資料
-// （父子關係、已讀時間），否則家族會缺成員、已讀會被遺漏；但不得讓事件結果倒退。
+// For a session that received events during sync, the snapshot must still fill in the static/monotonic data that events do not carry
+// (parent-child relationship, viewed time), otherwise the family would miss members and reads would be lost; but it must not regress the event result.
 func TestTrackerSnapshotStillFillsParentAndViewedForTouchedSessions(t *testing.T) {
 	tr := contract.NewTracker()
 	tr.Apply(contract.Event{Type: contract.EventServerConnected})
-	tr.Apply(contract.Event{Type: "session.execution.started", SessionID: "child"}) // 建立事件在連線前，沒有 parentID
+	tr.Apply(contract.Event{Type: "session.execution.started", SessionID: "child"}) // the creation event predates the connection, so there is no parentID
 	snap := contract.Snapshot{
 		Sessions: []contract.Session{{ID: "root"}, {ID: "child", ParentID: "root"}},
 		Running:  map[string]bool{"child": true},
 	}
 	tr.ApplySnapshot(snap)
 	if got := tr.TabStatus("root"); got != contract.Running {
-		t.Fatalf("後代在同步期間有事件，仍須歸屬到 tab 家族：%v", got)
+		t.Fatalf("a descendant with events during sync must still belong to the tab family: %v", got)
 	}
 
 	tr = contract.NewTracker()
 	tr.Apply(contract.Event{Type: contract.EventServerConnected})
 	tr.Apply(contract.Event{Type: "session.execution.succeeded", SessionID: "root", Created: 900})
 	old := contract.Session{ID: "root"}
-	old.Time.Idle, old.Time.Viewed, old.Outcome = 500, 500, "failed" // 較舊的結果
+	old.Time.Idle, old.Time.Viewed, old.Outcome = 500, 500, "failed" // older result
 	tr.ApplySnapshot(contract.Snapshot{Sessions: []contract.Session{old}})
 	if got := tr.TabStatus("root"); got != contract.FinishedUnread {
-		t.Fatalf("較舊 snapshot 讓事件結果倒退：%v", got)
+		t.Fatalf("older snapshot regressed the event result: %v", got)
 	}
 
 	fresh := contract.Session{ID: "root", Outcome: "succeeded"}
-	fresh.Time.Idle, fresh.Time.Viewed = 900, 900 // 其他 client 已讀（事件在斷線期間遺失）
+	fresh.Time.Idle, fresh.Time.Viewed = 900, 900 // another client has read it (the event was lost during the disconnect)
 	tr.ApplySnapshot(contract.Snapshot{Sessions: []contract.Session{fresh}})
 	if got := tr.TabStatus("root"); got != contract.Idle {
-		t.Fatalf("snapshot 的已讀時間應被採用：%v", got)
+		t.Fatalf("the snapshot's viewed time should be adopted: %v", got)
 	}
 }
 
-// 同步期間某 session 收到待處理事件，snapshot 仍要補上「連線前就存在、事件不會再送」的其他請求；
-// 同步期間已被回覆／取消的請求，則不得被較舊的 snapshot 復活。
+// When a session receives a pending event during sync, the snapshot must still fill in other requests that "existed before the connection and will not be sent again";
+// requests that were replied to or cancelled during sync must not be revived by an older snapshot.
 func TestTrackerSnapshotKeepsPreexistingRequestsOfTouchedSessions(t *testing.T) {
 	tr := contract.NewTracker()
 	tr.Apply(contract.Event{Type: contract.EventServerConnected})
@@ -226,11 +226,11 @@ func TestTrackerSnapshotKeepsPreexistingRequestsOfTouchedSessions(t *testing.T) 
 	})
 	tr.Apply(contract.Event{Type: "permission.replied", SessionID: "s", RequestID: "new"})
 	if got := tr.TabStatus("s"); got != contract.WaitingApproval {
-		t.Fatalf("連線前就存在的請求被遺漏：%v", got)
+		t.Fatalf("request that existed before the connection was missed: %v", got)
 	}
 	tr.Apply(contract.Event{Type: "permission.replied", SessionID: "s", RequestID: "old"})
 	if got := tr.TabStatus("s"); got != contract.Idle {
-		t.Fatalf("全部回覆後應回到閒置：%v", got)
+		t.Fatalf("should return to idle after all are replied to: %v", got)
 	}
 }
 
@@ -245,7 +245,7 @@ func TestTrackerStaleSnapshotDoesNotResurrectRequestsResolvedDuringSync(t *testi
 		Forms:       []contract.Form{{ID: "f", SessionID: "s"}},
 	})
 	if got := tr.TabStatus("s"); got != contract.Idle {
-		t.Fatalf("較舊 snapshot 讓已處理的請求復活：%v", got)
+		t.Fatalf("older snapshot revived a handled request: %v", got)
 	}
 }
 
@@ -253,25 +253,25 @@ func TestTrackerRequestAskedDuringSyncSurvivesOlderSnapshot(t *testing.T) {
 	tr := contract.NewTracker()
 	tr.Apply(contract.Event{Type: contract.EventServerConnected})
 	tr.Apply(contract.Event{Type: "form.created", SessionID: "s", FormID: "f"})
-	tr.ApplySnapshot(contract.Snapshot{Sessions: []contract.Session{{ID: "s"}}}) // 在 form 出現前讀取
+	tr.ApplySnapshot(contract.Snapshot{Sessions: []contract.Session{{ID: "s"}}}) // read before the form appeared
 	if got := tr.TabStatus("s"); got != contract.WaitingAnswer {
-		t.Fatalf("同步期間出現的請求不得被較舊 snapshot 抹掉：%v", got)
+		t.Fatalf("a request that appeared during sync must not be erased by an older snapshot: %v", got)
 	}
 }
 
-// 服務關閉造成的中斷不是一次結束（TUI 同樣忽略）；事件單獨不改變狀態。
+// An interruption caused by service shutdown is not a finished run (the TUI ignores it too); the event alone does not change state.
 func TestTrackerIgnoresShutdownInterruptionButKeepsOtherReasons(t *testing.T) {
 	tr := contract.NewTracker()
 	tr.ApplySnapshot(contract.Snapshot{Sessions: []contract.Session{{ID: "s"}}, Running: map[string]bool{"s": true}})
 	tr.Apply(contract.Event{Type: "session.execution.interrupted", SessionID: "s", Reason: "shutdown", Created: 900})
 	if got := tr.TabStatus("s"); got != contract.Running {
-		t.Fatalf("shutdown 中斷不得結束執行：%v", got)
+		t.Fatalf("a shutdown interruption must not end the run: %v", got)
 	}
 	for _, reason := range []string{"user", "superseded", "inactivity", ""} {
 		tr.Apply(contract.Event{Type: "session.execution.started", SessionID: "s"})
 		tr.Apply(contract.Event{Type: "session.execution.interrupted", SessionID: "s", Reason: reason, Created: 900})
 		if got := tr.TabStatus("s"); got != contract.FinishedUnread {
-			t.Fatalf("reason=%q 的中斷應為結束未讀：%v", reason, got)
+			t.Fatalf("an interruption with reason=%q should be finished unread: %v", reason, got)
 		}
 	}
 }
@@ -284,7 +284,7 @@ func TestParseSSEDecodesInterruptionReason(t *testing.T) {
 	}
 }
 
-// 單一 tab 的讀取只對齊該家族：其他 tab 的狀態不受影響；讀取開始後收到的事件比該次讀取新。
+// Reading a single tab reconciles only that family: other tabs' state is unaffected; events received after the read began are newer than that read.
 func TestTrackerApplyFamilyOnlyTouchesThatFamilyAndKeepsNewerEvents(t *testing.T) {
 	tr := contract.NewTracker()
 	tr.ApplySnapshot(contract.Snapshot{
@@ -293,18 +293,18 @@ func TestTrackerApplyFamilyOnlyTouchesThatFamilyAndKeepsNewerEvents(t *testing.T
 		Permissions: []contract.PermissionRequest{{ID: "pB", SessionID: "B"}},
 	})
 	mark := tr.Mark()
-	tr.Apply(contract.Event{Type: "session.execution.started", SessionID: "A"}) // 讀取期間的事件
-	// A 的較舊讀取（沒看到 started）；同時其中 B 不在範圍內
+	tr.Apply(contract.Event{Type: "session.execution.started", SessionID: "A"}) // event during the read
+	// An older read of A (did not see started); B is out of scope here
 	tr.ApplyFamily("A", contract.Snapshot{Sessions: []contract.Session{{ID: "A"}}}, mark)
 	if got := tr.TabStatus("A"); got != contract.Running {
-		t.Fatalf("事件較新，A 不得倒退：%v", got)
+		t.Fatalf("the event is newer, A must not regress: %v", got)
 	}
 	if got := tr.TabStatus("B"); got != contract.WaitingApproval {
-		t.Fatalf("A 的讀取不得改動 B：%v", got)
+		t.Fatalf("A's read must not change B: %v", got)
 	}
-	// 之後的新讀取（since 較晚）以資料為準
+	// A later new read (later since) follows the data
 	tr.ApplyFamily("A", contract.Snapshot{Sessions: []contract.Session{{ID: "A"}}}, tr.Mark())
 	if got := tr.TabStatus("A"); got != contract.Idle {
-		t.Fatalf("較新的讀取應對齊：%v", got)
+		t.Fatalf("the newer read should reconcile: %v", got)
 	}
 }

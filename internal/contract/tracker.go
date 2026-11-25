@@ -1,22 +1,22 @@
 package contract
 
-// Tracker 以「snapshot 為基準、事件為增量」維護 tab 狀態。
+// Tracker maintains tab status using "snapshot as baseline, events as increments".
 //
-// 契約重點（皆來自 v2.3.0 實測／官方文件）：
-//   - /api/event 是 volatile：斷線期間的事件不會重播，所以 server.connected（每次連線的第一個
-//     事件）必須觸發完整重讀，期間視為未同步。
-//   - 事件與 snapshot 交錯時，事件較新：讀取開始之後收到事件的 session，不被 snapshot 覆蓋。
-//     以事件序號（Mark）判定「讀取開始之後」，讓多個 tab 的讀取可以各自獨立進行。
+// Key points of the contract (all from v2.3.0 observation / official docs):
+//   - /api/event is volatile: events during a disconnect are not replayed, so server.connected (the first
+//     event of every connection) must trigger a full reread, and the state counts as unsynced meanwhile.
+//   - When events and snapshots interleave, events are newer: a session that received events after the read began is not overwritten by the snapshot.
+//     The event sequence number (Mark) decides "after the read began", so reads for several tabs can proceed independently.
 type Tracker struct {
 	sessions    map[string]*tracked
 	permissions map[string]string // permission request id → sessionID
 	forms       map[string]string // form id → sessionID
 	synced      bool
-	seq         uint64            // 已套用的事件數（Mark 的來源）
-	touched     map[string]uint64 // session → 最後一次收到其事件的序號（server.connected 時清空）
-	// 請求（權限 "p:<id>"、問題 "f:<id>"）→ 最後一次收到其事件的序號。待處理請求以請求為單位
-	// 對齊：事件較新者保持事件結果，其餘一律以 snapshot 為準。不能用 session 粒度，否則
-	// 同一 session 收到任一事件，連線前就存在的其他請求會被遺漏。
+	seq         uint64            // number of events applied (the source of Mark)
+	touched     map[string]uint64 // session → sequence number of the last event received for it (cleared on server.connected)
+	// Request (permission "p:<id>", question "f:<id>") → sequence number of the last event received for it. Pending requests are reconciled
+	// per request: whichever side has newer events keeps the event result, and everything else follows the snapshot. Session granularity cannot be used, otherwise
+	// when a session receives any event, other requests that existed before the connection would be missed.
 	touchedReq map[string]uint64
 }
 
@@ -43,15 +43,15 @@ func (t *Tracker) get(id string) *tracked {
 	return s
 }
 
-// Synced 表示目前狀態是否已由 snapshot 對齊；未同步時呼叫端應呈現「狀態未知」。
+// Synced reports whether the current state has been reconciled by a snapshot; while unsynced, callers should present "unknown status".
 func (t *Tracker) Synced() bool { return t.synced }
 
-// Invalidate 讓事件推導的狀態失效（連線中斷等；效果同收到 server.connected），
-// 直到下一次 ApplySnapshot 前不得當成最新事實。
+// Invalidate invalidates the event-derived state (connection loss, etc.; same effect as receiving server.connected),
+// and it must not be treated as the latest fact until the next ApplySnapshot.
 func (t *Tracker) Invalidate() { t.Apply(Event{Type: EventServerConnected}) }
 
-// Title 回傳 session 目前已知的 API 標題；尚未取得（或服務沒有提供）時 ok 為 false，
-// 呼叫端退回 tabs.json 的備援標題。
+// Title returns the session's currently known API title; when it is not yet available (or the service does not provide one), ok is false,
+// and callers fall back to the title in tabs.json.
 func (t *Tracker) Title(id string) (title string, ok bool) {
 	s := t.sessions[id]
 	if s == nil || s.title == "" {
@@ -60,14 +60,14 @@ func (t *Tracker) Title(id string) (title string, ok bool) {
 	return s.title, true
 }
 
-// Mark 回傳目前的事件序號。在開始讀取 REST 之前取得，讀取完成後傳給 ApplyFamily：
-// 序號之後收到的事件比該次讀取新，不會被覆蓋。
+// Mark returns the current event sequence number. Take it before starting a REST read and pass it to ApplyFamily once the read completes:
+// events received after that sequence number are newer than the read and are not overwritten.
 func (t *Tracker) Mark() uint64 { return t.seq }
 
-// Missing 表示該 session 已收到 session.deleted（tab 應保留並標資料異常，而非閒置）。
+// Missing reports that the session has received session.deleted (the tab should be kept and marked as a data problem, not idle).
 func (t *Tracker) Missing(id string) bool { s := t.sessions[id]; return s != nil && s.deleted }
 
-// Apply 套用一個事件。
+// Apply applies one event.
 func (t *Tracker) Apply(e Event) {
 	if e.Type == EventServerConnected {
 		t.synced = false
@@ -75,8 +75,8 @@ func (t *Tracker) Apply(e Event) {
 		t.touchedReq = map[string]uint64{}
 		return
 	}
-	// 服務關閉造成的中斷不是使用者中斷，也不是一次結束（TUI 同樣忽略）：事件不改變狀態，
-	// 實際結果以之後的重讀為準。
+	// An interruption caused by service shutdown is not a user interruption nor a finished run (the TUI ignores it too): the event does not change state,
+	// and the actual result is decided by the later reread.
 	if e.Type == "session.execution.interrupted" && e.Reason == "shutdown" {
 		return
 	}
@@ -125,18 +125,18 @@ func (t *Tracker) Apply(e Event) {
 	}
 }
 
-// ApplySnapshot 以完整讀取的資料對齊整個狀態；連線後（server.connected 之後）已有事件的
-// session 與請求保持事件結果。
+// ApplySnapshot reconciles the whole state with fully read data; sessions and requests that already have events after the connection (after server.connected)
+// keep the event result.
 func (t *Tracker) ApplySnapshot(s Snapshot) { t.applySnapshot(s, 0, nil) }
 
-// ApplyFamily 套用單一 tab 的家族 snapshot，只對齊該家族（含先前已知的後代）：其他 tab 的
-// 狀態不受影響。since 是開始讀取前取得的 Mark，之後收到事件的 session 與請求保持事件結果。
+// ApplyFamily applies the family snapshot of a single tab, reconciling only that family (including previously known descendants): the state of other tabs
+// is unaffected. since is the Mark taken before the read began; sessions and requests that received events afterwards keep the event result.
 func (t *Tracker) ApplyFamily(tab string, s Snapshot, since uint64) {
 	scope := map[string]bool{tab: true}
 	for id := range s.family(tab) {
 		scope[id] = true
 	}
-	for changed := true; changed; { // 先前已知的後代（可能已在伺服器端消失）
+	for changed := true; changed; { // previously known descendants (may have disappeared on the server)
 		changed = false
 		for id, x := range t.sessions {
 			if x.parent != "" && scope[x.parent] && !scope[id] {
@@ -148,13 +148,13 @@ func (t *Tracker) ApplyFamily(tab string, s Snapshot, since uint64) {
 	t.applySnapshot(s, since, scope)
 }
 
-// applySnapshot：scope 為 nil 表示整體；否則只處理 scope 內的 session 與其請求。
+// applySnapshot: a nil scope means everything; otherwise only sessions in scope and their requests are processed.
 func (t *Tracker) applySnapshot(s Snapshot, since uint64, scope map[string]bool) {
 	inScope := func(id string) bool { return scope == nil || scope[id] }
 	fresh := func(id string) bool { return t.touched[id] > since }
 	freshReq := func(key string) bool { return t.touchedReq[key] > since }
-	// 完整重讀沒有出現、讀取期間也沒有事件的 session 已經不存在（例如斷線期間被刪除的
-	// 後代）；不丟掉的話，它最後已知的執行中會變成永遠不會結束的幽靈。
+	// A session absent from the full reread and without events during the read no longer exists (e.g. a descendant deleted during a disconnect);
+	// if it is not dropped, its last known running state becomes a ghost that never ends.
 	inSnap := make(map[string]bool, len(s.Sessions))
 	for _, x := range s.Sessions {
 		inSnap[x.ID] = true
@@ -166,8 +166,8 @@ func (t *Tracker) applySnapshot(s Snapshot, since uint64, scope map[string]bool)
 	}
 	for _, x := range s.Sessions {
 		if fresh(x.ID) {
-			// 事件較新，不覆蓋；但父子關係與單調資料（已讀時間、較新的結束時間）仍要補上，
-			// 否則建立事件早於連線的後代會脫離家族、其他 client 的已讀會被遺漏。
+			// The event is newer and is not overwritten; but the parent-child relationship and monotonic data (viewed time, newer finish time) must still be filled in,
+			// otherwise a descendant whose creation event predates the connection would fall out of the family, and reads by other clients would be missed.
 			cur := t.get(x.ID)
 			if cur.parent == "" {
 				cur.parent = x.ParentID
@@ -225,7 +225,7 @@ func (t *Tracker) snapshot() Snapshot {
 		sess := Session{ID: id, ParentID: x.parent, Outcome: x.outcome}
 		sess.Time.Idle, sess.Time.Viewed = x.idle, x.viewed
 		s.Sessions = append(s.Sessions, sess)
-		// 已刪除的 session 保留在家族關係中（讓它的後代不脫離），但不再執行也不能被處理。
+		// A deleted session stays in the family relationship (so its descendants do not detach), but is no longer running and cannot be handled.
 		if x.running && !x.deleted {
 			s.Running[id] = true
 		}
@@ -243,5 +243,5 @@ func (t *Tracker) snapshot() Snapshot {
 	return s
 }
 
-// TabStatus 以目前追蹤的資料推導 tab 狀態。
+// TabStatus derives the tab status from the currently tracked data.
 func (t *Tracker) TabStatus(tab string) Status { return t.snapshot().TabStatus(tab) }

@@ -8,29 +8,29 @@ import (
 	"strings"
 )
 
-// 事件型別（GET /api/event，v2.3.0 實測）。
+// Event types (GET /api/event, observed on v2.3.0).
 const (
 	EventServerConnected = "server.connected"
 )
 
-// Event 是 SSE `data:` 行內的 JSON。只攤平側欄需要的欄位。
+// Event is the JSON inside an SSE `data:` line. Only the fields the sidebar needs are flattened.
 type Event struct {
 	ID      string
 	Type    string
 	Created int64
-	// SessionID 來自 data.sessionID；form.created 則取 data.form.sessionID。
+	// SessionID comes from data.sessionID; for form.created it is data.form.sessionID.
 	SessionID string
-	// ParentID 只出現在 session.created。
+	// ParentID appears only in session.created.
 	ParentID string
-	// RequestID：permission.asked 的 data.id、permission.replied 的 data.requestID。
-	// FormID：form.created 的 data.form.id、form.replied／form.cancelled 的 data.id。
+	// RequestID: data.id of permission.asked, data.requestID of permission.replied.
+	// FormID: data.form.id of form.created, data.id of form.replied/form.cancelled.
 	RequestID string
 	FormID    string
-	// Idle：session.viewed 的 data.idle（被確認已讀的 idle 時間戳）。
+	// Idle: data.idle of session.viewed (the idle timestamp that was confirmed as read).
 	Idle int64
-	// Title：session.renamed 的 data.title（也可能出現在 session.created）。
+	// Title: data.title of session.renamed (may also appear in session.created).
 	Title string
-	// Reason：session.execution.interrupted 的 data.reason（user | shutdown | superseded | inactivity）。
+	// Reason: data.reason of session.execution.interrupted（user | shutdown | superseded | inactivity）。
 	Reason string
 }
 
@@ -56,10 +56,10 @@ type rawEvent struct {
 func decodeEvent(payload string) (Event, error) {
 	var r rawEvent
 	if err := json.Unmarshal([]byte(payload), &r); err != nil {
-		return Event{}, fmt.Errorf("事件不是有效 JSON：%w", err)
+		return Event{}, fmt.Errorf("event is not valid JSON: %w", err)
 	}
 	if r.Type == "" {
-		return Event{}, fmt.Errorf("事件缺少 type")
+		return Event{}, fmt.Errorf("event is missing type")
 	}
 	e := Event{ID: r.ID, Type: r.Type, Created: r.Created, SessionID: r.Data.SessionID, ParentID: r.Data.ParentID, Title: r.Data.Title, Idle: r.Data.Idle, Reason: r.Data.Reason}
 	switch r.Type {
@@ -77,7 +77,7 @@ func decodeEvent(payload string) (Event, error) {
 	return e, nil
 }
 
-// ParseSSE 解析完整的 text/event-stream（到 EOF 為止）；即時串流請用 StreamSSE。
+// ParseSSE parses a complete text/event-stream (up to EOF); use StreamSSE for live streams.
 func ParseSSE(r io.Reader) ([]Event, error) {
 	var events []Event
 	err := StreamSSE(r, func(e Event) error {
@@ -87,9 +87,9 @@ func ParseSSE(r io.Reader) ([]Event, error) {
 	return events, err
 }
 
-// StreamSSE 逐個解析 text/event-stream 並交給 handle，直到串流結束或 handle 回傳錯誤。
-// 行尾可為 \n 或 \r\n；以 ':' 開頭的行是註解（伺服器每 15 秒送 ": heartbeat"，不是事件）；
-// 空行結束一個事件；多行 data 以 \n 串接。
+// StreamSSE parses a text/event-stream event by event and passes each to handle, until the stream ends or handle returns an error.
+// Line endings may be \n or \r\n; lines starting with ':' are comments (the server sends ": heartbeat" every 15 seconds; it is not an event);
+// a blank line ends an event; multiple data lines are joined with \n.
 func StreamSSE(r io.Reader, handle func(Event) error) error {
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)

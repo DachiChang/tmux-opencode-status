@@ -8,24 +8,25 @@ import (
 )
 
 const (
-	margin            = 1  // 左右各留一格，與 POC 相同
-	tabIndent         = 2  // tab 行縮排
-	barWidth          = 1  // 專案名稱前的 ▎
-	noticePrefixWidth = 2  // 提示前 "▲ " 的格寬
-	titleBlock        = 10 // " OPENCODE " 底塊
-	tagWidth          = 3  // 跳轉標籤 " a "
+	margin            = 1  // one cell of margin on each side, same as the POC
+	tabIndent         = 2  // indent of tab rows
+	barWidth          = 1  // ▎ before the project name
+	noticePrefixWidth = 2  // cell width of the "▲ " before a notice
+	titleBlock        = 10 // the " OPENCODE " block
+	tagWidth          = 3  // jump label " a "
 )
 
-// Render 把排好的列轉成 tmux side-status 的行。width 是側欄內容寬度（36 格扣掉分隔線）；
-// 每行最多 width-margin 格，所以最右一格保持空白。
+// Render turns laid-out rows into tmux side-status lines. width is the sidebar content width (36 cells minus the divider);
+// each line has at most width-margin cells, so the rightmost cell stays blank.
 //
-// 標題與名稱都是資料：每個 # 雙寫，控制字元換成空白，雙向控制字元移除，每份文字依格寬
-// 以群集為單位截斷。輸出存進使用者選項並以 #{@opt} 讀取（絕不用 #{E:@opt}／#{T:@opt}），
-// 因此只展開一次。
+// Titles and names are data: every # is doubled, control characters become spaces, bidirectional
+// control characters are removed, and each piece of text is truncated by cell width in whole
+// clusters. The output is stored in a user option and read with #{@opt} (never #{E:@opt} or
+// #{T:@opt}), so it is expanded only once.
 func Render(rows []Row, width int, th Theme) []string { return render(rows, width, th, false) }
 
-// RenderJump 是跳轉模式的版面：與 Render 的列數、range、非群組列完全相同，只有分到字母的群組列
-// 以跳轉標籤取代開頭的 ▎。
+// RenderJump is the jump mode layout: its row count, ranges, and non-group rows are identical to Render's; only group rows
+// that were assigned a letter replace the leading ▎ with a jump label.
 func RenderJump(rows []Row, width int, th Theme) []string { return render(rows, width, th, true) }
 
 func render(rows []Row, width int, th Theme, jump bool) []string {
@@ -36,13 +37,13 @@ func render(rows []Row, width int, th Theme, jump bool) []string {
 	return out
 }
 
-// JumpRangePrefix 是點擊範圍字串中 pane 編號之前的固定前綴（range 字串為 oc<N>）。
-// 寫入端（jumpRange）與 tmux 的 MouseDown1SideStatus 綁定共用這個常數。
+// JumpRangePrefix is the fixed prefix before the pane number in a click range string (the range string is oc<N>).
+// The writer (jumpRange) and tmux's MouseDown1SideStatus binding share this constant.
 const JumpRangePrefix = "oc"
 
-// jumpRange 把整行包成點擊範圍：tmux 的 MouseDown1SideStatus 綁定從 range 字串 oc<N> 取出 pane 編號。
-// 每行各自開始與結束，不依賴 range 跨換行延續；標記不占格寬。參數只由固定前綴加十進位數字組成，
-// 與使用者資料無關，所以不需跳脫。
+// jumpRange wraps a whole line in a click range: tmux's MouseDown1SideStatus binding extracts the pane number from the range string oc<N>.
+// Each line starts and ends its own range and does not rely on a range continuing across newlines; the markers take no cell width.
+// The argument is only the fixed prefix plus decimal digits and is unrelated to user data, so it needs no escaping.
 func jumpRange(target, line string) string {
 	if target == "" {
 		return line
@@ -61,7 +62,7 @@ func renderRow(r Row, usable int, th Theme, jump bool) string {
 	case RowGroup:
 		lead, leadWidth := pad+"#[fg="+th.Emphasis+"]▎", margin+barWidth
 		if jump && strings.IndexByte(JumpLetters, r.Letter) >= 0 {
-			// 標籤（空白＋字母＋空白）加 1 格空白取代 ▎ 與它前面的邊距；字母只來自 a–z，不是資料。
+			// The label (space + letter + space) plus 1 blank cell replaces ▎ and the margin before it; the letter only comes from a–z and is not data.
 			lead, leadWidth = styled("bg="+th.Emphasis+",fg="+th.Title, " "+string(r.Letter)+" ")+" ", tagWidth+1
 		}
 		room := usable - leadWidth
@@ -89,8 +90,8 @@ func renderRow(r Row, usable int, th Theme, jump bool) string {
 	return ""
 }
 
-// rightSummary 補空白讓摘要的最後一格貼齊 usable；used 是該行已占的格數。
-// 空間不夠（極端大量 tab）時，保留優先順序靠前的符號，其餘以 … 收尾，永不越界。
+// rightSummary pads with spaces so the summary's last cell lines up with usable; used is the number of cells the line already occupies.
+// When there is not enough space (an extreme number of tabs), it keeps the higher-priority symbols and ends the rest with …, and never overflows.
 func rightSummary(used int, summary string, usable int, th Theme) string {
 	if summary == "" {
 		return ""
@@ -137,10 +138,11 @@ func styled(style, text string) string {
 
 func esc(s string) string { return strings.ReplaceAll(s, "#", "##") }
 
-// clean 讓資料只剩一行可見字元：控制字元（含換行、ESC、NUL）與行／段落分隔符變成空白，
-// 雙向控制與 BOM 直接移除（它們會改變相鄰文字的顯示順序）。開頭無法獨立繪製的字元
-// （VS16、ZWJ、組合字元、孤立 Hangul 中／終聲）也移除：它們會併進前面的空白或符號，
-// 使 tmux 把該格畫成 2 格而讓整行越界。
+// clean reduces data to a single line of visible characters: control characters (including newline, ESC, and NUL) and
+// line/paragraph separators become spaces, and bidirectional controls and the BOM are removed outright (they change the display
+// order of adjacent text). Leading characters that cannot be drawn on their own (VS16, ZWJ, combining characters, a stray
+// Hangul jungseong/jongseong) are also removed: they would merge into the preceding space or symbol,
+// making tmux draw that cell 2 cells wide and overflow the line.
 func clean(s string) string {
 	s = strings.Map(func(r rune) rune {
 		switch {
@@ -154,8 +156,8 @@ func clean(s string) string {
 	return strings.TrimLeftFunc(s, func(r rune) bool { return !cellwidth.Standalone(r) })
 }
 
-// truncate 把 s 截到最多 max 格；有截斷時以 … 結尾。以 tmux 實際會畫在同一格的群集為單位，
-// 不會切開組合字元、ZWJ emoji、國旗或膚色修飾。
+// truncate cuts s to at most max cells and ends with … when it truncates. It works in the clusters tmux actually draws in one cell,
+// so it never splits combining characters, ZWJ emoji, flags, or skin tone modifiers.
 func truncate(s string, max int) string {
 	if max <= 0 {
 		return ""
@@ -173,11 +175,11 @@ func truncate(s string, max int) string {
 		b.WriteString(c)
 		w += cw
 	}
-	// 結尾的 ZWJ 會把緊接的 … 併進前一格，使省略號看不見。
+	// A trailing ZWJ would merge the following … into the previous cell and make the ellipsis invisible.
 	return strings.TrimRight(b.String(), "\u200d") + "…"
 }
 
-// wrap 把 s 依格寬折成最多 width 格的行；不拆群集。
+// wrap folds s into lines of at most width cells by cell width; it does not split clusters.
 func wrap(s string, width int) []string {
 	var lines []string
 	var cur strings.Builder
@@ -198,10 +200,10 @@ func wrap(s string, width int) []string {
 	return lines
 }
 
-// CellWidth 是 tmux 實際繪製的格寬（見 cellwidth 套件）。
+// CellWidth is the cell width tmux actually draws (see the cellwidth package).
 func CellWidth(s string) int { return cellwidth.String(s) }
 
-// StripStyles 移除 #[...] 並還原 ## 跳脫，得到可見文字。
+// StripStyles removes #[...] and undoes ## escaping to get the visible text.
 func StripStyles(s string) string {
 	var b strings.Builder
 	for i := 0; i < len(s); i++ {

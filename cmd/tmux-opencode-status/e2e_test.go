@@ -15,24 +15,24 @@ import (
 	"github.com/DachiChang/tmux-opencode-status/internal/fakeoc"
 )
 
-// 程序層級的外部行為測試：真實常駐程式 + 隔離的 tmux server（-L <socket> -f /dev/null）+
-// 假的 `opencode` 執行檔 + 受控的 tabs.json；從 attached client 的實際畫面觀察結果。
-// 使用者的預設 tmux server 與 OpenCode 資料完全不涉及。
+// Process-level external behavior tests: the real daemon + an isolated tmux server (-L <socket> -f /dev/null) +
+// a fake `opencode` executable + a controlled tabs.json; results are observed from the attached client's actual screen.
+// The user's default tmux server and OpenCode data are not involved at all.
 
 type env struct {
 	t        *testing.T
 	dir      string
-	in, out  string // 被觀察的 server 與承載 client 的外層 server
+	in, out  string // the observed server and the outer server hosting the client
 	daemon   *exec.Cmd
 	tabsPath string
-	// servicePath 指向測試自己的 service.json；絕不讀取使用者真實的 OpenCode 服務。
+	// servicePath points at the test's own service.json; the user's real OpenCode service is never read.
 	servicePath string
 	binDir      string
 	bin         string
 	daemonEnv   []string
-	daemonArgs  []string // 附加到常駐程式的命令列旗標（例如縮短無聲逾時）
+	daemonArgs  []string // extra command-line flags for the daemon (for example, a shorter silence timeout)
 	daemonBin   string
-	// runtimeDir 隔離鎖檔與狀態檔（XDG_RUNTIME_DIR），測試不碰使用者真實的 runtime 目錄。
+	// runtimeDir isolates lock and state files (XDG_RUNTIME_DIR); tests never touch the user's real runtime directory.
 	runtimeDir string
 }
 
@@ -54,8 +54,8 @@ func (e *env) outTmux(args ...string) string {
 	return string(b)
 }
 
-// fakeOpencodeSrc 是假 opencode：預設只睡眠。FAKE_TITLE 非空時像真的 TUI 一樣在啟動時設定終端標題，
-// 收到 SIGINT／SIGTERM 時還原標題再結束；FAKE_CHURN_MS 讓它持續頻繁改標題。
+// fakeOpencodeSrc is a fake opencode: by default it only sleeps. When FAKE_TITLE is non-empty it sets the terminal title at startup like a real TUI,
+// restores the title and exits on SIGINT / SIGTERM; FAKE_CHURN_MS makes it change the title frequently and continuously.
 const fakeOpencodeSrc = `package main
 
 import (
@@ -95,7 +95,7 @@ func main() {
 
 func newEnv(t *testing.T) *env { t.Helper(); return newEnvWith(t, nil) }
 
-// newEnvWith 的 daemonEnv 附加到常駐程式的環境變數（用來在 PATH 前面放 tmux 包裝，製造確定性的慢啟動）。
+// newEnvWith's daemonEnv is appended to the daemon's environment variables (used to put a tmux wrapper at the front of PATH to produce a deterministic slow startup).
 func newEnvWith(t *testing.T, daemonEnv []string) *env { return newEnvFull(t, daemonEnv, nil) }
 
 func newEnvFull(t *testing.T, daemonEnv, daemonArgs []string) *env {
@@ -105,14 +105,14 @@ func newEnvFull(t *testing.T, daemonEnv, daemonArgs []string) *env {
 	return e
 }
 
-// newBareEnv 建好隔離的 tmux server、外層 client 與假 opencode，但不啟動常駐程式（由測試自己決定如何啟動）。
+// newBareEnv sets up the isolated tmux server, the outer client, and the fake opencode, but does not start the daemon (the test decides how to start it).
 func newBareEnv(t *testing.T, daemonEnv, daemonArgs []string) *env {
 	t.Helper()
 	if testing.Short() {
 		t.Skip("-short")
 	}
 	if _, err := exec.LookPath("tmux"); err != nil {
-		t.Skip("沒有 tmux")
+		t.Skip("tmux not found")
 	}
 	root, _ := filepath.EvalSymlinks(t.TempDir())
 	e := &env{t: t, dir: root, in: fmt.Sprintf("tos-e2e-in-%d", os.Getpid()), out: fmt.Sprintf("tos-e2e-out-%d", os.Getpid())}
@@ -123,7 +123,7 @@ func newBareEnv(t *testing.T, daemonEnv, daemonArgs []string) *env {
 	must(t, os.MkdirAll(filepath.Dir(e.tabsPath), 0o755))
 	must(t, os.MkdirAll(e.binDir, 0o755))
 
-	// 假 opencode：只是睡眠的行程，argv[0] 的 basename 為 opencode。
+	// Fake opencode: just a sleeping process whose argv[0] basename is opencode.
 	src := filepath.Join(root, "fake", "main.go")
 	must(t, os.MkdirAll(filepath.Dir(src), 0o755))
 	must(t, os.WriteFile(src, []byte(fakeOpencodeSrc), 0o644))
@@ -139,7 +139,7 @@ func newBareEnv(t *testing.T, daemonEnv, daemonArgs []string) *env {
 	e.writeTabs(`{"global":{"tabs":[],"unread":{}},"cwd":{}}`)
 
 	e.inTmux("new-session", "-d", "-s", "main", "-x", "100", "-y", "30", "-c", root)
-	// 承載 client：外層 server 的 pane 裡 attach 到被觀察的 server，尺寸固定。
+	// Hosting client: attaches to the observed server from a pane on the outer server, with a fixed size.
 	e.outTmux("new-session", "-d", "-s", "hold", "-x", "100", "-y", "30",
 		fmt.Sprintf("tmux -L %s -f /dev/null attach -t main", e.in))
 	t.Cleanup(func() {
@@ -166,7 +166,7 @@ func (e *env) startDaemon(bin string) {
 func (e *env) writeTabs(raw string) {
 	tmp := e.tabsPath + ".tmp"
 	must(e.t, os.WriteFile(tmp, []byte(raw), 0o644))
-	must(e.t, os.Rename(tmp, e.tabsPath)) // OpenCode 以 tmp + rename 更新
+	must(e.t, os.Rename(tmp, e.tabsPath)) // OpenCode updates via tmp + rename
 }
 
 func (e *env) tabsJSON(dirs map[string][]string) string {
@@ -182,16 +182,16 @@ func (e *env) tabsJSON(dirs map[string][]string) string {
 	return string(b)
 }
 
-// tui 在新 window 啟動假 opencode，cwd 為 dir。
+// tui starts the fake opencode in a new window with cwd set to dir.
 func (e *env) tui(dir string, extra ...string) string {
 	return e.tuiCmd("exec", dir, extra...)
 }
 
-// tuiUnderShell 在互動 shell（有 job control）中啟動 TUI：殺掉它時 pane 仍存在，tmux 不會發出任何 hook。
+// tuiUnderShell starts a TUI inside an interactive shell (with job control): when it is killed the pane still exists and tmux emits no hook.
 func (e *env) tuiUnderShell(dir string) string {
 	must(e.t, os.MkdirAll(dir, 0o755))
 	win := strings.TrimSpace(e.inTmux("new-window", "-d", "-P", "-F", "#{window_id}", "-c", dir))
-	time.Sleep(400 * time.Millisecond) // 等 shell 就緒
+	time.Sleep(400 * time.Millisecond) // wait for the shell to be ready
 	e.inTmux("send-keys", "-t", win, e.bin, "Enter")
 	return win
 }
@@ -201,7 +201,7 @@ func (e *env) tuiCmd(prefix, dir string, extra ...string) string {
 	return strings.TrimSpace(e.inTmux("new-window", "-d", "-P", "-F", "#{window_id}", "-c", dir, strings.TrimSpace(prefix+" "+strings.Join(append([]string{e.bin}, extra...), " "))))
 }
 
-// sidebar 是 client 實際畫面左側 36 格（含分隔線）。
+// sidebar is the leftmost 36 cells of the client's actual screen (including the divider).
 func (e *env) sidebar() string {
 	e.t.Helper()
 	var lines []string
@@ -226,7 +226,7 @@ func (e *env) eventually(within time.Duration, what string, ok func(string) bool
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	e.t.Fatalf("%s：%v 內未達成，目前畫面：\n%s", what, within, last)
+	e.t.Fatalf("%s: not reached within %v, current screen:\n%s", what, within, last)
 	return 0
 }
 
@@ -241,56 +241,56 @@ func TestSidebarFollowsTUIAndTabChangesOnARealTmux(t *testing.T) {
 	e := newEnv(t)
 	api := filepath.Join(e.dir, "work", "api")
 
-	e.eventually(3*time.Second, "啟動後顯示沒有 TUI", func(s string) bool { return strings.Contains(s, "沒有 OpenCode TUI") })
+	e.eventually(3*time.Second, "shows no TUI after startup", func(s string) bool { return strings.Contains(s, "No OpenCode TUI running") })
 
-	// TUI 出現：保留群組並顯示「無 tab」（尚無任何 tab 資料）
+	// TUI appears: keep the group and show "No tabs" (there is no tab data yet)
 	e.tui(api, "--server", "http://127.0.0.1:1")
-	d := e.eventually(time.Second, "新增 TUI 於 1 秒內出現", func(s string) bool {
-		return strings.Contains(s, "api") && strings.Contains(s, "無 tab")
+	d := e.eventually(time.Second, "new TUI appears within 1 second", func(s string) bool {
+		return strings.Contains(s, "api") && strings.Contains(s, "No tabs")
 	})
-	t.Logf("TUI 出現 → 畫面：%v", d)
+	t.Logf("TUI appears → screen: %v", d)
 
-	// tab 出現（tabs.json rename 更新），狀態未接上，顯示灰色 ! 的位置符號
+	// A tab appears (tabs.json updated by rename); status is not connected yet, so a gray ! placeholder symbol is shown
 	e.writeTabs(e.tabsJSON(map[string][]string{api: {"修正登入", "write tests"}}))
-	d = e.eventually(time.Second, "新增 tab 於 1 秒內出現", func(s string) bool {
+	d = e.eventually(time.Second, "new tab appears within 1 second", func(s string) bool {
 		return strings.Contains(s, "! 修正登入") && strings.Contains(s, "! write tests")
 	})
-	t.Logf("tab 出現 → 畫面：%v", d)
+	t.Logf("tab appears → screen: %v", d)
 
-	// 第二個 TUI 在同目錄：不重複；另一目錄的 TUI 另成群組並依完整路徑排序
+	// A second TUI in the same directory: not duplicated; a TUI in another directory forms its own group, sorted by full path
 	e.tui(api, "-c")
 	web := filepath.Join(e.dir, "work", "web")
 	webWin := e.tui(web)
 	e.writeTabs(e.tabsJSON(map[string][]string{api: {"修正登入", "write tests"}, web: {"landing"}, filepath.Join(e.dir, "work", "old"): {"歷史"}}))
-	e.eventually(time.Second, "兩個目錄", func(s string) bool { return strings.Contains(s, "landing") })
+	e.eventually(time.Second, "two directories", func(s string) bool { return strings.Contains(s, "landing") })
 	s := e.sidebar()
 	if strings.Count(s, "修正登入") != 1 || strings.Contains(s, "歷史") {
-		t.Fatalf("同目錄重複或列出歷史目錄：\n%s", s)
+		t.Fatalf("duplicate in the same directory or history directory listed:\n%s", s)
 	}
 	if strings.Index(s, "api") > strings.Index(s, "web") {
-		t.Fatalf("目錄未依完整路徑排序：\n%s", s)
+		t.Fatalf("directories not sorted by full path:\n%s", s)
 	}
 
-	// 關閉 web 的 TUI window（有 tmux hook 通知）
+	// Close web's TUI window (a tmux hook notifies the daemon)
 	e.inTmux("kill-window", "-t", webWin)
-	e.eventually(time.Second, "關閉 TUI 於 1 秒內消失", func(s string) bool { return !strings.Contains(s, "landing") })
+	e.eventually(time.Second, "closed TUI disappears within 1 second", func(s string) bool { return !strings.Contains(s, "landing") })
 
 }
 
-// 漏通知：TUI 行程被強制結束但 pane（shell）還在，tmux 不發任何 hook，
-// 只能靠低頻補漏在 10 秒內修正。
+// Missed notification: the TUI process is forcibly killed but its pane (shell) remains, so tmux emits no hook;
+// only the low-frequency catch-up can correct this within 10 seconds.
 func TestMissedNotificationIsCaughtByBackstopWithin10Seconds(t *testing.T) {
 	e := newEnv(t)
 	dir := filepath.Join(e.dir, "work", "api")
 	e.writeTabs(e.tabsJSON(map[string][]string{dir: {"a"}}))
 	e.tuiUnderShell(dir)
-	e.eventually(10*time.Second, "shell 內啟動的 TUI（無 hook）於 10 秒內出現", func(s string) bool { return strings.Contains(s, "! a") })
+	e.eventually(10*time.Second, "TUI started inside a shell (no hook) appears within 10 seconds", func(s string) bool { return strings.Contains(s, "! a") })
 	must(t, exec.Command("pkill", "-KILL", "-f", e.bin).Run())
-	d := e.eventually(10*time.Second, "漏通知於 10 秒內修正", func(s string) bool { return strings.Contains(s, "沒有 OpenCode TUI") })
+	d := e.eventually(10*time.Second, "missed notification corrected within 10 seconds", func(s string) bool { return strings.Contains(s, "No OpenCode TUI running") })
 	if d < time.Second {
-		t.Fatalf("%v 就更新了，代表這不是漏通知情境", d)
+		t.Fatalf("updated after %v, so this is not a missed-notification scenario", d)
 	}
-	t.Logf("漏通知 → 補漏：%v", d)
+	t.Logf("missed notification → catch-up: %v", d)
 }
 
 func TestStoppingDaemonRemovesItsHooksOnly(t *testing.T) {
@@ -298,13 +298,13 @@ func TestStoppingDaemonRemovesItsHooksOnly(t *testing.T) {
 	e.inTmux("set-hook", "-g", "pane-exited[3]", "display-message user-hook")
 	time.Sleep(500 * time.Millisecond)
 	if !strings.Contains(e.inTmux("show-hooks", "-gw"), "wait-for -S tos_wake") {
-		t.Fatal("常駐程式執行中應有喚醒 hook")
+		t.Fatal("the daemon should have wake-up hooks while running")
 	}
 	must(t, e.daemon.Process.Signal(syscall.SIGTERM))
 	_ = e.daemon.Wait()
 	hooks := e.inTmux("show-hooks", "-gw")
 	if strings.Contains(hooks, "tos_wake") || !strings.Contains(hooks, "user-hook") {
-		t.Fatalf("結束後 hook 應只移除插件自己的：\n%s", hooks)
+		t.Fatalf("after exit, only the plugin's own hooks should be removed:\n%s", hooks)
 	}
 }
 
@@ -315,8 +315,8 @@ func TestNonTUIOpencodeCommandsAreNotListed(t *testing.T) {
 	e.tui(dir, "serve")
 	e.tui(dir, "session", "list")
 	time.Sleep(1500 * time.Millisecond)
-	if s := e.sidebar(); !strings.Contains(s, "沒有 OpenCode TUI") || strings.Contains(s, "svc") {
-		t.Fatalf("非 TUI 被列入：\n%s", s)
+	if s := e.sidebar(); !strings.Contains(s, "No OpenCode TUI running") || strings.Contains(s, "svc") {
+		t.Fatalf("non-TUI listed:\n%s", s)
 	}
 }
 
@@ -325,10 +325,10 @@ func TestIncompatibleTabsFileShowsNoticeAndKeepsLastList(t *testing.T) {
 	dir := filepath.Join(e.dir, "work", "api")
 	e.writeTabs(e.tabsJSON(map[string][]string{dir: {"keep me"}}))
 	e.tui(dir)
-	e.eventually(2*time.Second, "初始顯示", func(s string) bool { return strings.Contains(s, "keep me") })
+	e.eventually(2*time.Second, "initial display", func(s string) bool { return strings.Contains(s, "keep me") })
 	e.writeTabs(`{"version":9}`)
-	e.eventually(2*time.Second, "不相容時提示並保留", func(s string) bool {
-		return strings.Contains(s, "無法讀取 tab 清單") && strings.Contains(s, "keep me") && !strings.Contains(s, "無 tab")
+	e.eventually(2*time.Second, "shows a notice and keeps the list when incompatible", func(s string) bool {
+		return strings.Contains(s, "Cannot read tab list") && strings.Contains(s, "keep me") && !strings.Contains(s, "No tabs")
 	})
 }
 
@@ -340,18 +340,18 @@ func TestUserTmuxOptionsAndBindingsAreUntouched(t *testing.T) {
 	dir := filepath.Join(e.dir, "work", "api")
 	e.tui(dir)
 	e.writeTabs(e.tabsJSON(map[string][]string{dir: {"a"}}))
-	e.eventually(2*time.Second, "有內容", func(s string) bool { return strings.Contains(s, "a") && strings.Contains(s, "api") })
+	e.eventually(2*time.Second, "has content", func(s string) bool { return strings.Contains(s, "a") && strings.Contains(s, "api") })
 	if got := strings.TrimSpace(e.inTmux("show", "-gv", "@oc_side")); got != "user-value" {
-		t.Fatalf("@oc_side 被改：%q", got)
+		t.Fatalf("@oc_side was changed: %q", got)
 	}
 	if got := strings.TrimSpace(e.inTmux("show", "-gv", "@oc_side_bak")); got != "user-bak" {
-		t.Fatalf("@oc_side_bak 被改：%q", got)
+		t.Fatalf("@oc_side_bak was changed: %q", got)
 	}
 	if after := keysWithoutJump(e.inTmux("list-keys")); after != before {
-		t.Fatal("除了 MouseDown1SideStatus 外，鍵盤綁定被改變")
+		t.Fatal("keyboard bindings were changed other than MouseDown1SideStatus")
 	}
 	if strings.Contains(e.inTmux("show-options", "-g"), "@sb_") {
-		t.Fatal("不應使用舊 POC 前綴 @sb_")
+		t.Fatal("the old POC prefix @sb_ must not be used")
 	}
 }
 
@@ -362,11 +362,11 @@ func TestDaemonRefusesToRunWithoutExplicitSocket(t *testing.T) {
 		t.Fatalf("%v %s", err, b)
 	}
 	if err := exec.Command(bin).Run(); err == nil {
-		t.Fatal("未指定 socket 不得執行（避免誤用預設 tmux server）")
+		t.Fatal("must not run without a socket (to avoid using the default tmux server by mistake)")
 	}
 }
 
-// 另一個 tmux server（不同 socket）中的 TUI 不得出現在這個 server 的側欄。
+// A TUI in another tmux server (different socket) must not appear in this server's sidebar.
 func TestOtherTmuxServerPanesAreNotMixedIn(t *testing.T) {
 	e := newEnv(t)
 	other := e.in + "-other"
@@ -379,14 +379,14 @@ func TestOtherTmuxServerPanesAreNotMixedIn(t *testing.T) {
 	}
 	e.writeTabs(e.tabsJSON(map[string][]string{otherDir: {"foreign"}, mine: {"local"}}))
 	e.tui(mine)
-	e.eventually(2*time.Second, "本 server 的 TUI", func(s string) bool { return strings.Contains(s, "local") })
+	e.eventually(2*time.Second, "this server's TUI", func(s string) bool { return strings.Contains(s, "local") })
 	if s := e.sidebar(); strings.Contains(s, "foreign") || strings.Contains(s, "elsewhere") {
-		t.Fatalf("混入其他 server 的資料：\n%s", s)
+		t.Fatalf("data from another server mixed in:\n%s", s)
 	}
 }
 
-// 完整程序：真實常駐程式 + 隔離 tmux + 假 OpenCode 服務（httptest + SSE）。
-// 從 attached client 的實際畫面觀察一個 session 的執行／結束／已讀生命週期。
+// Full process: the real daemon + isolated tmux + a fake OpenCode service (httptest + SSE).
+// Observe one session's running / finished / read lifecycle from the attached client's actual screen.
 func TestSessionLifecycleOnARealTmuxWithFakeOpenCodeService(t *testing.T) {
 	e := newEnv(t)
 	dir := filepath.Join(e.dir, "work", "api")
@@ -396,55 +396,55 @@ func TestSessionLifecycleOnARealTmuxWithFakeOpenCodeService(t *testing.T) {
 	e.writeTabs(e.tabsJSON(map[string][]string{dir: {"修正登入", "write tests"}}))
 	e.tui(dir, "--server", "http://127.0.0.1:1")
 
-	e.eventually(3*time.Second, "服務尚未開啟：保持 ! 並提示，不顯示閒置", func(s string) bool {
-		return strings.Contains(s, "! 修正登入") && strings.Contains(s, "無法連線 OpenCode 服務")
+	e.eventually(3*time.Second, "service not up yet: keeps ! with a notice, not idle", func(s string) bool {
+		return strings.Contains(s, "! 修正登入") && strings.Contains(s, "Cannot connect to OpenCode")
 	})
 	svc.WriteServiceFile(e.servicePath)
-	e.eventually(5*time.Second, "服務出現後自動接上", func(s string) bool {
-		return strings.Contains(s, "· 修正登入") && strings.Contains(s, "· write tests") && !strings.Contains(s, "無法連線")
+	e.eventually(5*time.Second, "connects automatically once the service appears", func(s string) bool {
+		return strings.Contains(s, "· 修正登入") && strings.Contains(s, "· write tests") && !strings.Contains(s, "Cannot connect")
 	})
 
 	svc.Start("ses_0")
-	d := e.eventually(time.Second, "執行中 1 秒內出現", func(s string) bool {
+	d := e.eventually(time.Second, "running appears within 1 second", func(s string) bool {
 		return strings.Contains(s, "● 修正登入") && strings.Contains(s, " OPENCODE ") && strings.Contains(s, "●1")
 	})
-	t.Logf("執行中 → 畫面：%v", d)
+	t.Logf("running → screen: %v", d)
 	svc.Finish("ses_0", "failed")
 	svc.Start("ses_1")
 	svc.Finish("ses_1", "interrupted")
-	d = e.eventually(time.Second, "失敗／中斷於 1 秒內出現", func(s string) bool {
+	d = e.eventually(time.Second, "failed / interrupted appears within 1 second", func(s string) bool {
 		return strings.Contains(s, "✗ 修正登入") && strings.Contains(s, "◆ write tests")
 	})
-	t.Logf("結束未讀 → 畫面：%v", d)
-	t.Logf("畫面：\n%s", e.sidebar())
+	t.Logf("finished unread → screen: %v", d)
+	t.Logf("screen:\n%s", e.sidebar())
 	svc.View("ses_0")
 	svc.View("ses_1")
-	d = e.eventually(time.Second, "其他 client 已讀後回閒置", func(s string) bool {
+	d = e.eventually(time.Second, "returns to idle after another client marks it read", func(s string) bool {
 		return strings.Contains(s, "· 修正登入") && strings.Contains(s, "· write tests")
 	})
-	t.Logf("已讀 → 閒置：%v", d)
+	t.Logf("read → idle: %v", d)
 
-	// 服務中斷：移除探索檔並斷線，改為 !；服務回來自動恢復
+	// Service interruption: remove the discovery file and disconnect, which turns tabs to !; they recover automatically when the service returns
 	_ = os.Remove(e.servicePath)
 	svc.Drop()
-	e.eventually(3*time.Second, "斷線後為 !", func(s string) bool {
-		return strings.Contains(s, "! 修正登入") && strings.Contains(s, "無法連線 OpenCode 服務")
+	e.eventually(3*time.Second, "! after disconnect", func(s string) bool {
+		return strings.Contains(s, "! 修正登入") && strings.Contains(s, "Cannot connect to OpenCode")
 	})
 	svc.WriteServiceFile(e.servicePath)
-	e.eventually(5*time.Second, "自動恢復", func(s string) bool { return strings.Contains(s, "· 修正登入") })
+	e.eventually(5*time.Second, "automatic recovery", func(s string) bool { return strings.Contains(s, "· 修正登入") })
 
 	if w := svc.Writes(); len(w) != 0 {
-		t.Fatalf("對 OpenCode 發出了寫入請求：%v", w)
+		t.Fatalf("write request sent to OpenCode: %v", w)
 	}
 	for _, r := range svc.Requests() {
 		if strings.Contains(r, "/view") || strings.Contains(r, "/reply") {
-			t.Fatalf("呼叫了標記已讀／回覆：%s", r)
+			t.Fatalf("mark-read / reply was called: %s", r)
 		}
 	}
 }
 
-// 等你核准／等你回答：多個請求、交錯處理、權限優先、問題取消；全程只有 GET，
-// 也不新增或改變插件接管以外的 tmux 綁定。
+// Waiting for approval / waiting for an answer: multiple requests, interleaved handling, permission priority, question cancellation; only GETs throughout,
+// and no tmux bindings are added or changed beyond what the plugin owns.
 func TestPendingApprovalsAndAnswersOnARealTmuxWithFakeOpenCodeService(t *testing.T) {
 	e := newEnv(t)
 	dir := filepath.Join(e.dir, "work", "api")
@@ -452,46 +452,46 @@ func TestPendingApprovalsAndAnswersOnARealTmuxWithFakeOpenCodeService(t *testing
 	for _, id := range []string{"ses_0", "ses_1", "ses_2"} {
 		svc.AddSession(id, "")
 	}
-	svc.SeedPermission("per_old", "ses_0") // 側欄啟動前已存在
+	svc.SeedPermission("per_old", "ses_0") // existed before the sidebar started
 	svc.WriteServiceFile(e.servicePath)
 	e.writeTabs(e.tabsJSON(map[string][]string{dir: {"approve me", "answer me", "calm"}}))
 	bindingsBefore := e.outTmux("list-keys")
 	e.tui(dir, "--server", "http://127.0.0.1:1")
 
-	d := e.eventually(5*time.Second, "啟動前已存在的待核准", func(s string) bool {
+	d := e.eventually(5*time.Second, "pending approval that existed before startup", func(s string) bool {
 		return strings.Contains(s, "? approve me") && strings.Contains(s, "· answer me") && strings.Contains(s, "?1")
 	})
-	t.Logf("初始待核准 → 畫面：%v", d)
+	t.Logf("initial pending approval → screen: %v", d)
 
 	svc.AskForm("frm_1", "ses_1")
 	svc.AskForm("frm_2", "ses_1")
 	svc.AskPermission("per_new", "ses_0")
-	e.eventually(time.Second, "多個請求：每個 tab 只計一次", func(s string) bool {
+	e.eventually(time.Second, "multiple requests: each tab counted once", func(s string) bool {
 		return strings.Contains(s, "? approve me") && strings.Contains(s, "? answer me") && strings.Contains(s, "?2") && !strings.Contains(s, "?4")
 	})
-	svc.ReplyPermission("per_old") // 交錯：ses_0 仍有 per_new
-	svc.AnswerForm("frm_1")        // ses_1 仍有 frm_2
-	e.eventually(time.Second, "交錯處理後仍待處理", func(s string) bool {
+	svc.ReplyPermission("per_old") // interleaved: ses_0 still has per_new
+	svc.AnswerForm("frm_1")        // ses_1 still has frm_2
+	e.eventually(time.Second, "still pending after interleaved handling", func(s string) bool {
 		return strings.Contains(s, "? approve me") && strings.Contains(s, "? answer me")
 	})
 	svc.ReplyPermission("per_new")
 	svc.CancelForm("frm_2")
-	e.eventually(time.Second, "請求完成／取消後回復閒置", func(s string) bool {
+	e.eventually(time.Second, "returns to idle after requests complete / are cancelled", func(s string) bool {
 		return strings.Contains(s, "· approve me") && strings.Contains(s, "· answer me") && !strings.Contains(s, "?")
 	})
 
-	// 權限優先於問題與執行中；回覆後不猜閒置：仍在執行就回到執行中
+	// Permission takes priority over questions and running; after a reply, do not guess idle: if still running, return to running
 	svc.Start("ses_2")
 	svc.AskForm("frm_3", "ses_2")
 	svc.AskPermission("per_3", "ses_2")
-	e.eventually(time.Second, "待處理蓋過執行中", func(s string) bool { return strings.Contains(s, "? calm") && !strings.Contains(s, "●") })
+	e.eventually(time.Second, "pending overrides running", func(s string) bool { return strings.Contains(s, "? calm") && !strings.Contains(s, "●") })
 	svc.ReplyPermission("per_3")
 	svc.CancelForm("frm_3")
-	e.eventually(time.Second, "回到執行中", func(s string) bool { return strings.Contains(s, "● calm") })
+	e.eventually(time.Second, "returns to running", func(s string) bool { return strings.Contains(s, "● calm") })
 
-	// 顏色：黃色 ?，沒有背景色塊
+	// Color: yellow ?, with no background block
 	svc.AskPermission("per_4", "ses_2")
-	e.eventually(time.Second, "待核准", func(s string) bool { return strings.Contains(s, "? calm") })
+	e.eventually(time.Second, "waiting for approval", func(s string) bool { return strings.Contains(s, "? calm") })
 	var own []string
 	for _, l := range strings.Split(e.inTmux("show-options", "-g"), "\n") {
 		if strings.HasPrefix(l, "@tos_layout_") {
@@ -500,99 +500,99 @@ func TestPendingApprovalsAndAnswersOnARealTmuxWithFakeOpenCodeService(t *testing
 	}
 	opts := strings.Join(own, "\n")
 	if opts == "" {
-		t.Fatalf("找不到側欄輸出選項：\n%s", opts)
+		t.Fatalf("sidebar output option not found:\n%s", opts)
 	}
 	noBlocks := strings.ReplaceAll(opts, "#[bg=#A78BFA,fg=#18181B] OPENCODE ", "")
-	noBlocks = regexp.MustCompile(`#\[bg=#A78BFA,fg=#18181B\] [a-z] `).ReplaceAllString(noBlocks, "") // 跳轉標籤
+	noBlocks = regexp.MustCompile(`#\[bg=#A78BFA,fg=#18181B\] [a-z] `).ReplaceAllString(noBlocks, "") // jump label
 	if strings.Contains(noBlocks, "bg=") || strings.Contains(opts, "fg=#FACC15]!") {
-		t.Fatalf("待處理不得使用標題以外的背景色塊或黃色 !：\n%s", opts)
+		t.Fatalf("pending must not use background blocks other than the title or a yellow !:\n%s", opts)
 	}
 	if !strings.Contains(opts, "#[fg=#FACC15]?#[default]") {
-		t.Fatalf("側欄輸出找不到黃色 ?：\n%s", opts)
+		t.Fatalf("yellow ? not found in sidebar output:\n%s", opts)
 	}
 
 	if w := svc.Writes(); len(w) != 0 {
-		t.Fatalf("對 OpenCode 發出了寫入請求：%v", w)
+		t.Fatalf("write request sent to OpenCode: %v", w)
 	}
 	for _, r := range svc.Requests() {
 		if strings.Contains(r, "reply") || strings.Contains(r, "/view") {
-			t.Fatalf("呼叫了回覆／標記已讀：%s", r)
+			t.Fatalf("reply / mark-read was called: %s", r)
 		}
 	}
 	if after := e.outTmux("list-keys"); after != bindingsBefore {
-		t.Fatal("不得新增或改變任何 tmux 綁定")
+		t.Fatal("must not add or change any tmux binding")
 	}
 }
 
-// 多層 subagent 家族：孫輩的執行與待處理彙整到 tab；主 session 先結束；啟動前已存在的後代；
-// 無關家族隔離；後代失敗不污染 tab。全程只有 GET，也不新增或改變插件接管以外的 tmux 綁定。
+// Multi-level subagent family: grandchild running and pending states roll up to the tab; the main session finishes first; descendants that existed before startup;
+// unrelated families are isolated; a descendant failure does not taint the tab. Only GETs throughout, and no tmux bindings are added or changed beyond what the plugin owns.
 func TestSessionFamilyRollsUpToTabsOnARealTmuxWithFakeOpenCodeService(t *testing.T) {
 	e := newEnv(t)
 	dir := filepath.Join(e.dir, "work", "api")
 	svc := fakeoc.New(t)
-	// 側欄啟動前就存在的多層家族（沒有任何 session 建立事件）
+	// A multi-level family that existed before the sidebar started (with no session-created events)
 	svc.Seed("ses_R", "", "", 0, 0, false)
 	svc.Seed("ses_C", "ses_R", "", 0, 0, false)
 	svc.Seed("ses_G", "ses_C", "", 0, 0, false)
 	svc.Seed("ses_Q", "", "", 0, 0, false)
 	svc.Seed("ses_Q1", "ses_Q", "", 0, 0, false)
-	svc.Seed("ses_X", "", "", 0, 0, false) // 無關家族
+	svc.Seed("ses_X", "", "", 0, 0, false) // unrelated family
 	svc.Seed("ses_X1", "ses_X", "", 0, 0, false)
-	svc.SeedPermission("per_old", "ses_G") // 孫輩的待核准，tab 本身看不到
+	svc.SeedPermission("per_old", "ses_G") // grandchild's pending approval, not visible from the tab itself
 	svc.WriteServiceFile(e.servicePath)
 	e.writeTabs(`{"global":{"tabs":[],"unread":{}},"cwd":{"` + dir + `":{"tabs":[` +
 		`{"sessionID":"ses_R","title":"root job"},{"sessionID":"ses_X","title":"other family"},{"sessionID":"ses_Q","title":"calm"}],"unread":{}}}}`)
 	bindingsBefore := e.outTmux("list-keys")
 	e.tui(dir, "--server", "http://127.0.0.1:1")
 
-	d := e.eventually(5*time.Second, "啟動前已存在的孫輩待核准", func(s string) bool { return strings.Contains(s, "? root job") })
-	t.Logf("既有孫輩阻塞 → 畫面：%v", d)
-	t.Logf("畫面：\n%s", e.sidebar())
+	d := e.eventually(5*time.Second, "grandchild pending approval that existed before startup", func(s string) bool { return strings.Contains(s, "? root job") })
+	t.Logf("existing grandchild blocked → screen: %v", d)
+	t.Logf("screen:\n%s", e.sidebar())
 	svc.ReplyPermission("per_old")
-	e.eventually(time.Second, "處理後回閒置，後代不另列", func(s string) bool {
+	e.eventually(time.Second, "returns to idle after handling; descendants are not listed separately", func(s string) bool {
 		return strings.Contains(s, "· root job") && !strings.Contains(s, "ses_")
 	})
 
-	svc.AddSession("ses_G2", "ses_G") // 啟動後新增的第四層
+	svc.AddSession("ses_G2", "ses_G") // a fourth level added after startup
 	svc.Start("ses_R")
 	svc.Start("ses_G2")
-	e.eventually(time.Second, "家族執行中", func(s string) bool { return strings.Contains(s, "● root job") })
-	svc.Finish("ses_R", "succeeded") // 主 session 先結束，後代仍在執行
+	e.eventually(time.Second, "family running", func(s string) bool { return strings.Contains(s, "● root job") })
+	svc.Finish("ses_R", "succeeded") // the main session finishes first while descendants are still running
 	time.Sleep(300 * time.Millisecond)
-	d = e.eventually(time.Second, "主先結束後仍為 ●", func(s string) bool { return strings.Contains(s, "● root job") })
-	t.Logf("主先結束 → 畫面：%v", d)
+	d = e.eventually(time.Second, "still ● after the main session finishes first", func(s string) bool { return strings.Contains(s, "● root job") })
+	t.Logf("main finished first → screen: %v", d)
 	svc.AskForm("frm_1", "ses_G2")
-	e.eventually(time.Second, "孫輩待回答優先於執行中", func(s string) bool { return strings.Contains(s, "? root job") && !strings.Contains(s, "● root job") })
-	e.eventually(time.Second, "無關家族與其他 tab 不受影響", func(s string) bool {
+	e.eventually(time.Second, "grandchild waiting for an answer takes priority over running", func(s string) bool { return strings.Contains(s, "? root job") && !strings.Contains(s, "● root job") })
+	e.eventually(time.Second, "unrelated families and other tabs are unaffected", func(s string) bool {
 		return strings.Contains(s, "· other family") && strings.Contains(s, "· calm")
 	})
 	svc.AnswerForm("frm_1")
-	svc.Finish("ses_G2", "failed") // 後代失敗不是 tab 失敗
-	d = e.eventually(time.Second, "家族結束：只有 tab 自己的結束未讀", func(s string) bool {
+	svc.Finish("ses_G2", "failed") // a descendant failure is not a tab failure
+	d = e.eventually(time.Second, "family finished: only the tab's own finish is unread", func(s string) bool {
 		return strings.Contains(s, "◆ root job") && !strings.Contains(s, "✗")
 	})
-	t.Logf("家族結束 → 畫面：%v", d)
-	svc.Start("ses_R") // 父被喚醒
-	e.eventually(time.Second, "父被喚醒", func(s string) bool { return strings.Contains(s, "● root job") })
+	t.Logf("family finished → screen: %v", d)
+	svc.Start("ses_R") // parent woken up
+	e.eventually(time.Second, "parent woken up", func(s string) bool { return strings.Contains(s, "● root job") })
 
 	if w := svc.Writes(); len(w) != 0 {
-		t.Fatalf("對 OpenCode 發出了寫入請求：%v", w)
+		t.Fatalf("write request sent to OpenCode: %v", w)
 	}
 	for _, r := range svc.Requests() {
 		if strings.Contains(r, "reply") || strings.Contains(r, "/view") {
-			t.Fatalf("呼叫了回覆／標記已讀：%s", r)
+			t.Fatalf("reply / mark-read was called: %s", r)
 		}
 	}
 	if after := e.outTmux("list-keys"); after != bindingsBefore {
-		t.Fatal("不得新增或改變任何 tmux 綁定")
+		t.Fatal("must not add or change any tmux binding")
 	}
 }
 
-// ---- #8 cwd／global 模式與設定重載 ----
+// ---- #8 cwd / global mode and configuration reload ----
 
 const modeOpt = "@opencode-status-mode"
 
-// bothScopesJSON：global 清單含不在任何 TUI 目錄下的 session，cwd 清單另有一份。
+// bothScopesJSON: the global list contains sessions that are not under any TUI directory; the cwd list holds a separate copy.
 func (e *env) bothScopesJSON(dirs map[string][]string, global []string) string {
 	var gtabs []map[string]string
 	for i, ti := range global {
@@ -605,7 +605,7 @@ func (e *env) bothScopesJSON(dirs map[string][]string, global []string) string {
 	return string(b)
 }
 
-// reload 模擬 `tmux source-file ~/.tmux.conf` 重載含模式選項的設定檔。
+// reload simulates `tmux source-file ~/.tmux.conf` reloading a configuration file that contains the mode option.
 func (e *env) reload(conf string) {
 	e.t.Helper()
 	path := filepath.Join(e.dir, "reload.conf")
@@ -613,7 +613,7 @@ func (e *env) reload(conf string) {
 	e.inTmux("source-file", path)
 }
 
-// daemonCount 數出指向被觀察 server 的常駐程式實例（pgrep 不會算到自己）。
+// daemonCount counts daemon instances pointing at the observed server (pgrep does not count itself).
 func (e *env) daemonCount() int {
 	out, _ := exec.Command("pgrep", "-f", "tmux-opencode-status -L "+e.in+" ").Output()
 	return len(strings.Fields(string(out)))
@@ -627,28 +627,28 @@ func TestReloadingTmuxConfigSwitchesBetweenCwdAndGlobalWithoutRestart(t *testing
 	e.tui(api)
 	e.tui(web, "-c")
 
-	e.eventually(3*time.Second, "預設 cwd", func(s string) bool {
+	e.eventually(3*time.Second, "default cwd", func(s string) bool {
 		return strings.Contains(s, "api tab") && strings.Contains(s, "web tab") && !strings.Contains(s, "GLOBAL")
 	})
 	pid := e.daemon.Process.Pid
 
 	e.reload("set -g " + modeOpt + " global\n")
-	d := e.eventually(time.Second, "重載後 1 秒內切到 global", func(s string) bool {
+	d := e.eventually(time.Second, "switches to global within 1 second after reload", func(s string) bool {
 		return strings.Contains(s, "GLOBAL") && strings.Contains(s, "其他目錄的工作") && strings.Count(s, "global one") == 1 &&
 			!strings.Contains(s, "api tab") && !strings.Contains(s, "web tab")
 	})
-	t.Logf("cwd → global：%v", d)
+	t.Logf("cwd → global: %v", d)
 
 	e.reload("set -g " + modeOpt + " cwd\n")
-	e.eventually(time.Second, "重載後切回 cwd，不殘留 global", func(s string) bool {
+	e.eventually(time.Second, "switches back to cwd after reload, leaving no global remnants", func(s string) bool {
 		return strings.Contains(s, "api tab") && strings.Contains(s, "web tab") && !strings.Contains(s, "GLOBAL") && !strings.Contains(s, "global one")
 	})
 
 	e.reload("set -gu " + modeOpt + "\nset -g " + modeOpt + " global\nset -gu " + modeOpt + "\n")
-	e.eventually(time.Second, "移除設定回到預設 cwd", func(s string) bool { return strings.Contains(s, "api tab") && !strings.Contains(s, "GLOBAL") })
+	e.eventually(time.Second, "removing the setting returns to the default cwd", func(s string) bool { return strings.Contains(s, "api tab") && !strings.Contains(s, "GLOBAL") })
 
 	if e.daemon.Process.Pid != pid || e.daemonCount() != 1 {
-		t.Fatalf("切換模式不得產生第二個實例（pid %d → %d，實例數 %d）", pid, e.daemon.Process.Pid, e.daemonCount())
+		t.Fatalf("switching modes must not create a second instance (pid %d → %d, instance count %d)", pid, e.daemon.Process.Pid, e.daemonCount())
 	}
 }
 
@@ -661,46 +661,46 @@ func TestGlobalModeMultipleTUIsAndLastClosedOnARealTmux(t *testing.T) {
 	w1 := e.tui(api)
 	w2 := e.tui(api, "-c")
 	w3 := e.tui(web)
-	e.eventually(2*time.Second, "多個 TUI 只列一份共享清單", func(s string) bool { return strings.Contains(s, "shared a") })
+	e.eventually(2*time.Second, "multiple TUIs list only one shared list", func(s string) bool { return strings.Contains(s, "shared a") })
 	s := e.sidebar()
 	if strings.Count(s, "shared a") != 1 || strings.Count(s, "GLOBAL") != 1 || strings.Contains(s, "api tab") || strings.Contains(s, "web") {
-		t.Fatalf("global 清單重複或混入 cwd：\n%s", s)
+		t.Fatalf("global list duplicated or mixed with cwd:\n%s", s)
 	}
 	e.inTmux("kill-window", "-t", w1)
 	e.inTmux("kill-window", "-t", w2)
 	time.Sleep(700 * time.Millisecond)
 	if s := e.sidebar(); !strings.Contains(s, "shared a") {
-		t.Fatalf("仍有 TUI 時共享清單應保留：\n%s", s)
+		t.Fatalf("the shared list should be kept while a TUI remains:\n%s", s)
 	}
 	e.inTmux("kill-window", "-t", w3)
-	e.eventually(time.Second, "最後一個 TUI 關閉後呈現空畫面", func(s string) bool {
-		return strings.Contains(s, "沒有 OpenCode TUI") && !strings.Contains(s, "shared a") && !strings.Contains(s, "GLOBAL")
+	e.eventually(time.Second, "empty screen after the last TUI closes", func(s string) bool {
+		return strings.Contains(s, "No OpenCode TUI running") && !strings.Contains(s, "shared a") && !strings.Contains(s, "GLOBAL")
 	})
 }
 
 func TestInvalidModeNeverStartsTrackingThenReloadKeepsValidMode(t *testing.T) {
-	// 首次無效：不開始追蹤
+	// Invalid at first: do not start tracking
 	e := newEnv(t)
 	api := filepath.Join(e.dir, "work", "api")
 	e.inTmux("set", "-g", modeOpt, "globl")
 	e.writeTabs(e.bothScopesJSON(map[string][]string{api: {"api tab"}}, []string{"shared a"}))
 	e.tui(api)
-	e.eventually(2*time.Second, "首次無效值提示且不追蹤", func(s string) bool {
-		return strings.Contains(s, "模式設定無效") && strings.Contains(s, "尚未開始追蹤")
+	e.eventually(2*time.Second, "first invalid value shows a notice and is not tracked", func(s string) bool {
+		return strings.Contains(s, "▲ Invalid mode; not tracking\n")
 	})
-	if s := e.sidebar(); strings.Contains(s, "api tab") || strings.Contains(s, "shared a") || strings.Contains(s, "沒有 OpenCode TUI") {
-		t.Fatalf("首次無效設定不得開始追蹤：\n%s", s)
+	if s := e.sidebar(); strings.Contains(s, "api tab") || strings.Contains(s, "shared a") || strings.Contains(s, "No OpenCode TUI running") {
+		t.Fatalf("a first invalid setting must not start tracking:\n%s", s)
 	}
-	// 修正後開始追蹤
+	// Start tracking after it is fixed
 	e.reload("set -g " + modeOpt + " global\n")
-	e.eventually(time.Second, "改為有效值後開始追蹤", func(s string) bool { return strings.Contains(s, "shared a") })
-	// 重載時無效：保留 global 並提示未套用
+	e.eventually(time.Second, "starts tracking after changing to a valid value", func(s string) bool { return strings.Contains(s, "shared a") })
+	// Invalid on reload: keep global and show that it was not applied
 	e.reload("set -g " + modeOpt + " bogus\n")
-	e.eventually(time.Second, "重載無效值保留原模式並回報", func(s string) bool {
-		return strings.Contains(s, "未套用") && strings.Contains(s, "shared a") && !strings.Contains(s, "api tab")
+	e.eventually(time.Second, "invalid value on reload keeps the original mode and reports it", func(s string) bool {
+		return strings.Contains(s, "▲ Invalid mode; using global\n") && strings.Contains(s, "shared a") && !strings.Contains(s, "api tab")
 	})
 	e.reload("set -g " + modeOpt + " cwd\n")
-	e.eventually(time.Second, "修正後套用且提示消失", func(s string) bool { return strings.Contains(s, "api tab") && !strings.Contains(s, "未套用") })
+	e.eventually(time.Second, "applied after the fix and the notice disappears", func(s string) bool { return strings.Contains(s, "api tab") && !strings.Contains(s, "Invalid mode") })
 }
 
 func TestModeSwitchDoesNotForceAHiddenSidebarOpen(t *testing.T) {
@@ -708,12 +708,12 @@ func TestModeSwitchDoesNotForceAHiddenSidebarOpen(t *testing.T) {
 	api := filepath.Join(e.dir, "work", "api")
 	e.writeTabs(e.bothScopesJSON(map[string][]string{api: {"api tab"}}, []string{"shared a"}))
 	e.tui(api)
-	e.eventually(3*time.Second, "已顯示", func(s string) bool { return strings.Contains(s, "api tab") })
+	e.eventually(3*time.Second, "displayed", func(s string) bool { return strings.Contains(s, "api tab") })
 	e.inTmux("set", "-g", "side-status", "off")
 	e.reload("set -g " + modeOpt + " global\n")
 	time.Sleep(1200 * time.Millisecond)
 	if got := strings.TrimSpace(e.inTmux("show", "-gv", "side-status")); got != "off" {
-		t.Fatalf("切換模式不應重新打開側欄，side-status = %q", got)
+		t.Fatalf("switching modes must not reopen the sidebar, side-status = %q", got)
 	}
 }
 
@@ -723,10 +723,10 @@ func TestModeOptionIsPluginPrefixedAndOtherOptionsStayUntouched(t *testing.T) {
 	e.reload("set -g " + modeOpt + " global\n")
 	time.Sleep(600 * time.Millisecond)
 	if got := strings.TrimSpace(e.inTmux("show", "-gv", "@oc_side")); got != "user-value" {
-		t.Fatalf("@oc_side 被改：%q", got)
+		t.Fatalf("@oc_side was changed: %q", got)
 	}
 	if got := strings.TrimSpace(e.inTmux("show", "-gv", modeOpt)); got != "global" {
-		t.Fatalf("插件不應改寫使用者設定的模式選項：%q", got)
+		t.Fatalf("the plugin must not rewrite the user's mode option: %q", got)
 	}
 }
 
@@ -738,17 +738,17 @@ func TestStoppingDaemonAlsoRemovesTheModeHook(t *testing.T) {
 	_ = e.daemon.Wait()
 	hooks := e.inTmux("show-hooks", "-g")
 	if strings.Contains(hooks, "tos_wake") || !strings.Contains(hooks, "user-hook") {
-		t.Fatalf("結束後只應移除插件自己的 hook：\n%s", hooks)
+		t.Fatalf("after exit, only the plugin's own hooks should be removed:\n%s", hooks)
 	}
 }
 
-// 啟動空窗：hook 還沒裝好時發生的設定變動，不能只靠低頻補漏（5 秒）才發現。
-// 以 tmux 包裝讓安裝 after-set-option hook（模式與色票選項共用，最後一個裝的）慢 300ms，確定性地放大空窗而不依賴 -race 的快慢；
-// 在常駐程式首次讀到設定之後、hook 裝好之前重載設定，仍須在 1 秒內套用。
+// Startup gap: a configuration change made before the hooks are installed must not be discovered only by the low-frequency catch-up (5 seconds).
+// A tmux wrapper delays installing the after-set-option hook (shared by the mode and palette options; the last one installed) by 300ms, enlarging the gap deterministically without depending on -race timing;
+// a configuration reload after the daemon first reads settings but before the hook is installed must still be applied within 1 second.
 func TestModeChangeDuringDaemonStartupIsNotLeftToTheBackstop(t *testing.T) {
 	realTmux, err := exec.LookPath("tmux")
 	if err != nil {
-		t.Skip("沒有 tmux")
+		t.Skip("tmux not found")
 	}
 	shim := t.TempDir()
 	script := "#!/bin/sh\ncase \" $* \" in *\" after-set-option[\"*) sleep 0.3;; esac\nexec " + realTmux + " \"$@\"\n"
@@ -759,57 +759,57 @@ func TestModeChangeDuringDaemonStartupIsNotLeftToTheBackstop(t *testing.T) {
 	e.inTmux("set", "-g", modeOpt, "globl")
 	e.writeTabs(e.bothScopesJSON(map[string][]string{api: {"api tab"}}, []string{"shared a"}))
 	e.tui(api)
-	e.eventually(5*time.Second, "常駐程式首次讀到設定", func(s string) bool { return strings.Contains(s, "模式設定無效") })
+	e.eventually(5*time.Second, "daemon first reads the settings", func(s string) bool { return strings.Contains(s, "Invalid mode") })
 	e.reload("set -g " + modeOpt + " global\n")
-	d := e.eventually(time.Second, "啟動空窗內的重載於 1 秒內套用", func(s string) bool { return strings.Contains(s, "shared a") })
-	t.Logf("重載 → 畫面：%v", d)
+	d := e.eventually(time.Second, "reload within the startup gap is applied within 1 second", func(s string) bool { return strings.Contains(s, "shared a") })
+	t.Logf("reload → screen: %v", d)
 }
 
-// ---- #4 追加：pane title 變更作為提早重新掃描的喚醒訊號 ----
+// ---- #4 addition: pane title changes as an early-rescan wake-up signal ----
 
-// shellWindow 開一個互動 shell window（有 job control），回傳 window id；之後以 shellRun 在其中執行指令。
-// 使用乾淨的 sh -i，避免使用者 zsh 設定（prompt、preexec）的延遲污染時間量測。
+// shellWindow opens an interactive shell window (with job control) and returns the window id; commands are then run in it with shellRun.
+// Uses a clean sh -i so delays from the user's zsh configuration (prompt, preexec) do not pollute timing measurements.
 func (e *env) shellWindow(dir string) string {
 	must(e.t, os.MkdirAll(dir, 0o755))
 	win := strings.TrimSpace(e.inTmux("new-window", "-d", "-P", "-F", "#{window_id}", "-c", dir, "env PS1='$ ' sh -i"))
-	time.Sleep(400 * time.Millisecond) // 等 shell 就緒
+	time.Sleep(400 * time.Millisecond) // wait for the shell to be ready
 	return win
 }
 
 func (e *env) shellRun(win, cmdline string) { e.inTmux("send-keys", "-t", win, cmdline, "Enter") }
 
-// 既有 shell 中啟動／結束 TUI：tmux 不發結構事件，但 TUI 會改終端標題 → 1 秒內反映。
+// Starting / exiting a TUI in an existing shell: tmux emits no structural event, but the TUI changes the terminal title → reflected within 1 second.
 func TestTUIStartedAndStoppedInAnExistingShellFollowsWithin1SecondWhenTitlesAreOn(t *testing.T) {
 	e := newEnv(t)
 	dir := filepath.Join(e.dir, "work", "api")
 	e.writeTabs(e.tabsJSON(map[string][]string{dir: {"a"}}))
-	e.eventually(3*time.Second, "啟動", func(s string) bool { return strings.Contains(s, "沒有 OpenCode TUI") })
+	e.eventually(3*time.Second, "startup", func(s string) bool { return strings.Contains(s, "No OpenCode TUI running") })
 	win := e.shellWindow(dir)
 
 	e.shellRun(win, "FAKE_TITLE=1 "+e.bin)
-	d := e.eventually(time.Second, "shell 內啟動 TUI 於 1 秒內出現", func(s string) bool { return strings.Contains(s, "! a") })
-	t.Logf("shell 內啟動 → 畫面：%v", d)
+	d := e.eventually(time.Second, "TUI started in a shell appears within 1 second", func(s string) bool { return strings.Contains(s, "! a") })
+	t.Logf("started in a shell → screen: %v", d)
 
 	e.inTmux("send-keys", "-t", win, "C-c")
-	d = e.eventually(time.Second, "shell 內結束 TUI 於 1 秒內消失", func(s string) bool { return strings.Contains(s, "沒有 OpenCode TUI") })
-	t.Logf("shell 內結束 → 畫面：%v", d)
+	d = e.eventually(time.Second, "TUI exited in a shell disappears within 1 second", func(s string) bool { return strings.Contains(s, "No OpenCode TUI running") })
+	t.Logf("exited in a shell → screen: %v", d)
 }
 
-// 終端標題關閉（行程不改標題）：沒有喚醒，仍由低頻補漏在 10 秒內正確反映。
+// Terminal titles disabled (the process does not change the title): no wake-up, and the low-frequency catch-up still reflects it correctly within 10 seconds.
 func TestTUIInAnExistingShellStillFollowsViaBackstopWhenTitlesAreOff(t *testing.T) {
 	e := newEnv(t)
 	dir := filepath.Join(e.dir, "work", "api")
 	e.writeTabs(e.tabsJSON(map[string][]string{dir: {"a"}}))
-	e.eventually(3*time.Second, "啟動", func(s string) bool { return strings.Contains(s, "沒有 OpenCode TUI") })
+	e.eventually(3*time.Second, "startup", func(s string) bool { return strings.Contains(s, "No OpenCode TUI running") })
 	win := e.shellWindow(dir)
 
 	e.shellRun(win, e.bin)
-	e.eventually(10*time.Second, "標題關閉時啟動於 10 秒內出現", func(s string) bool { return strings.Contains(s, "! a") })
+	e.eventually(10*time.Second, "start with titles disabled appears within 10 seconds", func(s string) bool { return strings.Contains(s, "! a") })
 	e.inTmux("send-keys", "-t", win, "C-c")
-	e.eventually(10*time.Second, "標題關閉時結束於 10 秒內消失", func(s string) bool { return strings.Contains(s, "沒有 OpenCode TUI") })
+	e.eventually(10*time.Second, "exit with titles disabled disappears within 10 seconds", func(s string) bool { return strings.Contains(s, "No OpenCode TUI running") })
 }
 
-// 辨識以前景行程為準：非 TUI 的 opencode 指令改標題、任意行程把標題設成 OpenCode，都不算 TUI。
+// Identification is based on the foreground process: a non-TUI opencode command changing the title, or any process setting the title to OpenCode, does not count as a TUI.
 func TestTitleChangesNeverMakeANonTUIProcessLookLikeATUI(t *testing.T) {
 	e := newEnv(t)
 	dir := filepath.Join(e.dir, "work", "svc")
@@ -819,16 +819,17 @@ func TestTitleChangesNeverMakeANonTUIProcessLookLikeATUI(t *testing.T) {
 	win2 := e.shellWindow(dir)
 	e.shellRun(win2, `printf '\033]0;OpenCode\007'; sleep 60`)
 	time.Sleep(1500 * time.Millisecond)
-	if s := e.sidebar(); !strings.Contains(s, "沒有 OpenCode TUI") || strings.Contains(s, "svc") || strings.Contains(s, "x") {
-		t.Fatalf("非 TUI 因標題被列入：\n%s", s)
+	tabRow := regexp.MustCompile(`(?m)^[ \t]*[●?◆✗!·] x[ \t]*$`)
+	if s := e.sidebar(); !strings.Contains(s, "No OpenCode TUI running") || strings.Contains(s, "svc") || tabRow.MatchString(s) {
+		t.Fatalf("non-TUI listed because of its title:\n%s", s)
 	}
 }
 
-// tmuxLog 以 PATH 前面的 tmux 包裝記錄常駐程式發出的每個 tmux 指令。
+// tmuxLog uses a tmux wrapper at the front of PATH to record every tmux command the daemon issues.
 func tmuxLogShim(t *testing.T) (path, logFile string) {
 	realTmux, err := exec.LookPath("tmux")
 	if err != nil {
-		t.Skip("沒有 tmux")
+		t.Skip("tmux not found")
 	}
 	shim := t.TempDir()
 	logFile = filepath.Join(shim, "calls.log")
@@ -848,8 +849,8 @@ func countCalls(t *testing.T, logFile, sub string) int {
 	return n
 }
 
-// TUI 持續頻繁改標題（20ms 一次）：不得變成喚醒風暴（掃描次數有上限），
-// 也不得因標題變化而寫入 tmux（內容不變不寫）。
+// A TUI that changes its title constantly and frequently (every 20ms): must not turn into a wake-up storm (the number of scans is capped),
+// and must not write to tmux because of title changes (no write when the content is unchanged).
 func TestFrequentTitleChangesDoNotCauseAWakeStormOrTmuxWrites(t *testing.T) {
 	path, logFile := tmuxLogShim(t)
 	e := newEnvWith(t, []string{"PATH=" + path})
@@ -857,26 +858,26 @@ func TestFrequentTitleChangesDoNotCauseAWakeStormOrTmuxWrites(t *testing.T) {
 	e.writeTabs(e.tabsJSON(map[string][]string{dir: {"a"}}))
 	win := e.shellWindow(dir)
 	e.shellRun(win, "FAKE_TITLE=1 FAKE_CHURN_MS=20 "+e.bin)
-	e.eventually(2*time.Second, "TUI 出現", func(s string) bool { return strings.Contains(s, "! a") })
+	e.eventually(2*time.Second, "TUI appears", func(s string) bool { return strings.Contains(s, "! a") })
 
 	time.Sleep(500 * time.Millisecond)
 	scans0, writes0 := countCalls(t, logFile, "list-panes"), countCalls(t, logFile, "source-file")
 	time.Sleep(3 * time.Second)
 	scans, writes := countCalls(t, logFile, "list-panes")-scans0, countCalls(t, logFile, "source-file")-writes0
-	t.Logf("3 秒內掃描 %d 次、寫入 %d 次（標題約每 20ms 變一次）", scans, writes)
+	t.Logf("%d scans and %d writes in 3 seconds (the title changes about every 20ms)", scans, writes)
 	if scans > 14 {
-		t.Fatalf("喚醒風暴：3 秒內掃描 %d 次", scans)
+		t.Fatalf("wake-up storm: %d scans in 3 seconds", scans)
 	}
 	if writes != 0 {
-		t.Fatalf("內容不變卻寫入 tmux %d 次", writes)
+		t.Fatalf("wrote to tmux %d times although the content did not change", writes)
 	}
 	if s := e.sidebar(); !strings.Contains(s, "! a") {
-		t.Fatalf("節流後畫面仍須正確：\n%s", s)
+		t.Fatalf("the screen must still be correct after throttling:\n%s", s)
 	}
 }
 
-// 無聲斷線、服務重啟與探索資訊改變：全部對假服務注入；常駐程式不需重新載入即可恢復，
-// 且不曾呼叫任何寫入端點。產品預設的 45 秒以旗標縮短，避免真的等待。
+// Silent disconnects, service restarts, and discovery info changes: all injected into the fake service; the daemon recovers without being reloaded,
+// and never calls any write endpoint. The product default of 45 seconds is shortened by a flag to avoid really waiting.
 func TestSilentDisconnectAndServiceRestartRecoverOnARealTmuxWithFakeOpenCodeService(t *testing.T) {
 	e := newEnvFull(t, nil, []string{"-idle-timeout", "600ms"})
 	dir := filepath.Join(e.dir, "work", "api")
@@ -886,31 +887,31 @@ func TestSilentDisconnectAndServiceRestartRecoverOnARealTmuxWithFakeOpenCodeServ
 	e.writeTabs(e.tabsJSON(map[string][]string{dir: {"修正登入"}}))
 	e.tui(dir, "--server", "http://127.0.0.1:1")
 	svc.WriteServiceFile(e.servicePath)
-	e.eventually(5*time.Second, "接上服務", func(s string) bool { return strings.Contains(s, "· 修正登入") })
+	e.eventually(5*time.Second, "connects to the service", func(s string) bool { return strings.Contains(s, "· 修正登入") })
 	svc.Start("ses_0")
-	e.eventually(time.Second, "執行中", func(s string) bool { return strings.Contains(s, "● 修正登入") })
+	e.eventually(time.Second, "running", func(s string) bool { return strings.Contains(s, "● 修正登入") })
 
-	// 無聲斷線：連線沒有 FIN，也不再有心跳；結束事件遺失
+	// Silent disconnect: the connection gets no FIN and no more heartbeats; the finish event is lost
 	svc.Stall()
 	svc.Finish("ses_0", "succeeded")
-	d := e.eventually(8*time.Second, "無聲逾時（600ms）＋重試間隔（預設 3s）後自動重連並完整重讀", func(s string) bool { return strings.Contains(s, "◆ 修正登入") })
-	t.Logf("無聲斷線 → 恢復：%v（逾時設定 600ms）", d)
+	d := e.eventually(8*time.Second, "reconnects automatically and re-reads everything after the silence timeout (600ms) + retry interval (default 3s)", func(s string) bool { return strings.Contains(s, "◆ 修正登入") })
+	t.Logf("silent disconnect → recovered: %v (timeout set to 600ms)", d)
 
-	// 服務重啟：舊服務消失，新服務（不同 port、待處理消失、資料不同）出現
+	// Service restart: the old service disappears and a new service appears (different port, pending items gone, different data)
 	next := fakeoc.New(t)
 	next.SetHeartbeat(100 * time.Millisecond)
 	next.Seed("ses_0", "", "failed", 900, 0, false)
 	svc.Drop()
 	_ = os.Remove(e.servicePath)
-	e.eventually(3*time.Second, "重啟空窗為 !", func(s string) bool {
-		return strings.Contains(s, "! 修正登入") && strings.Contains(strings.Join(strings.Fields(s), ""), "無法連線OpenCode服務")
+	e.eventually(3*time.Second, "! during the restart gap", func(s string) bool {
+		return strings.Contains(s, "! 修正登入") && strings.Contains(strings.Join(strings.Fields(s), ""), "CannotconnecttoOpenCode")
 	})
 	next.WriteServiceFile(e.servicePath)
-	e.eventually(5*time.Second, "重新探索並同步", func(s string) bool { return strings.Contains(s, "✗ 修正登入") })
+	e.eventually(5*time.Second, "rediscovers and syncs", func(s string) bool { return strings.Contains(s, "✗ 修正登入") })
 
 	for _, x := range []*fakeoc.Server{svc, next} {
 		if w := x.Writes(); len(w) != 0 {
-			t.Fatalf("對 OpenCode 發出了寫入請求：%v", w)
+			t.Fatalf("write request sent to OpenCode: %v", w)
 		}
 	}
 }

@@ -1,23 +1,23 @@
-# 點擊側欄群組跳到跳轉目標：固定開啟、接管 `MouseDown1SideStatus`
+# Always enable click-to-jump by taking over `MouseDown1SideStatus`
 
-點擊狀態側欄中某個目錄群組的任一列，client 切換到該群組的**跳轉目標**（TUI client 所在的 tmux pane，可跨 session）。功能固定開啟，不提供開關。
+Clicking any row in a directory group switches the tmux client to that group's **jump target**: the pane hosting its TUI client, even in a different tmux session. This feature is always on and has no toggle.
 
-- 常駐程式啟動時接管 root 鍵表的 `MouseDown1SideStatus`；range 字串為 `oc<N>` 時切到 pane `%N`，否則執行 tmux 預設的 `switch-client -t =`。綁定完全在 tmux 內執行，不開 shell、不呼叫插件執行檔。
-- 明確停止時把綁定寫回 tmux 預設 `switch-client -t =`；不用 `unbind`（停止後 `side-status-format` 回到 tmux 預設，預設格式的 session／window 點擊切換依賴這條預設綁定）。交接時不動，由新實例重寫；server 結束時不處理。
-- **不保存或還原使用者原有的自訂綁定。** 取捨：簡單、可預期；代價是覆寫使用者自訂的 `MouseDown1SideStatus`，這在 README 明講。
-- 側欄以 `#[range=user|oc<N>]…#[norange]` 逐行包住群組列，不依賴 range 跨換行延續。range 參數只由固定前綴加十進位數字組成，與使用者資料無關。
+- On startup, the daemon takes over `MouseDown1SideStatus` in the root key table. If the range string is `oc<N>`, it switches to pane `%N`; otherwise it runs tmux's default `switch-client -t =`. The binding runs entirely within tmux, without starting a shell or invoking the plugin binary.
+- When explicitly stopped, the daemon restores tmux's default binding, `switch-client -t =`, rather than using `unbind`. After stopping, `side-status-format` returns to the tmux default, which relies on this binding for click-to-switch behavior on sessions and windows. During a handoff, the outgoing instance leaves the binding alone and the incoming instance rewrites it. There is no cleanup when the tmux server exits.
+- **The plugin does not save or restore a user's custom binding.** This keeps behavior simple and predictable, at the cost of overwriting a custom `MouseDown1SideStatus` binding. The README documents this trade-off.
+- The sidebar wraps each group row separately in `#[range=user|oc<N>]…#[norange]` rather than relying on a range to span line breaks. The range argument consists only of a fixed prefix and decimal digits; it contains no user data.
 
-## 為何用 `range=user` 而非 `range=pane`
+## Why use `range=user` instead of `range=pane`?
 
-以 tmux next-3.9 實測與原始碼確認：
+Testing and source inspection of tmux next-3.9 confirmed:
 
-- `range=pane|%N` 在 status 格式中 `%` 會被 strftime 吃掉，需寫成 `%%N`；
-- 即使寫對，滑鼠事件只設定 pane，session／window 仍是點擊者目前所在；`cmd_mouse_pane()` 會因 `window_has_pane()` 失敗而退回，因此只能切換同一 window 內的 pane，無法跨 session；
-- `mouse_status_range` 只得到字串 `pane`，拿不到編號；
-- `range=user|X` 觸發 `SideStatus` 鍵並把 X（最多 15 bytes）放入 `mouse_status_range`，由綁定自行切換，可跨 session 精確到 pane。
+- In status formats, `strftime` consumes the `%` in `range=pane|%N`; escape it as `%%N`.
+- Even with the escape, the mouse event sets only the pane; the session and window remain the clicking client's current ones. `cmd_mouse_pane()` backs out if `window_has_pane()` fails, so the event can only switch panes within the same window, not across sessions.
+- `mouse_status_range` receives only the string `pane`, not the pane number.
+- `range=user|X` triggers the `SideStatus` key and puts `X` (up to 15 bytes) in `mouse_status_range`. The binding can then switch to the exact pane, even across sessions.
 
-待 tmux 支援跨 session 的 `range=pane` 後可重新評估。
+Revisit this choice if tmux adds cross-session support to `range=pane`.
 
-## 與其他決策的關係
+## Relationship to other decisions
 
-與 ADR-0001（對 OpenCode 唯讀）不衝突：綁定只動 tmux，不動 OpenCode。但取代先前 README「不新增任何鍵盤或滑鼠綁定」的承諾。
+This does not conflict with ADR-0001 (read-only access to OpenCode): the binding changes only tmux, not OpenCode. It supersedes the earlier README promise not to add keyboard or mouse bindings.

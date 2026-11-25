@@ -2,24 +2,24 @@ package render
 
 import "strings"
 
-// Theme 是側欄的 13 個色票；每個欄位是 tmux 樣式中 fg=／bg= 後面的顏色值。
+// Theme holds the sidebar's 13 colour swatches; each field is the colour value that follows fg=/bg= in a tmux style.
 type Theme struct {
-	Emphasis      string // OPENCODE 底塊、專案名稱前的 ▎
-	Title         string // 底塊上的 OPENCODE 文字
-	Split         string // 標題下分隔線
-	Project       string // 專案名稱
-	ActiveTab     string // 有狀態（執行中／等你處理／未讀）的 tab 標題
-	InactiveTab   string // 閒置與資料異常的 tab 標題、無 tab、摘要的 …
+	Emphasis      string // OPENCODE block, ▎ before the project name
+	Title         string // OPENCODE text on the block
+	Split         string // rule under the title
+	Project       string // project name
+	ActiveTab     string // titles of tabs with a state (running / needs your action / unread)
+	InactiveTab   string // titles of idle and data-problem tabs, "No tabs", and the … in summaries
 	StateRunning  string // ●
-	StateAsk      string // ?（內部狀態為 Attention）
+	StateAsk      string // ? (internal state is Attention)
 	StateFinished string // ◆
 	StateFailed   string // ✗
 	StateProblem  string // !
 	StateIdle     string // ·
-	Notice        string // ▲ 讀取錯誤提示
+	Notice        string // ▲ read-error notice
 }
 
-// DefaultTheme 回傳 #14 定案（v3）的預設配色。
+// DefaultTheme returns the default colours finalized in #14 (v3).
 func DefaultTheme() Theme {
 	return Theme{
 		Emphasis:      "#A78BFA",
@@ -38,7 +38,7 @@ func DefaultTheme() Theme {
 	}
 }
 
-// swatches 是色票名稱與 Theme 欄位的唯一對照表，順序固定（也是無效清單的順序）；新增色票只需改這裡與 Theme。
+// swatches is the single mapping between swatch names and Theme fields, in a fixed order (also the order of the invalid list); adding a swatch only requires changing this and Theme.
 var swatches = []struct {
 	name  string
 	field func(*Theme) *string
@@ -58,7 +58,7 @@ var swatches = []struct {
 	{"notice", func(t *Theme) *string { return &t.Notice }},
 }
 
-// SwatchNames 是 13 個色票的名稱，順序同 swatches。
+// SwatchNames are the names of the 13 swatches, in the same order as swatches.
 var SwatchNames = func() []string {
 	names := make([]string, len(swatches))
 	for i, sw := range swatches {
@@ -67,7 +67,7 @@ var SwatchNames = func() []string {
 	return names
 }()
 
-// stateMarks 是狀態、符號與色票的唯一對照表；閒置不在表中，走預設列（· 與 state-idle）。
+// stateMarks is the single mapping between states, symbols, and swatches; idle is not in the table and takes the default row (· and state-idle).
 var stateMarks = []struct {
 	state State
 	sym   string
@@ -96,7 +96,7 @@ func (t Theme) tabTitle(s State) string {
 	return t.ActiveTab
 }
 
-// summaryColor 依摘要裡的符號取色；摘要不含閒置，未知符號一律用 state-problem。
+// summaryColor picks the colour from the symbol in a summary; summaries never contain idle, and any unknown symbol uses state-problem.
 func (t Theme) summaryColor(sym string) string {
 	for _, m := range stateMarks {
 		if m.sym == sym {
@@ -106,8 +106,8 @@ func (t Theme) summaryColor(sym string) string {
 	return t.StateProblem
 }
 
-// ParseTheme 以預設主題為底，套用使用者設定的原始色值（鍵為色票名稱）。
-// 無效的值只讓該項維持預設，並依 swatches 的順序列在回傳的無效清單；未知名稱忽略。
+// ParseTheme starts from the default theme and applies the user's raw colour values (keyed by swatch name).
+// An invalid value only leaves that entry at its default and is listed, in swatches order, in the returned invalid list; unknown names are ignored.
 func ParseTheme(raw map[string]string) (Theme, []string) {
 	th := DefaultTheme()
 	var invalid []string
@@ -134,8 +134,8 @@ func init() {
 	}
 }
 
-// ValidColour 判斷色值能否安全放進 tmux 樣式的 fg=／bg=：只接受 #RRGGBB、colourN／colorN（0–255）、
-// 具名色（含 bright 變體）與 default；其餘一律無效，因此值裡不可能出現 ]、,、#{ 等格式字元。
+// ValidColour reports whether a colour value can safely go into a tmux style's fg=/bg=: only #RRGGBB, colourN/colorN (0–255),
+// named colours (including bright variants), and default are accepted; everything else is invalid, so the value can never contain format characters such as ], a comma, or #{.
 func ValidColour(v string) bool {
 	if colourNames[v] {
 		return true
