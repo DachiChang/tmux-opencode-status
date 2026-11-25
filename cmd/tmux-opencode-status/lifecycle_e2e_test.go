@@ -15,11 +15,11 @@ import (
 	"github.com/DachiChang/tmux-opencode-status/internal/fakeoc"
 )
 
-// 生命週期的程序外部測試（issue #11）：真實常駐程式 + 隔離 tmux server（-L … -f /dev/null）。
-// 啟動入口是 `tmux-opencode-status start`（TPM 的 .tmux 腳本在每次載入／重載時呼叫的冪等指令）。
-// 鎖檔與狀態檔放在測試自己的 XDG_RUNTIME_DIR，不碰使用者真實的 runtime 目錄。
+// Process-external lifecycle tests (issue #11): the real daemon + an isolated tmux server (-L … -f /dev/null).
+// The entry point is `tmux-opencode-status start` (the idempotent command TPM's .tmux script calls on every load / reload).
+// Lock and state files live in the test's own XDG_RUNTIME_DIR and never touch the user's real runtime directory.
 
-// cmdEnv 是所有被測指令的環境：沒有 $TMUX（不可誤用開發者目前所在的 tmux server），runtime 目錄隔離。
+// cmdEnv is the environment for every command under test: no $TMUX (so the developer's current tmux server cannot be used by mistake) and an isolated runtime directory.
 func (e *env) cmdEnv() []string {
 	must(e.t, os.MkdirAll(e.runtimeDir, 0o700))
 	var out []string
@@ -33,14 +33,14 @@ func (e *env) cmdEnv() []string {
 	return append(out, e.daemonEnv...)
 }
 
-// common 是指向被觀察 server 的共同旗標（不含子指令）。
+// common holds the flags shared by all commands that point at the observed server (without the subcommand).
 func (e *env) common(sock string, extra ...string) []string {
 	args := []string{"-L", sock, "-f", "/dev/null", "-tabs", e.tabsPath, "-service", e.servicePath, "-backstop", "5s"}
 	args = append(args, e.daemonArgs...)
 	return append(args, extra...)
 }
 
-// cli 執行子指令並回傳合併輸出與結果。
+// cli runs a subcommand and returns the combined output and the result.
 func (e *env) cli(sub, sock string, extra ...string) (string, error) {
 	e.t.Helper()
 	cmd := exec.Command(e.daemonBin, append([]string{sub}, e.common(sock, extra...)...)...)
@@ -55,7 +55,7 @@ func (e *env) cli(sub, sock string, extra ...string) (string, error) {
 		return out.String(), err
 	case <-time.After(30 * time.Second):
 		_ = cmd.Process.Kill()
-		e.t.Fatalf("%s 逾時：%s", sub, out.String())
+		e.t.Fatalf("%s timed out: %s", sub, out.String())
 		return "", nil
 	}
 }
@@ -64,13 +64,13 @@ func (e *env) start(sock string, extra ...string) (string, error) {
 	return e.cli("start", sock, extra...)
 }
 
-// daemons 列出指向 sock 的常駐程式行程（不含短命的 start／stop／diagnose）。
+// daemons lists the daemon processes pointing at sock (excluding the short-lived start / stop / diagnose).
 func (e *env) daemons(sock string) []int {
 	out, _ := exec.Command("ps", "-axo", "pid=,command=").Output()
 	var pids []int
 	for _, l := range strings.Split(string(out), "\n") {
 		l = strings.TrimSpace(l)
-		// start 以明確的 -S <socket 路徑> 啟動 run；直接執行 run 則可能是 -L <name>。
+		// start launches run with an explicit -S <socket path>; running run directly may use -L <name>.
 		if !strings.Contains(l, e.daemonBin) || !(strings.Contains(l, " -L "+sock+" ") || strings.Contains(l, "/"+sock+" ")) {
 			continue
 		}
@@ -108,11 +108,11 @@ func (e *env) waitDaemons(sock string, want int, within time.Duration, what stri
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	e.t.Fatalf("%s：%v 內常駐實例數應為 %d，實際 %v", what, within, want, got)
+	e.t.Fatalf("%s: the daemon instance count within %v should be %d, got %v", what, within, want, got)
 	return nil
 }
 
-// allHooks 合併全域、視窗層級的 hook（show-hooks 依層級分開列出）。
+// allHooks merges global and window-level hooks (show-hooks lists them separately by level).
 func (e *env) allHooks() string {
 	return e.inTmux("show-hooks", "-g") + e.inTmux("show-hooks", "-gw")
 }
@@ -142,19 +142,19 @@ func TestStartIsIdempotentAndReloadsNeverLeaveASecondInstance(t *testing.T) {
 	e.tui(api)
 
 	if out, err := e.start(e.in, "-show"); err != nil {
-		t.Fatalf("start：%v\n%s", err, out)
+		t.Fatalf("start: %v\n%s", err, out)
 	}
-	pids := e.waitDaemons(e.in, 1, 3*time.Second, "首次 start")
-	e.eventually(3*time.Second, "start 後側欄顯示", func(s string) bool { return strings.Contains(s, "! 修正登入") })
+	pids := e.waitDaemons(e.in, 1, 3*time.Second, "first start")
+	e.eventually(3*time.Second, "sidebar shows after start", func(s string) bool { return strings.Contains(s, "! 修正登入") })
 
-	// 重載設定檔會再次執行 start：同一個實例、同一個 pid
+	// Reloading the configuration file runs start again: the same instance, the same pid
 	for i := 0; i < 3; i++ {
 		if out, err := e.start(e.in, "-show"); err != nil {
-			t.Fatalf("重複 start：%v\n%s", err, out)
+			t.Fatalf("repeated start: %v\n%s", err, out)
 		}
 	}
 	if got := e.daemons(e.in); len(got) != 1 || got[0] != pids[0] {
-		t.Fatalf("重複載入後應仍是原本的實例 %v，實際 %v", pids, got)
+		t.Fatalf("the original instance %v should remain after repeated loads, got %v", pids, got)
 	}
 }
 
@@ -174,39 +174,39 @@ func TestConcurrentStartsLeaveExactlyOneInstance(t *testing.T) {
 	wg.Wait()
 	close(errs)
 	for m := range errs {
-		t.Errorf("並行 start 不應失敗：%s", m)
+		t.Errorf("concurrent start must not fail: %s", m)
 	}
-	e.waitDaemons(e.in, 1, 3*time.Second, "並行 start")
-	time.Sleep(700 * time.Millisecond) // 多餘的候選行程若會殘留，此時應已退出或已經被看到
+	e.waitDaemons(e.in, 1, 3*time.Second, "concurrent start")
+	time.Sleep(700 * time.Millisecond) // any surplus candidate process that would linger should have exited or been seen by now
 	if got := e.daemons(e.in); len(got) != 1 {
-		t.Fatalf("並行啟動後應只有一個實例：%v", got)
+		t.Fatalf("there should be exactly one instance after concurrent startup: %v", got)
 	}
 }
 
-// 重載交接：設定（這裡以寬度為例）改變後再次 start，舊實例讓位、新實例接手，從不同時有兩個；
-// 交接不強制打開已隱藏的側欄、不清除 session 層級 override、不新增或改變插件接管以外的綁定。
+// Reload handoff: after a setting (width here) changes and start runs again, the old instance yields and the new one takes over, and there are never two at once;
+// the handoff does not force-open a hidden sidebar, does not clear session-level overrides, and does not add or change bindings beyond what the plugin owns.
 func TestReloadWithChangedSettingsHandsOffToExactlyOneNewInstance(t *testing.T) {
 	e := newLifecycleEnv(t)
 	api := filepath.Join(e.dir, "work", "api")
 	e.writeTabs(e.tabsJSON(map[string][]string{api: {"修正登入"}}))
 	e.tui(api)
 	if out, err := e.start(e.in, "-show"); err != nil {
-		t.Fatalf("start：%v\n%s", err, out)
+		t.Fatalf("start: %v\n%s", err, out)
 	}
-	old := e.waitDaemons(e.in, 1, 3*time.Second, "首次 start")
-	e.eventually(3*time.Second, "已顯示", func(s string) bool { return strings.Contains(s, "! 修正登入") })
+	old := e.waitDaemons(e.in, 1, 3*time.Second, "first start")
+	e.eventually(3*time.Second, "displayed", func(s string) bool { return strings.Contains(s, "! 修正登入") })
 
-	// 使用者隱藏側欄，並在另一個 session 自行覆寫 side-status 寬度
+	// The user hides the sidebar and overrides the side-status width in another session
 	e.inTmux("new-session", "-d", "-s", "other")
 	e.inTmux("set-option", "-t", "other", "side-status-width", "20")
 	e.inTmux("set-option", "-g", "side-status", "off")
 	keys := keysWithoutJump(e.inTmux("list-keys"))
 
-	// 設定改變（-resync）：交接
+	// Setting changed (-resync): handoff
 	var peak int
 	stop := make(chan struct{})
 	done := make(chan struct{})
-	go func() { // 交接期間持續取樣：任何時刻都不得出現兩個實例
+	go func() { // sample continuously during the handoff: two instances must never appear at any moment
 		defer close(done)
 		for {
 			select {
@@ -224,39 +224,39 @@ func TestReloadWithChangedSettingsHandsOffToExactlyOneNewInstance(t *testing.T) 
 	close(stop)
 	<-done
 	if err != nil {
-		t.Fatalf("交接 start：%v\n%s", err, out)
+		t.Fatalf("handoff start: %v\n%s", err, out)
 	}
-	now := e.waitDaemons(e.in, 1, 3*time.Second, "交接後")
+	now := e.waitDaemons(e.in, 1, 3*time.Second, "after handoff")
 	if now[0] == old[0] {
-		t.Fatalf("設定改變後應由新實例接手，pid 仍為 %d", old[0])
+		t.Fatalf("the new instance should take over after the setting changes, but the pid is still %d", old[0])
 	}
 	if peak > 1 {
-		t.Fatalf("交接期間同時出現 %d 個實例", peak)
+		t.Fatalf("%d instances appeared at the same time during the handoff", peak)
 	}
 	if alive(old[0]) {
-		t.Fatalf("舊實例 %d 應已退出", old[0])
+		t.Fatalf("the old instance %d should have exited", old[0])
 	}
 
-	// 新實例持續追蹤：側欄雖隱藏，內容仍更新；之後重新顯示立即看到最新內容，不需重啟
+	// The new instance keeps tracking: content is updated even though the sidebar is hidden; showing it again immediately shows the latest content without a restart
 	e.writeTabs(e.tabsJSON(map[string][]string{api: {"修正登入", "新增的 tab"}}))
 	time.Sleep(900 * time.Millisecond)
 	if got := strings.TrimSpace(e.inTmux("show", "-gv", "side-status")); got != "off" {
-		t.Fatalf("重載不得重新打開使用者已隱藏的側欄，side-status = %q", got)
+		t.Fatalf("a reload must not reopen the sidebar the user hid, side-status = %q", got)
 	}
 	if got := strings.TrimSpace(e.inTmux("show", "-t", "other", "-v", "side-status-width")); got != "20" {
-		t.Fatalf("session 層級 override 被清除：%q", got)
+		t.Fatalf("the session-level override was cleared: %q", got)
 	}
 	if after := keysWithoutJump(e.inTmux("list-keys")); after != keys {
-		t.Fatal("新增或改變了鍵盤綁定")
+		t.Fatal("keyboard bindings were added or changed")
 	}
 	e.inTmux("set-option", "-g", "side-status", "left")
-	e.eventually(2*time.Second, "重新顯示不需手動重啟", func(s string) bool { return strings.Contains(s, "! 新增的 tab") })
+	e.eventually(2*time.Second, "showing again needs no manual restart", func(s string) bool { return strings.Contains(s, "! 新增的 tab") })
 	if n := strings.Count(e.allHooks(), "[41700]"); n != 10 {
-		t.Fatalf("交接後本插件 hook 應各只有一份（8 喚醒 + 選項（模式與色票）+ 標題 = 10），實際 %d：\n%s", n, e.allHooks())
+		t.Fatalf("after the handoff the plugin should have exactly one copy of each hook (8 wake-up + options (mode and palette) + title = 10), got %d:\n%s", n, e.allHooks())
 	}
 }
 
-// 不同 socket 的實例各自獨立：互不影響、互不顯示對方的 pane，停止其中一個不影響另一個。
+// Instances on different sockets are independent: they do not affect each other or show each other's panes, and stopping one does not affect the other.
 func TestTwoSocketsRunIndependentInstances(t *testing.T) {
 	e := newLifecycleEnv(t)
 	other := e.in + "-b"
@@ -279,11 +279,11 @@ func TestTwoSocketsRunIndependentInstances(t *testing.T) {
 	a := e.waitDaemons(e.in, 1, 3*time.Second, "socket A")
 	b := e.waitDaemons(other, 1, 3*time.Second, "socket B")
 	if a[0] == b[0] {
-		t.Fatal("兩個 socket 不得共用實例")
+		t.Fatal("two sockets must not share an instance")
 	}
-	e.eventually(3*time.Second, "A 只顯示自己的 pane", func(s string) bool { return strings.Contains(s, "local") })
+	e.eventually(3*time.Second, "A shows only its own panes", func(s string) bool { return strings.Contains(s, "local") })
 	if s := e.sidebar(); strings.Contains(s, "foreign") {
-		t.Fatalf("A 的側欄混入 B 的 pane：\n%s", s)
+		t.Fatalf("A's sidebar contains B's panes:\n%s", s)
 	}
 	var bOpts string
 	for i := 0; i < 60 && !strings.Contains(bOpts, "foreign"); i++ {
@@ -292,19 +292,19 @@ func TestTwoSocketsRunIndependentInstances(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 	}
 	if !strings.Contains(bOpts, "foreign") || strings.Contains(bOpts, "local") {
-		t.Fatalf("B 的 side-status 內容應只含自己的 pane：\n%s", bOpts)
+		t.Fatalf("B's side-status content should contain only its own panes:\n%s", bOpts)
 	}
 
-	// 再次 start A 不影響 B；停止 A 不影響 B
+	// Starting A again does not affect B; stopping A does not affect B
 	if out, err := e.start(e.in, "-show"); err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
 	if out, err := e.cli("stop", e.in); err != nil {
-		t.Fatalf("stop A：%v\n%s", err, out)
+		t.Fatalf("stop A: %v\n%s", err, out)
 	}
-	e.waitDaemons(e.in, 0, 3*time.Second, "停止 A")
+	e.waitDaemons(e.in, 0, 3*time.Second, "stop A")
 	if got := e.daemons(other); len(got) != 1 || got[0] != b[0] {
-		t.Fatalf("停止 A 不應影響 B：%v", got)
+		t.Fatalf("stopping A must not affect B: %v", got)
 	}
 }
 
@@ -318,8 +318,8 @@ func grep(s, sub string) string {
 	return strings.Join(out, "\n")
 }
 
-// 無 TUI 時常駐程式仍存活但不連線、不查詢 session；TUI 出現後自動開始追蹤；
-// 側欄隱藏期間仍追蹤，重新顯示不需手動重啟；全程沒有任何對 OpenCode 的寫入。
+// With no TUI the daemon stays alive but does not connect or query sessions; once a TUI appears it starts tracking automatically;
+// it keeps tracking while the sidebar is hidden and needs no manual restart when shown again; there are no writes to OpenCode at all.
 func TestIdleWithoutTUIsAndHiddenSidebarStillRecoverWithoutManualRestart(t *testing.T) {
 	e := newLifecycleEnv(t)
 	svc := fakeoc.New(t)
@@ -328,7 +328,7 @@ func TestIdleWithoutTUIsAndHiddenSidebarStillRecoverWithoutManualRestart(t *test
 	api := filepath.Join(e.dir, "work", "api")
 	e.writeTabs(e.tabsJSON(map[string][]string{api: {"修正登入"}}))
 
-	// 側欄一開始就是隱藏的（start 不帶 -show）
+	// The sidebar is hidden from the start (start is run without -show)
 	e.inTmux("set-option", "-g", "side-status", "off")
 	if out, err := e.start(e.in); err != nil {
 		t.Fatalf("%v\n%s", err, out)
@@ -336,36 +336,36 @@ func TestIdleWithoutTUIsAndHiddenSidebarStillRecoverWithoutManualRestart(t *test
 	pid := e.waitDaemons(e.in, 1, 3*time.Second, "start")[0]
 	time.Sleep(1500 * time.Millisecond)
 	if svc.SessionRequests() != 0 || svc.Connects() != 0 {
-		t.Fatalf("沒有 TUI（沒有追蹤項目）時不得連線或查詢 session：連線 %d、請求 %v", svc.Connects(), svc.Requests())
+		t.Fatalf("with no TUI (nothing to track) it must not connect or query sessions: connections %d, requests %v", svc.Connects(), svc.Requests())
 	}
 	if !alive(pid) {
-		t.Fatal("沒有 TUI 時常駐程式必須存活")
+		t.Fatal("the daemon must stay alive when there is no TUI")
 	}
 
-	// 側欄隱藏時出現 TUI：照樣開始追蹤
+	// A TUI appears while the sidebar is hidden: tracking starts all the same
 	e.tui(api, "--server", "http://127.0.0.1:1")
 	deadline := time.Now().Add(5 * time.Second)
 	for svc.SessionRequests() == 0 && time.Now().Before(deadline) {
 		time.Sleep(50 * time.Millisecond)
 	}
 	if svc.SessionRequests() == 0 {
-		t.Fatal("側欄隱藏時 TUI 出現，常駐程式應照樣開始追蹤")
+		t.Fatal("a TUI appeared while the sidebar was hidden, so the daemon should have started tracking anyway")
 	}
 	svc.Start("ses_0")
 	time.Sleep(700 * time.Millisecond)
 	if got := strings.TrimSpace(e.inTmux("show", "-gv", "side-status")); got != "off" {
-		t.Fatalf("追蹤不得打開側欄：%q", got)
+		t.Fatalf("tracking must not open the sidebar: %q", got)
 	}
-	// 重新顯示：立即是最新內容
+	// Show again: the content is immediately current
 	e.inTmux("set-option", "-g", "side-status", "left")
-	e.eventually(2*time.Second, "重新顯示後立即是最新狀態", func(s string) bool { return strings.Contains(s, "● 修正登入") })
+	e.eventually(2*time.Second, "immediately current after showing again", func(s string) bool { return strings.Contains(s, "● 修正登入") })
 
 	if w := svc.Writes(); len(w) != 0 {
-		t.Fatalf("對 OpenCode 發出了寫入請求：%v", w)
+		t.Fatalf("write request sent to OpenCode: %v", w)
 	}
 }
 
-// 最後一個 TUI 關閉後不再追蹤（釋放服務連線、不再查詢），常駐程式仍存活。
+// After the last TUI closes it stops tracking (releases the service connection and stops querying), and the daemon stays alive.
 func TestLastTUIClosingStopsQueriesButKeepsTheInstanceAlive(t *testing.T) {
 	e := newLifecycleEnv(t)
 	svc := fakeoc.New(t)
@@ -378,30 +378,30 @@ func TestLastTUIClosingStopsQueriesButKeepsTheInstanceAlive(t *testing.T) {
 		t.Fatalf("%v\n%s", err, out)
 	}
 	pid := e.waitDaemons(e.in, 1, 3*time.Second, "start")[0]
-	e.eventually(5*time.Second, "接上服務", func(s string) bool { return strings.Contains(s, "· 修正登入") })
+	e.eventually(5*time.Second, "connects to the service", func(s string) bool { return strings.Contains(s, "· 修正登入") })
 	e.inTmux("kill-window", "-t", win)
-	e.eventually(2*time.Second, "TUI 關閉", func(s string) bool { return strings.Contains(s, "No OpenCode TUI running") })
+	e.eventually(2*time.Second, "TUI closed", func(s string) bool { return strings.Contains(s, "No OpenCode TUI running") })
 	time.Sleep(300 * time.Millisecond)
 	before := len(svc.Requests())
 	time.Sleep(1500 * time.Millisecond)
 	if n := len(svc.Requests()); n != before || svc.Subscribers() != 0 {
-		t.Fatalf("沒有追蹤項目後不得再查詢（請求 %d → %d，SSE 訂閱 %d）", before, n, svc.Subscribers())
+		t.Fatalf("must not query once nothing is tracked (requests %d → %d, SSE subscribers %d)", before, n, svc.Subscribers())
 	}
 	if !alive(pid) {
-		t.Fatal("最後一個 TUI 關閉後常駐程式應仍存活")
+		t.Fatal("the daemon should stay alive after the last TUI closes")
 	}
-	// 新增 TUI 不需手動重啟
+	// Adding a TUI needs no manual restart
 	e.tui(api, "-c")
-	e.eventually(5*time.Second, "新增 TUI 後自動恢復", func(s string) bool { return strings.Contains(s, "· 修正登入") })
+	e.eventually(5*time.Second, "recovers automatically after a TUI is added", func(s string) bool { return strings.Contains(s, "· 修正登入") })
 }
 
-// tmuxShim 在 PATH 前面放一個 tmux 包裝：存在 flag 檔時所有 tmux 指令都失敗（模擬暫時性失敗）。
-// reject 非空時，只有含該字串的 show-options 查詢回報 invalid option（模擬缺少能力的舊 tmux）。
+// tmuxShim puts a tmux wrapper at the front of PATH: while the flag file exists, every tmux command fails (simulating a transient failure).
+// When reject is non-empty, only show-options queries containing that string report an invalid option (simulating an older tmux that lacks the capability).
 func tmuxShim(t *testing.T, flag, reject string) string {
 	t.Helper()
 	real, err := exec.LookPath("tmux")
 	if err != nil {
-		t.Skip("沒有 tmux")
+		t.Skip("tmux not found")
 	}
 	dir := t.TempDir()
 	script := "#!/bin/sh\n"
@@ -425,10 +425,10 @@ func (e *env) waitGone(pid int, within time.Duration, what string) {
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	e.t.Fatalf("%s：行程 %d 在 %v 內仍未結束", what, pid, within)
+	e.t.Fatalf("%s: process %d has not exited within %v", what, pid, within)
 }
 
-// server 結束：常駐程式退出，本機鎖檔與狀態檔被清掉；沒有殘留背景行程。
+// Server exit: the daemon exits and the local lock and state files are removed; no background process is left behind.
 func TestInstanceExitsAndCleansUpWhenTheTmuxServerExits(t *testing.T) {
 	e := newLifecycleEnv(t, "-server-check", "200ms")
 	if out, err := e.start(e.in, "-show"); err != nil {
@@ -436,16 +436,16 @@ func TestInstanceExitsAndCleansUpWhenTheTmuxServerExits(t *testing.T) {
 	}
 	pid := e.waitDaemons(e.in, 1, 3*time.Second, "start")[0]
 	if files := e.runtimeFiles(); len(files) < 2 {
-		t.Fatalf("執行中應有鎖檔與狀態檔：%v", files)
+		t.Fatalf("lock and state files should exist while running: %v", files)
 	}
 	e.inTmux("kill-server")
-	e.waitGone(pid, 5*time.Second, "server 結束後常駐程式應退出")
+	e.waitGone(pid, 5*time.Second, "the daemon should exit after the server exits")
 	if files := e.runtimeFiles(); len(files) != 0 {
-		t.Fatalf("server 結束後本機資源應清乾淨：%v", files)
+		t.Fatalf("local resources should be cleaned up after the server exits: %v", files)
 	}
 }
 
-// 單次或短暫的 tmux 指令失敗不是 server 結束：常駐程式存活、不清除任何東西，恢復後繼續運作。
+// A single or brief tmux command failure is not a server exit: the daemon stays alive, clears nothing, and keeps working after recovery.
 func TestTransientTmuxFailureIsNotMistakenForServerExit(t *testing.T) {
 	flag := filepath.Join(t.TempDir(), "fail")
 	e := newBareEnv(t, []string{tmuxShim(t, flag, "")}, []string{"-server-check", "200ms"})
@@ -458,26 +458,26 @@ func TestTransientTmuxFailureIsNotMistakenForServerExit(t *testing.T) {
 		t.Fatalf("%v\n%s", err, out)
 	}
 	pid := e.waitDaemons(e.in, 1, 3*time.Second, "start")[0]
-	e.eventually(3*time.Second, "已顯示", func(s string) bool { return strings.Contains(s, "! 修正登入") })
+	e.eventually(3*time.Second, "displayed", func(s string) bool { return strings.Contains(s, "! 修正登入") })
 
-	must(t, os.WriteFile(flag, nil, 0o644)) // 此後所有 tmux 指令都失敗，持續數個 server 檢查週期
+	must(t, os.WriteFile(flag, nil, 0o644)) // from now on every tmux command fails, for several server-check cycles
 	time.Sleep(2500 * time.Millisecond)
 	if !alive(pid) {
-		t.Fatal("tmux 指令暫時失敗不得被誤判為 server 結束")
+		t.Fatal("a transient tmux command failure must not be mistaken for a server exit")
 	}
 	if len(e.runtimeFiles()) < 2 {
-		t.Fatalf("暫時性失敗不得清除鎖檔或狀態：%v", e.runtimeFiles())
+		t.Fatalf("a transient failure must not remove lock or state files: %v", e.runtimeFiles())
 	}
 	if got := strings.TrimSpace(e.inTmux("show", "-gv", "@user-owned")); got != "keep" || !strings.Contains(e.inTmux("show-hooks", "-g")+e.inTmux("show-hooks", "-gw"), "user-hook") {
-		t.Fatal("暫時性失敗不得清除使用者的選項或 hook")
+		t.Fatal("a transient failure must not remove the user's options or hooks")
 	}
 	must(t, os.Remove(flag))
 	e.writeTabs(e.tabsJSON(map[string][]string{api: {"修正登入", "恢復後新增"}}))
-	e.eventually(7*time.Second, "tmux 恢復後繼續運作", func(s string) bool { return strings.Contains(s, "! 恢復後新增") })
+	e.eventually(7*time.Second, "keeps working after tmux recovers", func(s string) bool { return strings.Contains(s, "! 恢復後新增") })
 }
 
-// 明確停止：只清本插件的資源（hook、@tos_*、自己寫的 side-status-format、鎖與狀態檔），
-// 使用者的選項、hook、session override 與綁定原封不動；之後 start 可重新啟動。
+// Explicit stop: cleans up only this plugin's resources (hooks, @tos_*, the side-status-format it wrote, lock and state files);
+// the user's options, hooks, session overrides, and bindings are left untouched; start can run again afterward.
 func TestStopCleansOnlyThePluginsOwnResources(t *testing.T) {
 	e := newLifecycleEnv(t)
 	api := filepath.Join(e.dir, "work", "api")
@@ -493,78 +493,78 @@ func TestStopCleansOnlyThePluginsOwnResources(t *testing.T) {
 		t.Fatalf("%v\n%s", err, out)
 	}
 	e.waitDaemons(e.in, 1, 3*time.Second, "start")
-	e.eventually(3*time.Second, "已顯示", func(s string) bool { return strings.Contains(s, "! 修正登入") })
+	e.eventually(3*time.Second, "displayed", func(s string) bool { return strings.Contains(s, "! 修正登入") })
 
 	if out, err := e.cli("stop", e.in); err != nil {
-		t.Fatalf("stop：%v\n%s", err, out)
+		t.Fatalf("stop: %v\n%s", err, out)
 	}
 	e.waitDaemons(e.in, 0, 3*time.Second, "stop")
 	opts := e.inTmux("show-options", "-g")
 	for _, l := range strings.Split(opts, "\n") {
 		if strings.HasPrefix(l, "@tos_") {
-			t.Fatalf("停止後不應留下任何 @tos_*：\n%s", grep(opts, "tos_"))
+			t.Fatalf("no @tos_* should remain after stop:\n%s", grep(opts, "tos_"))
 		}
 	}
 	if strings.Contains(opts, "@opencode-status-shown") {
-		t.Fatalf("停止後應移除首次打開側欄標記：\n%s", grep(opts, "opencode-status-shown"))
+		t.Fatalf("the first-open sidebar marker should be removed after stop:\n%s", grep(opts, "opencode-status-shown"))
 	}
 	if !strings.Contains(opts, "@opencode-status-mode cwd") {
-		t.Fatalf("停止後使用者的 @opencode-status-* 設定應保留：\n%s", opts)
+		t.Fatalf("the user's @opencode-status-* settings should be kept after stop:\n%s", opts)
 	}
 	if f := e.inTmux("show", "-gv", "side-status-format"); strings.Contains(f, "tos_") {
-		t.Fatalf("side-status-format 應回到 tmux 預設：%s", f)
+		t.Fatalf("side-status-format should return to the tmux default: %s", f)
 	}
 	if strings.Contains(e.allHooks(), "[41700]") || !strings.Contains(e.allHooks(), "user-hook") {
-		t.Fatalf("停止後只應移除插件自己的 hook：\n%s", e.allHooks())
+		t.Fatalf("after stop only the plugin's own hooks should be removed:\n%s", e.allHooks())
 	}
 	if !strings.Contains(opts, "@oc_side user-value") || !strings.Contains(opts, "@opencode-status-mode cwd") {
-		t.Fatalf("使用者選項被動到：\n%s", opts)
+		t.Fatalf("the user's options were touched:\n%s", opts)
 	}
 	if got := strings.TrimSpace(e.inTmux("show", "-t", "other", "-v", "side-status-width")); got != "20" {
-		t.Fatalf("session override 被清除：%q", got)
+		t.Fatalf("the session override was cleared: %q", got)
 	}
 	if keysWithoutJump(e.inTmux("list-keys")) != keys {
-		t.Fatal("綁定被改變")
+		t.Fatal("bindings were changed")
 	}
 	if files := e.runtimeFiles(); len(files) != 0 {
-		t.Fatalf("停止後本機資源應清乾淨：%v", files)
+		t.Fatalf("local resources should be cleaned up after stop: %v", files)
 	}
 	if out, err := e.start(e.in, "-show"); err != nil {
-		t.Fatalf("停止後可重新啟動：%v\n%s", err, out)
+		t.Fatalf("it should be restartable after stop: %v\n%s", err, out)
 	}
-	e.waitDaemons(e.in, 1, 3*time.Second, "重新啟動")
+	e.waitDaemons(e.in, 1, 3*time.Second, "restart")
 }
 
-// 使用者自己設定了 side-status-format：停止時不得覆蓋或刪除它。
+// The user set side-status-format themselves: stop must not overwrite or delete it.
 func TestStopDoesNotRemoveAFormatTheUserSetAfterwards(t *testing.T) {
 	e := newLifecycleEnv(t)
 	if out, err := e.start(e.in, "-show"); err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
 	e.waitDaemons(e.in, 1, 3*time.Second, "start")
-	e.eventually(3*time.Second, "已顯示", func(s string) bool { return strings.Contains(s, "No OpenCode TUI running") })
+	e.eventually(3*time.Second, "displayed", func(s string) bool { return strings.Contains(s, "No OpenCode TUI running") })
 	e.inTmux("set", "-g", "side-status-format", "my own format")
 	if out, err := e.cli("stop", e.in); err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
 	if got := strings.TrimSpace(e.inTmux("show", "-gv", "side-status-format")); got != "my own format" {
-		t.Fatalf("使用者自己的 side-status-format 被動到：%q", got)
+		t.Fatalf("the user's own side-status-format was touched: %q", got)
 	}
 }
 
-// 缺少必要能力（舊 tmux）：start 明確報錯、不啟動；其他暫時性錯誤不被說成缺少能力。
+// Missing a required capability (older tmux): start reports an explicit error and does not launch; other transient errors are not described as a missing capability.
 func TestMissingTmuxCapabilityFailsLoudlyWithoutStartingAnything(t *testing.T) {
 	e := newBareEnv(t, []string{tmuxShim(t, "", "side-status-width")}, nil)
 	out, err := e.start(e.in, "-show")
 	if err == nil || !strings.Contains(out, "missing required capabilities") || !strings.Contains(out, "side-status-width") {
-		t.Fatalf("缺少能力應明確失敗：err=%v\n%s", err, out)
+		t.Fatalf("a missing capability should fail explicitly: err=%v\n%s", err, out)
 	}
 	time.Sleep(300 * time.Millisecond)
 	if got := e.daemons(e.in); len(got) != 0 {
-		t.Fatalf("缺少能力不得啟動常駐程式：%v", got)
+		t.Fatalf("a missing capability must not start the daemon: %v", got)
 	}
 	if strings.Contains(e.inTmux("show-options", "-g"), "@tos_") {
-		t.Fatal("缺少能力不得寫入任何側欄選項")
+		t.Fatal("a missing capability must not write any sidebar option")
 	}
 }
 
@@ -574,22 +574,22 @@ func TestTransientTmuxErrorAtStartIsNotReportedAsMissingCapability(t *testing.T)
 	e := newBareEnv(t, []string{tmuxShim(t, flag, "")}, nil)
 	out, err := e.start(e.in)
 	if err == nil {
-		t.Fatalf("tmux 不可用時 start 應失敗：%s", out)
+		t.Fatalf("start should fail when tmux is unavailable: %s", out)
 	}
 	if strings.Contains(out, "missing required capabilities") {
-		t.Fatalf("暫時性錯誤不得被說成缺少能力：%s", out)
+		t.Fatalf("a transient error must not be described as a missing capability: %s", out)
 	}
 	if got := e.daemons(e.in); len(got) != 0 {
-		t.Fatalf("不得啟動：%v", got)
+		t.Fatalf("must not start: %v", got)
 	}
 }
 
-// diagnose 取得診斷輸出。
+// diagnose gets the diagnostic output.
 func (e *env) diagnose(sock string) string {
 	e.t.Helper()
 	out, err := e.cli("diagnose", sock)
 	if err != nil {
-		e.t.Fatalf("diagnose：%v\n%s", err, out)
+		e.t.Fatalf("diagnose: %v\n%s", err, out)
 	}
 	return out
 }
@@ -598,7 +598,7 @@ func mustContain(t *testing.T, out string, subs ...string) {
 	t.Helper()
 	for _, s := range subs {
 		if !strings.Contains(out, s) {
-			t.Errorf("診斷輸出缺少 %q：\n%s", s, out)
+			t.Errorf("diagnostic output is missing %q:\n%s", s, out)
 		}
 	}
 }
@@ -607,13 +607,13 @@ func mustNotContain(t *testing.T, out string, subs ...string) {
 	t.Helper()
 	for _, s := range subs {
 		if strings.Contains(out, s) {
-			t.Errorf("診斷輸出不應含 %q：\n%s", s, out)
+			t.Errorf("diagnostic output must not contain %q:\n%s", s, out)
 		}
 	}
 }
 
-// 診斷涵蓋：模式、常駐狀態、TUI／tab 數、服務連線、最近錯誤、必要能力、session override 影響；
-// 並且不含憑證、prompt／對話、OpenCode tab 標題、目錄路徑與 tmux session 名稱。
+// Diagnostics cover: mode, daemon state, TUI / tab counts, service connection, recent errors, required capabilities, and the effect of session overrides;
+// and they contain no credentials, prompts / conversations, OpenCode tab titles, directory paths, or tmux session names.
 func TestDiagnoseReportsTheDecidedItemsAndLeaksNothingSensitive(t *testing.T) {
 	e := newLifecycleEnv(t)
 	svc := fakeoc.New(t)
@@ -629,34 +629,34 @@ func TestDiagnoseReportsTheDecidedItemsAndLeaksNothingSensitive(t *testing.T) {
 	e.inTmux("set", "-g", "@opencode-status-mode", "cwd")
 	e.tui(api, "--server", "http://127.0.0.1:1")
 
-	// 服務尚未開啟
+	// Service not up yet
 	if out, err := e.start(e.in, "-show"); err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
 	e.waitDaemons(e.in, 1, 3*time.Second, "start")
-	e.eventually(3*time.Second, "服務未開時提示", func(s string) bool { return strings.Contains(s, "Cannot connect to OpenCode") })
+	e.eventually(3*time.Second, "notice when the service is down", func(s string) bool { return strings.Contains(s, "Cannot connect to OpenCode") })
 	time.Sleep(300 * time.Millisecond)
 	out := e.diagnose(e.in)
-	t.Logf("診斷（服務未開）：\n%s", out)
+	t.Logf("diagnostics (service down):\n%s", out)
 	mustContain(t, out, "version", "Configured plugin mode: cwd", "Active mode: cwd", "Daemon: Running",
 		"Service connection: Cannot connect", "service discovery file not found", "does not start or restart", "Recent errors", "Required capabilities", "side-status-format are available",
 		"Session overrides: 1", "side-status=off", "side-status-width=20", "does not change these overrides")
 
-	// 服務出現後：已連線、TUI／tab 數
+	// After the service appears: connected, TUI / tab counts
 	svc.WriteServiceFile(e.servicePath)
-	e.eventually(6*time.Second, "接上服務", func(s string) bool { return !strings.Contains(s, "Cannot connect") })
+	e.eventually(6*time.Second, "connects to the service", func(s string) bool { return !strings.Contains(s, "Cannot connect") })
 	time.Sleep(300 * time.Millisecond)
 	out = e.diagnose(e.in)
-	t.Logf("診斷（已連線）：\n%s", out)
+	t.Logf("diagnostics (connected):\n%s", out)
 	mustContain(t, out, "Service connection: Connected", "TUI clients found: 1", "tabs tracked: 2")
-	// 模式與 OpenCode 實際 scope 不一致時（global 清單是空的）：沒有追蹤項目，診斷看得出來
+	// When the mode disagrees with OpenCode's actual scope (the global list is empty): nothing is tracked, and diagnostics make that visible
 	e.inTmux("set", "-g", "@opencode-status-mode", "global")
-	e.eventually(3*time.Second, "切到 global", func(s string) bool { return strings.Contains(s, "No tabs") })
+	e.eventually(3*time.Second, "switches to global", func(s string) bool { return strings.Contains(s, "No tabs") })
 	time.Sleep(300 * time.Millisecond)
 	out = e.diagnose(e.in)
 	mustContain(t, out, "Active mode: global", "tabs tracked: 0", "Standby", "no connection")
 	e.inTmux("set", "-g", "@opencode-status-mode", "cwd")
-	e.eventually(5*time.Second, "切回 cwd", func(s string) bool { return strings.Contains(s, "·") })
+	e.eventually(5*time.Second, "switches back to cwd", func(s string) bool { return strings.Contains(s, "·") })
 	time.Sleep(300 * time.Millisecond)
 	out = e.diagnose(e.in)
 	mustContain(t, out, "Active mode: cwd", "tabs tracked: 2")
@@ -664,10 +664,10 @@ func TestDiagnoseReportsTheDecidedItemsAndLeaksNothingSensitive(t *testing.T) {
 	for _, forbidden := range []string{fakeoc.Password, "sk-live", "SENTINEL_", "secret-project-name", e.dir, e.servicePath, e.tabsPath, "127.0.0.1", "0.0.0.0", svc.URL()} {
 		mustNotContain(t, out, forbidden)
 	}
-	// 服務中斷後的最近錯誤也不洩漏
+	// Recent errors after a service interruption do not leak either
 	_ = os.Remove(e.servicePath)
 	svc.Drop()
-	e.eventually(5*time.Second, "斷線提示", func(s string) bool { return strings.Contains(s, "Cannot connect to OpenCode") })
+	e.eventually(5*time.Second, "disconnect notice", func(s string) bool { return strings.Contains(s, "Cannot connect to OpenCode") })
 	time.Sleep(300 * time.Millisecond)
 	out = e.diagnose(e.in)
 	mustContain(t, out, "Service connection: Cannot connect")
@@ -675,11 +675,11 @@ func TestDiagnoseReportsTheDecidedItemsAndLeaksNothingSensitive(t *testing.T) {
 		mustNotContain(t, out, forbidden)
 	}
 	if w := svc.Writes(); len(w) != 0 {
-		t.Fatalf("對 OpenCode 發出了寫入請求：%v", w)
+		t.Fatalf("write request sent to OpenCode: %v", w)
 	}
 }
 
-// 診斷嚴格唯讀：不改 tmux 選項／hook／綁定、不啟動或停止常駐程式、不連 OpenCode。
+// Diagnostics are strictly read-only: they do not change tmux options / hooks / bindings, start or stop the daemon, or connect to OpenCode.
 func TestDiagnoseIsStrictlyReadOnly(t *testing.T) {
 	e := newLifecycleEnv(t)
 	svc := fakeoc.New(t)
@@ -688,23 +688,23 @@ func TestDiagnoseIsStrictlyReadOnly(t *testing.T) {
 		t.Fatalf("%v\n%s", err, out)
 	}
 	pid := e.waitDaemons(e.in, 1, 3*time.Second, "start")[0]
-	e.eventually(3*time.Second, "已顯示", func(s string) bool { return strings.Contains(s, "No OpenCode TUI running") })
+	e.eventually(3*time.Second, "displayed", func(s string) bool { return strings.Contains(s, "No OpenCode TUI running") })
 	opts, hooks, keys := e.inTmux("show-options", "-g"), e.allHooks(), e.inTmux("list-keys")
 	reqs := len(svc.Requests())
 	e.diagnose(e.in)
 	e.diagnose(e.in)
 	if e.inTmux("show-options", "-g") != opts || e.allHooks() != hooks || e.inTmux("list-keys") != keys {
-		t.Fatal("診斷改變了 tmux 狀態")
+		t.Fatal("diagnostics changed the tmux state")
 	}
 	if got := e.daemons(e.in); len(got) != 1 || got[0] != pid {
-		t.Fatalf("診斷不得啟動或停止常駐程式：%v", got)
+		t.Fatalf("diagnostics must not start or stop the daemon: %v", got)
 	}
 	if len(svc.Requests()) != reqs || len(svc.Writes()) != 0 {
-		t.Fatal("診斷不得連線 OpenCode")
+		t.Fatal("diagnostics must not connect to OpenCode")
 	}
 }
 
-// 診斷能指出「為什麼沒有顯示」：常駐程式沒在跑、模式設定無效、缺少能力。
+// Diagnostics can say why nothing is shown: the daemon is not running, the mode setting is invalid, or a capability is missing.
 func TestDiagnoseExplainsWhyNothingIsShown(t *testing.T) {
 	e := newLifecycleEnv(t)
 	out := e.diagnose(e.in)
@@ -727,7 +727,7 @@ func TestDiagnoseReportsAMissingCapability(t *testing.T) {
 	mustContain(t, e.diagnose(e.in), "Required capabilities: Missing side-status-format", "tmux 3.9")
 }
 
-// 側欄隱藏時診斷會說明常駐程式仍在追蹤。
+// When the sidebar is hidden, diagnostics explain that the daemon is still tracking.
 func TestDiagnoseMentionsTheSidebarIsHiddenButStillTracking(t *testing.T) {
 	e := newLifecycleEnv(t)
 	e.inTmux("set-option", "-g", "side-status", "off")
@@ -738,7 +738,7 @@ func TestDiagnoseMentionsTheSidebarIsHiddenButStillTracking(t *testing.T) {
 	mustContain(t, e.diagnose(e.in), "sidebar hidden", "no restart")
 }
 
-// 服務斷線與 tab 清單問題都要出現在「最近錯誤」，且只有固定描述。
+// Service disconnects and tab list problems must both appear under "Recent errors", with fixed descriptions only.
 func TestDiagnoseRecentErrorsIncludeServiceAndTabListProblems(t *testing.T) {
 	e := newLifecycleEnv(t)
 	api := filepath.Join(e.dir, "work", "api")
@@ -748,18 +748,18 @@ func TestDiagnoseRecentErrorsIncludeServiceAndTabListProblems(t *testing.T) {
 		t.Fatalf("%v\n%s", err, out)
 	}
 	e.waitDaemons(e.in, 1, 3*time.Second, "start")
-	e.eventually(3*time.Second, "服務未開提示", func(s string) bool { return strings.Contains(s, "Cannot connect to OpenCode") })
+	e.eventually(3*time.Second, "service-down notice", func(s string) bool { return strings.Contains(s, "Cannot connect to OpenCode") })
 	e.writeTabs(`{"version":9,"secret":"sk-live-should-not-appear"}`)
-	e.eventually(3*time.Second, "tab 清單不可讀提示", func(s string) bool { return strings.Contains(s, "Cannot read tab list") })
+	e.eventually(3*time.Second, "unreadable tab list notice", func(s string) bool { return strings.Contains(s, "Cannot read tab list") })
 	time.Sleep(300 * time.Millisecond)
 	out := e.diagnose(e.in)
 	mustContain(t, out, "Recent errors:", "[service]", "service discovery file not found", "[tabs]", "Tab list is unreadable")
 	mustNotContain(t, out, "sk-live", "secret", `"version"`, e.dir)
 }
 
-// tmux server 重啟（同一個 socket、新的 server）時，舊實例即使還沒偵測到也不能讓 start 誤以為「已有實例」。
+// When the tmux server restarts (same socket, new server), the old instance must not make start wrongly believe "an instance already exists", even if it has not noticed yet.
 func TestStartAfterTheTmuxServerRestartedTakesOverFromTheStaleInstance(t *testing.T) {
-	e := newLifecycleEnv(t, "-server-check", "1h") // 舊實例刻意偵測不到
+	e := newLifecycleEnv(t, "-server-check", "1h") // the old instance deliberately fails to notice
 	if out, err := e.start(e.in, "-show"); err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
@@ -767,19 +767,19 @@ func TestStartAfterTheTmuxServerRestartedTakesOverFromTheStaleInstance(t *testin
 	e.inTmux("kill-server")
 	e.inTmux("new-session", "-d", "-s", "again", "-x", "100", "-y", "30")
 	if out, err := e.start(e.in, "-show"); err != nil {
-		t.Fatalf("server 重啟後 start：%v\n%s", err, out)
+		t.Fatalf("start after the server restart: %v\n%s", err, out)
 	}
-	now := e.waitDaemons(e.in, 1, 3*time.Second, "接手後")
+	now := e.waitDaemons(e.in, 1, 3*time.Second, "after takeover")
 	if now[0] == old || alive(old) {
-		t.Fatalf("應由新實例接手並讓舊實例退出：舊 %d、新 %v", old, now)
+		t.Fatalf("the new instance should take over and the old one should exit: old %d, new %v", old, now)
 	}
 	e.inTmux("show-options", "-g")
 	if !strings.Contains(e.allHooks(), "[41700]") {
-		t.Fatal("新 server 上應有新實例的 hook")
+		t.Fatal("the new server should have the new instance's hooks")
 	}
 }
 
-// 非法設定先驗證：start 失敗、既有實例完全不受影響（不交接、不重啟）。
+// Invalid settings are validated first: start fails and the existing instance is completely unaffected (no handoff, no restart).
 func TestInvalidStartSettingsAreRejectedBeforeTouchingTheRunningInstance(t *testing.T) {
 	e := newLifecycleEnv(t)
 	if out, err := e.start(e.in, "-show"); err != nil {
@@ -789,34 +789,34 @@ func TestInvalidStartSettingsAreRejectedBeforeTouchingTheRunningInstance(t *test
 	for _, bad := range [][]string{{"-width", "0"}, {"-backstop", "0s"}, {"-width", "-3"}, {"-idle-timeout", "0s"}, {"-server-check", "-1s"}} {
 		out, err := e.start(e.in, bad...)
 		if err == nil || !strings.Contains(out, "invalid setting") {
-			t.Fatalf("%v 應被拒絕：err=%v\n%s", bad, err, out)
+			t.Fatalf("%v should be rejected: err=%v\n%s", bad, err, out)
 		}
 	}
 	if got := e.daemons(e.in); len(got) != 1 || got[0] != pid {
-		t.Fatalf("非法設定不得動到既有實例：%v（原 %d）", got, pid)
+		t.Fatalf("an invalid setting must not touch the existing instance: %v (was %d)", got, pid)
 	}
 }
 
-// TPM 在 run-shell 內執行時沒有 -L／-S，而是用 $TMUX 指向載入設定的那個 server；沒有 $TMUX 也沒有旗標則拒絕（不碰預設 server）。
+// When TPM runs inside run-shell there is no -L / -S; it uses $TMUX to point at the server that loaded the configuration; with neither $TMUX nor flags the command is refused (the default server is never touched).
 func TestStartWithoutSocketFlagsFollowsTMUXEnvAndRefusesWithoutIt(t *testing.T) {
 	e := newLifecycleEnv(t)
 	sock := strings.TrimSpace(e.inTmux("display-message", "-p", "#{socket_path},#{pid},0"))
 	cmd := exec.Command(e.daemonBin, "start", "-tabs", e.tabsPath, "-service", e.servicePath, "-show")
 	cmd.Env = append(e.cmdEnv(), "TMUX="+sock)
 	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("以 $TMUX 啟動：%v\n%s", err, out)
+		t.Fatalf("start via $TMUX: %v\n%s", err, out)
 	}
-	e.waitDaemons(e.in, 1, 3*time.Second, "TMUX 啟動")
+	e.waitDaemons(e.in, 1, 3*time.Second, "start via TMUX")
 
 	bare := exec.Command(e.daemonBin, "start")
 	bare.Env = e.cmdEnv()
 	if out, err := bare.CombinedOutput(); err == nil || !strings.Contains(string(out), "specify -L <name> or -S <path> explicitly") {
-		t.Fatalf("沒有 socket 資訊時必須拒絕：%v\n%s", err, out)
+		t.Fatalf("it must refuse when there is no socket information: %v\n%s", err, out)
 	}
 }
 
-// 實例被 kill -9（沒機會清理）：鎖自動釋放，沒有過期鎖；下次 start 接手，
-// 並把前一個實例留下的 @tos_* 孤兒選項（含舊名稱 @tos_sb_main）一併換成新內容。
+// The instance is killed with kill -9 (no chance to clean up): the lock is released automatically and there is no stale lock; the next start takes over,
+// and replaces the orphaned @tos_* options left by the previous instance (including the old name @tos_sb_main) with new content.
 func TestStartRecoversFromAKilledInstanceWithoutStaleLockOrOrphanOptions(t *testing.T) {
 	e := newLifecycleEnv(t)
 	api := filepath.Join(e.dir, "work", "api")
@@ -826,7 +826,7 @@ func TestStartRecoversFromAKilledInstanceWithoutStaleLockOrOrphanOptions(t *test
 		t.Fatalf("%v\n%s", err, out)
 	}
 	old := e.waitDaemons(e.in, 1, 3*time.Second, "start")[0]
-	e.eventually(3*time.Second, "已顯示", func(s string) bool { return strings.Contains(s, "! j") })
+	e.eventually(3*time.Second, "displayed", func(s string) bool { return strings.Contains(s, "! j") })
 	for _, name := range []string{"@tos_sb_main", "@tos_sb_999", "@tos_whatever"} {
 		e.inTmux("set", "-g", name, "orphan from crashed instance")
 	}
@@ -834,21 +834,21 @@ func TestStartRecoversFromAKilledInstanceWithoutStaleLockOrOrphanOptions(t *test
 	e.waitGone(old, 3*time.Second, "kill -9")
 
 	if out, err := e.start(e.in, "-show"); err != nil {
-		t.Fatalf("鎖不得殘留：%v\n%s", err, out)
+		t.Fatalf("the lock must not linger: %v\n%s", err, out)
 	}
-	now := e.waitDaemons(e.in, 1, 3*time.Second, "接手")[0]
+	now := e.waitDaemons(e.in, 1, 3*time.Second, "takeover")[0]
 	if now == old {
-		t.Fatal("應是新的行程")
+		t.Fatal("should be a new process")
 	}
 	e.writeTabs(e.tabsJSON(map[string][]string{api: {"only"}}))
-	e.eventually(3*time.Second, "新實例接手顯示", func(s string) bool { return strings.Contains(s, "! only") })
+	e.eventually(3*time.Second, "new instance takes over the display", func(s string) bool { return strings.Contains(s, "! only") })
 	opts := e.inTmux("show-options", "-g")
 	for _, name := range []string{"@tos_sb_main", "@tos_sb_999", "@tos_whatever"} {
 		if strings.Contains(opts, name+" ") {
-			t.Fatalf("前一個實例留下的孤兒選項 %s 應在新實例第一次寫入時清掉", name)
+			t.Fatalf("the orphaned option %s left by the previous instance should be cleared on the new instance's first write", name)
 		}
 	}
 	if !strings.Contains(opts, "@tos_layout_main ") {
-		t.Fatal("新實例應發布 @tos_layout_main")
+		t.Fatal("the new instance should publish @tos_layout_main")
 	}
 }

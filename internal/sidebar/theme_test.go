@@ -30,7 +30,7 @@ func (f *fakeTheme) Swatches() (map[string]string, error) {
 	return out, nil
 }
 
-// use 模擬使用者設定的色票（只含有設定的項目，未設定的不在其中）。
+// use simulates the color options set by the user (only configured entries; unset ones are absent).
 func (f *fakeTheme) use(kv ...string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -57,7 +57,7 @@ func newThemeWorld(t *testing.T) (*world, *fakeTheme) {
 	return w, th
 }
 
-// styled 是最近一次發布的完整版面（帶樣式）。
+// styled is the complete layout from the latest publish (with styles).
 func (f *fakeOut) styled() string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -70,7 +70,7 @@ func TestNilThemeSourceMeansAllSwatchesUnset(t *testing.T) {
 	w.setTabs(t, `{"global":{"tabs":[]},"cwd":{"/work/api":{"tabs":[{"sessionID":"s1","title":"x"}]}}}`)
 	w.sync(t)
 	if got := w.out.styled(); !strings.Contains(got, "#[bg=#A78BFA,fg=#18181B]") {
-		t.Fatalf("未接主題來源應使用預設主題：%q", got)
+		t.Fatalf("with no theme source the default theme should be used: %q", got)
 	}
 }
 
@@ -79,7 +79,7 @@ func TestUnsetSwatchesPublishTheDefaultTheme(t *testing.T) {
 	th.use()
 	w.sync(t)
 	if got := w.out.styled(); !strings.Contains(got, "bg=#A78BFA,fg=#18181B") || !strings.Contains(got, "fg=#F2EEE3") {
-		t.Fatalf("未設定應為預設主題：%q", got)
+		t.Fatalf("unset should give the default theme: %q", got)
 	}
 }
 
@@ -90,12 +90,12 @@ func TestPartialOverrideChangesOnlyTheNamedElements(t *testing.T) {
 	got := w.out.styled()
 	for _, want := range []string{"bg=#112233,fg=#18181B", "fg=#112233]▎", "fg=colour33]api", "fg=#404040]─"} {
 		if !strings.Contains(got, want) {
-			t.Errorf("缺少 %q：%q", want, got)
+			t.Errorf("missing %q: %q", want, got)
 		}
 	}
 	for _, gone := range []string{"#A78BFA", "#F2EEE3"} {
 		if strings.Contains(got, gone) {
-			t.Errorf("被覆寫的預設色 %q 不應出現：%q", gone, got)
+			t.Errorf("overridden default color %q should not appear: %q", gone, got)
 		}
 	}
 }
@@ -106,13 +106,13 @@ func TestInvalidSwatchFallsBackAloneAndShowsNoError(t *testing.T) {
 	w.sync(t)
 	got := w.out.styled()
 	if !strings.Contains(got, "fg=#F2EEE3]api") || !strings.Contains(got, "fg=#404040]─") {
-		t.Errorf("無效色票應只讓該項退回預設：%q", got)
+		t.Errorf("an invalid color should only make that entry fall back to the default: %q", got)
 	}
 	if !strings.Contains(got, "bg=red,fg=#18181B") {
-		t.Errorf("有效的 emphasis 應照常套用：%q", got)
+		t.Errorf("a valid emphasis should still apply: %q", got)
 	}
 	if plain := strings.Join(w.out.screen(20), "\n"); strings.Contains(plain, "色") || strings.Contains(plain, "▲") {
-		t.Errorf("側欄不應顯示色票錯誤：\n%s", plain)
+		t.Errorf("the sidebar should not show color errors:\n%s", plain)
 	}
 }
 
@@ -122,17 +122,17 @@ func TestChangingASwatchRepublishesAndTheSameThemeDoesNot(t *testing.T) {
 	w.sync(t)
 	w.sync(t)
 	if n := w.out.count(); n != 1 {
-		t.Fatalf("主題相同不應重複寫入，寫入 %d 次", n)
+		t.Fatalf("an unchanged theme should not be written again; written %d times", n)
 	}
 	th.use("project", "blue")
 	w.sync(t)
 	if n := w.out.count(); n != 2 || !strings.Contains(w.out.styled(), "fg=blue]api") {
-		t.Fatalf("主題改變應重新發布（寫入 %d 次）：%q", w.out.count(), w.out.styled())
+		t.Fatalf("a theme change should be republished (written %d times): %q", w.out.count(), w.out.styled())
 	}
-	th.use() // 取消（set -gu）回到預設
+	th.use() // unset (set -gu) returns to the default
 	w.sync(t)
 	if n := w.out.count(); n != 3 || !strings.Contains(w.out.styled(), "fg=#F2EEE3]api") {
-		t.Fatalf("取消色票應回到預設並重新發布（寫入 %d 次）：%q", w.out.count(), w.out.styled())
+		t.Fatalf("unsetting a color should return to the default and republish (written %d times): %q", w.out.count(), w.out.styled())
 	}
 }
 
@@ -143,7 +143,7 @@ func TestInvalidValueEquivalentToUnsetDoesNotRewrite(t *testing.T) {
 	th.use("project", "bogus")
 	w.sync(t)
 	if n := w.out.count(); n != 1 {
-		t.Fatalf("無效值退回預設後主題沒變，不應重複寫入，寫入 %d 次", n)
+		t.Fatalf("the theme is unchanged after an invalid value falls back to the default, so it should not be written again; written %d times", n)
 	}
 }
 
@@ -154,11 +154,11 @@ func TestUnreadableThemeKeepsTheLastValidThemeAndDoesNotBlockTracking(t *testing
 	th.fail(errBoom)
 	w.setTabs(t, `{"global":{"tabs":[]},"cwd":{"/work/api":{"tabs":[{"sessionID":"s1","title":"新的標題"}]}}}`)
 	if err := w.d.Sync(); err == nil {
-		t.Fatal("讀不到主題必須回報錯誤")
+		t.Fatal("failing to read the theme must report an error")
 	}
 	got := w.out.styled()
 	if !strings.Contains(got, "fg=red]api") || !strings.Contains(got, "新的標題") {
-		t.Fatalf("讀取失敗應沿用上次有效主題並照常追蹤：%q", got)
+		t.Fatalf("a read failure should keep the last valid theme and keep tracking as usual: %q", got)
 	}
 }
 
@@ -166,21 +166,21 @@ func TestNeverReadableThemeUsesTheDefaultAndStillTracks(t *testing.T) {
 	w, th := newThemeWorld(t)
 	th.fail(errBoom)
 	if err := w.d.Sync(); err == nil {
-		t.Fatal("讀不到主題必須回報錯誤")
+		t.Fatal("failing to read the theme must report an error")
 	}
 	got := w.out.styled()
 	if !strings.Contains(got, "fg=#F2EEE3]api") || !strings.Contains(got, "修正登入") {
-		t.Fatalf("從未讀取成功應使用預設主題並照常追蹤：%q", got)
+		t.Fatalf("with no successful read the default theme should be used and tracking should continue as usual: %q", got)
 	}
 }
 
 func TestThemeIsAppliedBeforeTrackingStartsAndToEveryClientLayout(t *testing.T) {
 	w, th := newThemeWorld(t)
-	w.mode.use("bogus") // 尚未開始追蹤，只顯示提示，提示列也用主題色
+	w.mode.use("bogus") // tracking has not started; only a notice is shown, and the notice row also uses the theme colors
 	th.use("notice", "colour99")
 	_ = w.d.Sync()
 	if got := w.out.styled(); !strings.Contains(got, "fg=colour99]▲") {
-		t.Fatalf("提示列應套用主題：%q", got)
+		t.Fatalf("the notice row should apply the theme: %q", got)
 	}
 	w.mode.use("cwd")
 	th.use("project", "red")
@@ -190,15 +190,15 @@ func TestThemeIsAppliedBeforeTrackingStartsAndToEveryClientLayout(t *testing.T) 
 		if strings.Contains(v, "api") {
 			seen++
 			if !strings.Contains(v, "fg=red]api") {
-				t.Fatalf("每個版面都應套用同一主題：%q", v)
+				t.Fatalf("every layout should apply the same theme: %q", v)
 			}
 		}
 		if strings.Contains(v, "#F2EEE3") {
-			t.Fatalf("版面殘留預設色：%q", v)
+			t.Fatalf("layout still contains default colors: %q", v)
 		}
 	}
 	if seen == 0 {
-		t.Fatal("沒有含群組的版面可驗證")
+		t.Fatal("no layout containing groups to verify")
 	}
 }
 
@@ -210,6 +210,6 @@ func TestThemeNotificationAppliesWithoutWaitingForBackstop(t *testing.T) {
 	r.wake <- struct{}{}
 	r.waitPublish(t)
 	if got := w.out.styled(); !strings.Contains(got, "fg=red]api") {
-		t.Fatalf("通知後應套用新色票：%q", got)
+		t.Fatalf("the new colors should apply after the notification: %q", got)
 	}
 }

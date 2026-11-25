@@ -1,9 +1,9 @@
-// Package tpm_test 以程序外部行為驗證 TPM 入口腳本與發布封裝流程（issue #12）。
+// Package tpm_test verifies the TPM entry script and the release packaging flow through external process behavior (issue #12).
 //
-// 全部在隔離環境進行：獨立 tmux socket（-f /dev/null）、臨時 HOME／XDG_RUNTIME_DIR、臨時「TPM 插件目錄」，
-// 發布資產由本機 HTTP 伺服器提供（經 TMUX_OPENCODE_STATUS_RELEASE_URL 注入）。不碰使用者的 ~/.tmux.conf、
-// ~/.tmux/plugins、預設 tmux server 或 OpenCode 設定。PATH 前端放一個「go 陷阱」：被呼叫就記錄並失敗，
-// 用來證明任何失敗路徑都不會靜默現場編譯。
+// Everything runs in an isolated environment: a dedicated tmux socket (-f /dev/null), temporary HOME/XDG_RUNTIME_DIR, a temporary "TPM plugin directory",
+// and release assets served by a local HTTP server (injected through TMUX_OPENCODE_STATUS_RELEASE_URL). It never touches the user's ~/.tmux.conf,
+// ~/.tmux/plugins, the default tmux server, or OpenCode settings. A "go trap" at the front of PATH logs and fails if it is called,
+// which proves that no failure path silently compiles on the spot.
 package tpm_test
 
 import (
@@ -26,7 +26,7 @@ const testVersion = "0.0.0-test"
 
 var (
 	repoRoot string
-	dist     string // build-release.sh 產出的真實發布資產（兩種架構）
+	dist     string // real release assets produced by build-release.sh (both architectures)
 )
 
 func TestMain(m *testing.M) {
@@ -44,7 +44,7 @@ func TestMain(m *testing.M) {
 		cmd.Dir = repoRoot
 		cmd.Env = append(os.Environ(), "DIST_DIR="+dist)
 		if out, err := cmd.CombinedOutput(); err != nil {
-			fmt.Fprintf(os.Stderr, "build-release 失敗：%v\n%s", err, out)
+			fmt.Fprintf(os.Stderr, "build-release failed: %v\n%s", err, out)
 			return 1
 		}
 		return m.Run()
@@ -52,7 +52,7 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// releaseServer 提供一份發布目錄並記錄所有請求。
+// releaseServer serves a release directory and records every request.
 type releaseServer struct {
 	*httptest.Server
 	mu   sync.Mutex
@@ -92,7 +92,7 @@ func (rs *releaseServer) total() int {
 	return len(rs.reqs)
 }
 
-// copyDir 複製發布資產到可被改動的目錄。
+// copyDir copies the release assets into a directory that can be modified.
 func copyDir(t *testing.T, src string) string {
 	t.Helper()
 	dst := t.TempDir()
@@ -120,11 +120,11 @@ func hostArch() string {
 	return "amd64"
 }
 
-// env 是一個乾淨環境：隔離 tmux server、臨時 HOME、臨時 TPM 插件目錄、受控 PATH。
+// env is a clean environment: an isolated tmux server, a temporary HOME, a temporary TPM plugin directory, and a controlled PATH.
 type env struct {
 	t         *testing.T
 	sock      string
-	tmuxEnv   string // $TMUX 值（socket,pid,0）
+	tmuxEnv   string // $TMUX value (socket,pid,0)
 	plugin    string
 	home      string
 	runtime   string
@@ -137,7 +137,7 @@ type env struct {
 func newEnv(t *testing.T) *env {
 	t.Helper()
 	if _, err := exec.LookPath("tmux"); err != nil {
-		t.Skip("沒有 tmux")
+		t.Skip("tmux not available")
 	}
 	root, _ := filepath.EvalSymlinks(t.TempDir())
 	e := &env{t: t, plugin: filepath.Join(root, "plugins", "tmux-opencode-status"), home: filepath.Join(root, "home"),
@@ -160,9 +160,9 @@ func newEnv(t *testing.T) *env {
 	if p, err := exec.LookPath("tmux"); err == nil {
 		e.path += ":" + filepath.Dir(p)
 	}
-	// 確認 PATH 中除了陷阱外沒有真的 go。
+	// Make sure PATH contains no real go besides the trap.
 	if _, err := os.Stat("/usr/bin/go"); err == nil {
-		t.Skip("系統 PATH 內有 go，無法模擬缺少 Go")
+		t.Skip("go is on the system PATH, so a missing Go toolchain cannot be simulated")
 	}
 
 	e.sock = fmt.Sprintf("tos-tpm-%d-%d", os.Getpid(), time.Now().UnixNano()%1e6)
@@ -186,7 +186,7 @@ func (e *env) rawTmux(args ...string) string {
 	e.t.Helper()
 	out, err := exec.Command("tmux", append([]string{"-L", e.sock, "-f", "/dev/null"}, args...)...).CombinedOutput()
 	if err != nil {
-		e.t.Fatalf("tmux %v：%v\n%s", args, err, out)
+		e.t.Fatalf("tmux %v: %v\n%s", args, err, out)
 	}
 	return string(out)
 }
@@ -200,7 +200,7 @@ func (e *env) environ(withTmux bool) []string {
 	return append(env, e.extraEnv...)
 }
 
-// load 執行入口腳本一次（等同 TPM 在載入／重載時執行）。
+// load runs the entry script once (equivalent to TPM running it on load/reload).
 func (e *env) load() (string, error) {
 	return e.loadWith(true)
 }
@@ -219,7 +219,7 @@ func (e *env) loadWith(withTmux bool) (string, error) {
 		return out.String(), err
 	case <-time.After(90 * time.Second):
 		_ = cmd.Process.Kill()
-		e.t.Fatalf("入口腳本逾時：%s", out.String())
+		e.t.Fatalf("entry script timed out: %s", out.String())
 		return "", nil
 	}
 }
@@ -228,7 +228,7 @@ func (e *env) mustLoad() string {
 	e.t.Helper()
 	out, err := e.load()
 	if err != nil {
-		e.t.Fatalf("入口腳本應成功：%v\n%s", err, out)
+		e.t.Fatalf("entry script should succeed: %v\n%s", err, out)
 	}
 	return out
 }
@@ -260,14 +260,14 @@ func (e *env) waitDaemons(want int) []int {
 			return got
 		}
 	}
-	e.t.Fatalf("常駐實例數應為 %d，實際 %v", want, got)
+	e.t.Fatalf("expected %d daemon instances, got %v", want, got)
 	return nil
 }
 
 func (e *env) assertGoNeverCalled() {
 	e.t.Helper()
 	if b, err := os.ReadFile(e.goTrapLog); err == nil {
-		e.t.Fatalf("入口腳本不得呼叫 go（靜默現場編譯）：%s", b)
+		e.t.Fatalf("entry script must not call go (silent on-the-spot compilation): %s", b)
 	}
 }
 
@@ -275,13 +275,13 @@ func (e *env) assertNothingInstalledOrStarted() {
 	e.t.Helper()
 	time.Sleep(200 * time.Millisecond)
 	if got := e.daemons(); len(got) != 0 {
-		e.t.Fatalf("不得啟動常駐程式：%v", got)
+		e.t.Fatalf("must not start a daemon: %v", got)
 	}
 	if ents, _ := filepath.Glob(filepath.Join(e.plugin, "bin", testVersion+"-*", "*")); len(ents) != 0 {
-		e.t.Fatalf("不得放置任何執行檔：%v", ents)
+		e.t.Fatalf("must not place any executable: %v", ents)
 	}
 	if stage, _ := filepath.Glob(filepath.Join(e.plugin, "bin", ".stage.*")); len(stage) != 0 {
-		e.t.Fatalf("暫存目錄未清理：%v", stage)
+		e.t.Fatalf("staging directory was not cleaned up: %v", stage)
 	}
 	e.assertGoNeverCalled()
 }
@@ -290,8 +290,8 @@ func (e *env) sideStatus() string {
 	return strings.TrimSpace(e.rawTmux("show-options", "-gv", "side-status"))
 }
 
-// waitSideStatus 等 side-status 變成 want：start 返回只代表常駐程式已持鎖，run 的第一次 Show 可能稍後才到。
-// 逾時時附上這個隔離測試環境自己的 daemon log（位於本測試的 XDG_RUNTIME_DIR 之下）。
+// waitSideStatus waits until side-status becomes want: start returning only means the daemon holds the lock, and run's first Show may arrive later.
+// On timeout it includes this isolated test environment's own daemon log (under this test's XDG_RUNTIME_DIR).
 func (e *env) waitSideStatus(want string) {
 	e.t.Helper()
 	var got string
@@ -306,11 +306,11 @@ func (e *env) waitSideStatus(want string) {
 		b, _ := os.ReadFile(f)
 		fmt.Fprintf(&logs, "--- %s ---\n%s\n", filepath.Base(f), b)
 	}
-	e.t.Fatalf("5 秒內 side-status 應為 %q，實際 %q\ndaemon log：\n%s", want, got, logs.String())
+	e.t.Fatalf("side-status should be %q within 5 seconds, got %q\ndaemon log:\n%s", want, got, logs.String())
 }
 
-// keys 是 list-keys 去掉插件接管的綁定：MouseDown1SideStatus（ADR-0002）、鍵盤跳轉的觸發鍵與
-// opencode-status-jump 按鍵表（ADR-0005）。
+// keys is list-keys without the bindings the plugin takes over: MouseDown1SideStatus (ADR-0002), the keyboard-jump trigger key, and
+// the opencode-status-jump key table (ADR-0005).
 func (e *env) keys() string {
 	var out []string
 	for _, l := range strings.Split(e.rawTmux("list-keys"), "\n") {
@@ -320,30 +320,30 @@ func (e *env) keys() string {
 		if strings.Contains(l, "-T opencode-status-jump ") || strings.HasSuffix(strings.TrimSpace(l), "switch-client -T opencode-status-jump") {
 			continue
 		}
-		out = append(out, strings.Join(strings.Fields(l), " ")) // 欄寬會依最長表名重排
+		out = append(out, strings.Join(strings.Fields(l), " ")) // column widths are re-laid out to fit the longest table name
 	}
 	return strings.Join(out, "\n")
 }
 
-// --- 發布封裝 ---
+// --- Release packaging ---
 
 func TestReleaseBuildProducesBothMacArchitecturesWithVerifiableChecksums(t *testing.T) {
 	for _, c := range []struct{ arch, want string }{{"arm64", "arm64"}, {"amd64", "x86_64"}} {
 		asset := filepath.Join(dist, fmt.Sprintf("tmux-opencode-status_%s_darwin_%s.tar.gz", testVersion, c.arch))
 		tmp := t.TempDir()
 		if out, err := exec.Command("tar", "-xzf", asset, "-C", tmp).CombinedOutput(); err != nil {
-			t.Fatalf("解開 %s：%v\n%s", asset, err, out)
+			t.Fatalf("extract %s: %v\n%s", asset, err, out)
 		}
 		out, err := exec.Command("file", filepath.Join(tmp, "tmux-opencode-status")).Output()
 		must(t, err)
 		if !strings.Contains(string(out), "Mach-O") || !strings.Contains(string(out), c.want) {
-			t.Errorf("%s 應是 darwin/%s 的 Mach-O：%s", c.arch, c.want, out)
+			t.Errorf("%s should be a darwin/%s Mach-O: %s", c.arch, c.want, out)
 		}
 	}
 	cmd := exec.Command("shasum", "-a", "256", "-c", "SHA256SUMS")
 	cmd.Dir = dist
 	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("SHA256SUMS 驗證失敗：%v\n%s", err, out)
+		t.Fatalf("SHA256SUMS verification failed: %v\n%s", err, out)
 	}
 }
 
@@ -358,7 +358,7 @@ func TestReleaseBuildIsReproducible(t *testing.T) {
 	a, _ := os.ReadFile(filepath.Join(dist, "SHA256SUMS"))
 	b, _ := os.ReadFile(filepath.Join(second, "SHA256SUMS"))
 	if len(a) == 0 || !bytes.Equal(a, b) {
-		t.Fatalf("相同輸入應得到相同產物：\n%s\n%s", a, b)
+		t.Fatalf("identical input should produce identical output:\n%s\n%s", a, b)
 	}
 }
 
@@ -367,11 +367,11 @@ func TestReleaseBuildRejectsABadVersion(t *testing.T) {
 	cmd.Dir = repoRoot
 	cmd.Env = append(os.Environ(), "DIST_DIR="+t.TempDir())
 	if out, err := cmd.CombinedOutput(); err == nil {
-		t.Fatalf("無效版本應失敗：%s", out)
+		t.Fatalf("invalid version should fail: %s", out)
 	}
 }
 
-// --- 安裝與啟動 ---
+// --- Installation and startup ---
 
 func TestInstallsTheHostArchitectureVerifiesItAndStartsTheSidebarWithoutGo(t *testing.T) {
 	e := newEnv(t)
@@ -383,21 +383,21 @@ func TestInstallsTheHostArchitectureVerifiesItAndStartsTheSidebarWithoutGo(t *te
 
 	bin := filepath.Join(e.installDir(hostArch()), "tmux-opencode-status")
 	if fi, err := os.Stat(bin); err != nil || fi.Mode()&0o111 == 0 {
-		t.Fatalf("應已放置可執行檔 %s：%v", bin, err)
+		t.Fatalf("executable %s should be in place: %v", bin, err)
 	}
 	if rs.count("_darwin_"+hostArch()+".tar.gz") != 1 || rs.count("SHA256SUMS") != 1 {
-		t.Fatalf("應下載一次對應架構資產與校驗檔：%v", rs.reqs)
+		t.Fatalf("should download the matching-architecture asset and checksum file once: %v", rs.reqs)
 	}
 	other := "amd64"
 	if hostArch() == "amd64" {
 		other = "arm64"
 	}
 	if rs.count("_darwin_"+other) != 0 {
-		t.Fatalf("不得下載另一種架構：%v", rs.reqs)
+		t.Fatalf("must not download the other architecture: %v", rs.reqs)
 	}
 	e.waitDaemons(1)
-	e.waitSideStatus("left") // 首次載入應顯示側欄
-	// 寬度在常駐程式第一次發布時寫入，start 返回時可能還沒到。
+	e.waitSideStatus("left") // the first load should show the sidebar
+	// The width is written when the daemon first publishes, so it may not be there yet when start returns.
 	var w string
 	for end := time.Now().Add(5 * time.Second); time.Now().Before(end); time.Sleep(50 * time.Millisecond) {
 		if w = strings.TrimSpace(e.rawTmux("show-options", "-gv", "side-status-width")); w == "36" {
@@ -405,10 +405,10 @@ func TestInstallsTheHostArchitectureVerifiesItAndStartsTheSidebarWithoutGo(t *te
 		}
 	}
 	if w != "36" {
-		t.Fatalf("預設寬度應為 36 格，實際 %q", w)
+		t.Fatalf("default width should be 36 columns, got %q", w)
 	}
 	if e.keys() != keysBefore {
-		t.Fatal("載入除了 MouseDown1SideStatus 外不得新增或改動任何按鍵綁定")
+		t.Fatal("loading must not add or change any key binding other than MouseDown1SideStatus")
 	}
 	e.assertGoNeverCalled()
 }
@@ -421,22 +421,22 @@ func TestIntelArchitectureSelectsTheAmd64AssetAndNeverFallsBack(t *testing.T) {
 
 	out, err := e.load()
 	if rs.count("_darwin_amd64.tar.gz") != 1 || rs.count("_darwin_arm64") != 0 {
-		t.Fatalf("x86_64 應只下載 amd64 資產：%v\n%s", rs.reqs, out)
+		t.Fatalf("x86_64 should download only the amd64 asset: %v\n%s", rs.reqs, out)
 	}
 	bin := filepath.Join(e.installDir("amd64"), "tmux-opencode-status")
 	fileOut, ferr := exec.Command("file", bin).Output()
 	if ferr != nil || !strings.Contains(string(fileOut), "x86_64") {
-		t.Fatalf("放置的執行檔應是 x86_64：%s %v", fileOut, ferr)
+		t.Fatalf("the installed executable should be x86_64: %s %v", fileOut, ferr)
 	}
 	if exec.Command("arch", "-x86_64", "/usr/bin/true").Run() != nil {
-		// 本機沒有 Rosetta：無法執行 Intel 檔，入口腳本必須明確失敗而不是換成 arm64。
+		// No Rosetta locally: the Intel binary cannot run, so the entry script must fail explicitly instead of switching to arm64.
 		if err == nil {
-			t.Fatalf("沒有 Rosetta 時啟動 Intel 執行檔應失敗：%s", out)
+			t.Fatalf("starting the Intel executable without Rosetta should fail: %s", out)
 		}
 		return
 	}
 	if err != nil {
-		t.Fatalf("Rosetta 可用時應能啟動：%v\n%s", err, out)
+		t.Fatalf("should start when Rosetta is available: %v\n%s", err, out)
 	}
 	e.waitDaemons(1)
 }
@@ -448,22 +448,22 @@ func TestUnsupportedArchitectureFailsLoudlyWithoutDownloading(t *testing.T) {
 	e.writeShim("uname", "if [ \"$1\" = -m ]; then echo i386; else exec /usr/bin/uname \"$@\"; fi\n")
 	out, err := e.load()
 	if err == nil || !strings.Contains(out, "Unsupported architecture") || !strings.Contains(out, "i386") {
-		t.Fatalf("應明確報錯：%v\n%s", err, out)
+		t.Fatalf("should report an error explicitly: %v\n%s", err, out)
 	}
 	if rs.total() != 0 {
-		t.Fatalf("不支援的架構不得發出任何下載請求：%v", rs.reqs)
+		t.Fatalf("an unsupported architecture must not make any download request: %v", rs.reqs)
 	}
 	e.assertNothingInstalledOrStarted()
 }
 
 func TestDownloadFailureIsLoudAndDoesNotCompileOrChangeArchitecture(t *testing.T) {
 	for name, setup := range map[string]func(*env) *releaseServer{
-		"資產 404": func(e *env) *releaseServer {
+		"asset 404": func(e *env) *releaseServer {
 			d := copyDir(t, dist)
 			must(t, os.Remove(filepath.Join(d, fmt.Sprintf("tmux-opencode-status_%s_darwin_%s.tar.gz", testVersion, hostArch()))))
 			return newReleaseServer(t, d)
 		},
-		"伺服器不可連線": func(e *env) *releaseServer {
+		"server unreachable": func(e *env) *releaseServer {
 			rs := newReleaseServer(t, dist)
 			rs.Close()
 			return rs
@@ -475,17 +475,17 @@ func TestDownloadFailureIsLoudAndDoesNotCompileOrChangeArchitecture(t *testing.T
 			e.extraEnv = []string{"TMUX_OPENCODE_STATUS_RELEASE_URL=" + rs.URL}
 			out, err := e.load()
 			if err == nil || !strings.Contains(out, "Download failed") {
-				t.Fatalf("應明確報下載失敗：%v\n%s", err, out)
+				t.Fatalf("should report a download failure explicitly: %v\n%s", err, out)
 			}
 			if strings.Contains(out, "go build") && !strings.Contains(out, "no local build fallback") {
-				t.Fatalf("訊息不應暗示會自動編譯：%s", out)
+				t.Fatalf("the message must not suggest automatic compilation: %s", out)
 			}
 			other := "amd64"
 			if hostArch() == "amd64" {
 				other = "arm64"
 			}
 			if rs.count("_darwin_"+other) != 0 {
-				t.Fatalf("不得換備援架構：%v", rs.reqs)
+				t.Fatalf("must not switch to a fallback architecture: %v", rs.reqs)
 			}
 			e.assertNothingInstalledOrStarted()
 		})
@@ -495,16 +495,16 @@ func TestDownloadFailureIsLoudAndDoesNotCompileOrChangeArchitecture(t *testing.T
 func TestVerificationFailureRefusesToInstallOrStart(t *testing.T) {
 	asset := fmt.Sprintf("tmux-opencode-status_%s_darwin_%s.tar.gz", testVersion, hostArch())
 	cases := map[string]func(dir string){
-		"資產被竄改": func(d string) {
+		"asset tampered with": func(d string) {
 			f, err := os.OpenFile(filepath.Join(d, asset), os.O_APPEND|os.O_WRONLY, 0)
 			must(t, err)
 			_, _ = f.WriteString("tampered")
 			f.Close()
 		},
-		"校驗檔沒有該資產": func(d string) {
+		"checksum file lacks the asset": func(d string) {
 			must(t, os.WriteFile(filepath.Join(d, "SHA256SUMS"), []byte(strings.Repeat("0", 64)+"  other.tar.gz\n"), 0o644))
 		},
-		"校驗碼格式無效": func(d string) {
+		"checksum format invalid": func(d string) {
 			must(t, os.WriteFile(filepath.Join(d, "SHA256SUMS"), []byte("xyz  "+asset+"\n"), 0o644))
 		},
 	}
@@ -517,7 +517,7 @@ func TestVerificationFailureRefusesToInstallOrStart(t *testing.T) {
 			e.extraEnv = []string{"TMUX_OPENCODE_STATUS_RELEASE_URL=" + rs.URL}
 			out, err := e.load()
 			if err == nil || !(strings.Contains(out, "Integrity verification failed") || strings.Contains(out, "No valid checksum")) {
-				t.Fatalf("應明確報驗證失敗：%v\n%s", err, out)
+				t.Fatalf("should report a verification failure explicitly: %v\n%s", err, out)
 			}
 			e.assertNothingInstalledOrStarted()
 		})
@@ -525,7 +525,7 @@ func TestVerificationFailureRefusesToInstallOrStart(t *testing.T) {
 }
 
 func TestEntryPointRejectsAnArchiveWhoseBinaryIsTheWrongArchitecture(t *testing.T) {
-	// 校驗碼正確但封存內是另一種架構的執行檔：不得放置（不換備援、不靜默使用）。
+	// The checksum is correct but the archive holds an executable for another architecture: it must not be installed (no fallback, no silent use).
 	e := newEnv(t)
 	d := copyDir(t, dist)
 	other := "amd64"
@@ -548,7 +548,7 @@ func TestEntryPointRejectsAnArchiveWhoseBinaryIsTheWrongArchitecture(t *testing.
 	e.extraEnv = []string{"TMUX_OPENCODE_STATUS_RELEASE_URL=" + rs.URL}
 	out, lerr := e.load()
 	if lerr == nil || !strings.Contains(out, "is not darwin/"+hostArch()) {
-		t.Fatalf("應拒絕錯誤架構：%v\n%s", lerr, out)
+		t.Fatalf("should reject the wrong architecture: %v\n%s", lerr, out)
 	}
 	e.assertNothingInstalledOrStarted()
 }
@@ -572,25 +572,25 @@ func TestRepeatedAndConcurrentLoadsDownloadOnceAndKeepOneInstance(t *testing.T) 
 	wg.Wait()
 	close(errs)
 	for m := range errs {
-		t.Fatalf("並行載入應全部成功：%s", m)
+		t.Fatalf("all concurrent loads should succeed: %s", m)
 	}
 	pids := e.waitDaemons(1)
 	if n := rs.count("_darwin_"); n != 1 {
-		t.Fatalf("並行載入只應下載資產一次，實際 %d：%v", n, rs.reqs)
+		t.Fatalf("concurrent loads should download the asset only once, got %d: %v", n, rs.reqs)
 	}
 
-	e.rawTmux("set-option", "-g", "side-status", "off") // 使用者隱藏側欄
+	e.rawTmux("set-option", "-g", "side-status", "off") // the user hides the sidebar
 	for i := 0; i < 3; i++ {
 		e.mustLoad()
 	}
 	if got := e.waitDaemons(1); got[0] != pids[0] {
-		t.Fatalf("重複載入不得重啟實例：%v → %v", pids, got)
+		t.Fatalf("repeated loads must not restart the instance: %v → %v", pids, got)
 	}
 	if rs.count("_darwin_") != 1 {
-		t.Fatalf("已安裝且校驗相符時不得再下載：%v", rs.reqs)
+		t.Fatalf("must not download again when already installed and the checksum matches: %v", rs.reqs)
 	}
 	if got := e.sideStatus(); got != "off" {
-		t.Fatalf("重載不得重新打開使用者隱藏的側欄：%q", got)
+		t.Fatalf("reloading must not reopen a sidebar the user hid: %q", got)
 	}
 }
 
@@ -608,10 +608,10 @@ func TestCorruptedInstalledBinaryIsReplacedByAVerifiedDownload(t *testing.T) {
 	e.tmuxEnv = strings.TrimSpace(e.rawTmux("display-message", "-p", "#{socket_path},#{pid},0"))
 	e.mustLoad()
 	if rs.count("_darwin_") != 2 {
-		t.Fatalf("校驗不符的已安裝檔應重新下載驗證：%v", rs.reqs)
+		t.Fatalf("an installed file with a mismatched checksum should be downloaded and verified again: %v", rs.reqs)
 	}
 	if b, _ := os.ReadFile(bin); strings.Contains(string(b), "evil") {
-		t.Fatal("被改動的執行檔應已被取代")
+		t.Fatal("the modified executable should have been replaced")
 	}
 	e.waitDaemons(1)
 }
@@ -625,10 +625,10 @@ func TestMissingTmuxCapabilityFailsLoudlyBeforeDownloadingOrStarting(t *testing.
 	e.path = e.shimDir + ":" + e.path
 	out, err := e.load()
 	if err == nil || !strings.Contains(out, "missing required capabilities") || !strings.Contains(out, "side-status-width") {
-		t.Fatalf("應明確報缺少能力：%v\n%s", err, out)
+		t.Fatalf("should report the missing capability explicitly: %v\n%s", err, out)
 	}
 	if rs.total() != 0 {
-		t.Fatalf("缺少能力不得下載：%v", rs.reqs)
+		t.Fatalf("a missing capability must not trigger a download: %v", rs.reqs)
 	}
 	e.assertNothingInstalledOrStarted()
 }
@@ -639,10 +639,10 @@ func TestRunningOutsideTmuxIsRefusedInsteadOfUsingTheDefaultServer(t *testing.T)
 	e.extraEnv = []string{"TMUX_OPENCODE_STATUS_RELEASE_URL=" + rs.URL}
 	out, err := e.loadWith(false)
 	if err == nil || !strings.Contains(out, "Run this inside tmux") {
-		t.Fatalf("應拒絕：%v\n%s", err, out)
+		t.Fatalf("should refuse: %v\n%s", err, out)
 	}
 	if rs.total() != 0 {
-		t.Fatalf("不得下載：%v", rs.reqs)
+		t.Fatalf("must not download: %v", rs.reqs)
 	}
 	e.assertNothingInstalledOrStarted()
 }
@@ -650,25 +650,25 @@ func TestRunningOutsideTmuxIsRefusedInsteadOfUsingTheDefaultServer(t *testing.T)
 func TestDeveloperBuiltBinaryIsUsedExplicitlyWithoutAnyDownload(t *testing.T) {
 	e := newEnv(t)
 	rs := newReleaseServer(t, dist)
-	rs.Close() // 任何下載都會失敗
+	rs.Close() // any download would fail
 	e.extraEnv = []string{"TMUX_OPENCODE_STATUS_RELEASE_URL=" + rs.URL}
 
 	devBin := filepath.Join(t.TempDir(), "tmux-opencode-status")
 	build := exec.Command("go", "build", "-o", devBin, "./cmd/tmux-opencode-status")
 	build.Dir = repoRoot
 	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("開發者編譯：%v\n%s", err, out)
+		t.Fatalf("developer build: %v\n%s", err, out)
 	}
 	e.rawTmux("set-option", "-g", "@opencode-status-binary", devBin)
 	e.mustLoad()
-	e.waitDaemons(0 + len(e.daemons())) // 實例的 argv 指向 devBin，不在插件 bin/ 內
+	e.waitDaemons(0 + len(e.daemons())) // the instance's argv points to devBin, which is not inside the plugin's bin/
 	out, _ := exec.Command("ps", "-axo", "command=").Output()
 	if !strings.Contains(string(out), devBin+" run") {
-		t.Fatalf("應以指定的開發者執行檔啟動常駐程式")
+		t.Fatalf("the daemon should start from the specified developer executable")
 	}
 	_ = exec.Command("pkill", "-f", devBin).Run()
 	if ents, _ := filepath.Glob(filepath.Join(e.plugin, "bin", "*")); len(ents) != 0 {
-		t.Fatalf("開發者路徑不得下載或放置檔案：%v", ents)
+		t.Fatalf("the developer path must not download or place files: %v", ents)
 	}
 }
 
@@ -679,10 +679,10 @@ func TestDeveloperBinaryOptionPointingNowhereFailsInsteadOfDownloading(t *testin
 	e.rawTmux("set-option", "-g", "@opencode-status-binary", "/nonexistent/tmux-opencode-status")
 	out, err := e.load()
 	if err == nil || !strings.Contains(out, "@opencode-status-binary") {
-		t.Fatalf("應明確報錯：%v\n%s", err, out)
+		t.Fatalf("should report an error explicitly: %v\n%s", err, out)
 	}
 	if rs.total() != 0 {
-		t.Fatalf("不得退回下載：%v", rs.reqs)
+		t.Fatalf("must not fall back to downloading: %v", rs.reqs)
 	}
 	e.assertNothingInstalledOrStarted()
 }
@@ -692,13 +692,13 @@ func TestFailuresAreAlsoShownThroughTmuxDisplayMessageWhenLoadedByRunShell(t *te
 	rs := newReleaseServer(t, dist)
 	rs.Close()
 	e.extraEnv = []string{"TMUX_OPENCODE_STATUS_RELEASE_URL=" + rs.URL}
-	// 與 TPM 相同：由 tmux server 的 run-shell 執行，沿用其 $TMUX。
+	// Same as TPM: run by the tmux server's run-shell, inheriting its $TMUX.
 	cmd := exec.Command("tmux", "-L", e.sock, "-f", "/dev/null", "run-shell", filepath.Join(e.plugin, "tmux-opencode-status.tmux"))
 	cmd.Env = e.environ(false)
 	_, _ = cmd.CombinedOutput()
 	msgs := e.rawTmux("show-messages")
 	if !strings.Contains(msgs, "Download failed") {
-		t.Fatalf("失敗原因應出現在 tmux 訊息：\n%s", msgs)
+		t.Fatalf("the failure reason should appear in the tmux messages:\n%s", msgs)
 	}
 	e.assertNothingInstalledOrStarted()
 }
@@ -715,5 +715,5 @@ func TestLeaksNoProcessesAfterServerExit(t *testing.T) {
 			return
 		}
 	}
-	t.Fatalf("server 結束後常駐程式 %d 應退出", pid)
+	t.Fatalf("daemon %d should exit after the server ends", pid)
 }

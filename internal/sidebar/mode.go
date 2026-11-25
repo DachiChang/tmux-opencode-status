@@ -8,18 +8,18 @@ import (
 	"github.com/DachiChang/tmux-opencode-status/internal/contract"
 )
 
-// ModeOption 是插件模式的 tmux 全域使用者選項（插件專屬前綴，不與其他選項共用）。
-// 使用者在 tmux.conf 設定 `set -g @opencode-status-mode global`，重載設定即套用。
+// ModeOption is the plugin mode's tmux global user option (plugin-specific prefix, not shared with other options).
+// Users set `set -g @opencode-status-mode global` in tmux.conf, and reloading the configuration applies it.
 const ModeOption = "@opencode-status-mode"
 
-// ModeSetting 是模式選項目前在 tmux 中的原始狀態。Set 為 false 代表選項不存在（未設定）；
-// 存在但值不是 cwd／global（包含空字串）則是無效設定，兩者必須分開處理。
+// ModeSetting is the raw state of the mode option in tmux. Set false means the option does not exist (unset);
+// an option that exists but whose value is not cwd/global (including the empty string) is an invalid setting. The two must be handled separately.
 type ModeSetting struct {
 	Value string
 	Set   bool
 }
 
-// ModeSource 讀取目前的模式設定；讀取失敗必須回報錯誤，不得當成「未設定」。
+// ModeSource reads the current mode setting; a read failure must be reported as an error and must not be treated as "unset".
 type ModeSource interface {
 	Setting() (ModeSetting, error)
 }
@@ -28,9 +28,9 @@ type unsetMode struct{}
 
 func (unsetMode) Setting() (ModeSetting, error) { return ModeSetting{}, nil }
 
-// resolveMode 套用設定語意：未設定＝預設 cwd；有效值＝套用；無效或讀不到＝
-// 已有有效模式就保留它並回報未套用，從未有過有效模式則不開始追蹤。
-// 回傳目前生效的模式（ok=false 代表尚未開始追蹤）與要呈現的提示。
+// resolveMode applies the setting semantics: unset = default cwd; valid value = apply it; invalid or unreadable =
+// keep the existing valid mode and report it as not applied; if there has never been a valid mode, do not start tracking.
+// It returns the mode in effect (ok=false means tracking has not started) and the notice to show.
 func (d *Daemon) resolveMode() (mode contract.Mode, ok bool, notice string, err error) {
 	s, rerr := d.deps.Mode.Setting()
 	switch {
@@ -55,12 +55,12 @@ func (d *Daemon) resolveMode() (mode contract.Mode, ok bool, notice string, err 
 
 type tabGroup struct {
 	name string
-	jump string // 跳轉目標（pane 編號的十進位字串）；空字串表示沒有
+	jump string // jump target (decimal string of the pane number); empty string means none
 	tabs []contract.Tab
 }
 
-// groupsFor 依模式把執行中 TUI 的資料轉成群組：cwd 每個 TUI 目錄一組；
-// global 只有一個 GLOBAL 群組（有 TUI 才納入），兩種來源從不合併。
+// groupsFor turns the running TUI data into groups by mode: cwd has one group per TUI directory;
+// global has a single GLOBAL group (included only when a TUI exists), and the two sources are never merged.
 func (d *Daemon) groupsFor(mode contract.Mode, tuiDirs []string, jumps jumpTargets) []tabGroup {
 	if len(tuiDirs) == 0 {
 		return nil
@@ -76,8 +76,8 @@ func (d *Daemon) groupsFor(mode contract.Mode, tuiDirs []string, jumps jumpTarge
 	return groups
 }
 
-// displayNames 為目前納入的目錄決定顯示名稱：預設最後一段，同名者逐層補上父目錄，
-// 直到彼此可以區分。只是顯示用；目錄身分與排序一律用完整路徑，不因名稱合併。
+// displayNames decides display names for the directories currently included: the last path segment by default, with parent directories added level by level for duplicates
+// until they are distinguishable. This is for display only; directory identity and ordering always use the full path and are never merged by name.
 func displayNames(dirs []string) []string {
 	segs := make([][]string, len(dirs))
 	depth := make([]int, len(dirs))
@@ -91,7 +91,7 @@ func displayNames(dirs []string) []string {
 	}
 	name := func(i int) string {
 		if len(segs[i]) == 0 {
-			return dirs[i] // 根目錄 "/"
+			return dirs[i] // root directory "/"
 		}
 		return strings.Join(segs[i][max(len(segs[i])-depth[i], 0):], "/")
 	}
@@ -118,8 +118,8 @@ func displayNames(dirs []string) []string {
 	return out
 }
 
-// jumpTargets 收集 TUI 所在的 pane 編號，算出各群組的跳轉目標：cwd 群組取該目錄 TUI 中編號最小者，
-// global 群組取全部 TUI 中最小者。編號以數字比較（%3 先於 %13）；無法解析成編號的 pane id 不參與。
+// jumpTargets collects the pane numbers hosting TUIs and computes each group's jump target: a cwd group takes the lowest-numbered TUI in that directory,
+// and the global group takes the lowest among all TUIs. Numbers are compared numerically (%3 before %13); pane ids that cannot be parsed as numbers do not participate.
 type jumpTargets struct {
 	byDir map[string]uint64
 	all   uint64
@@ -142,7 +142,7 @@ func (j *jumpTargets) add(dir, paneID string) {
 	}
 }
 
-// forDir 是該目錄群組的跳轉目標；沒有可解析的 pane 編號時回傳空字串（不加 range）。
+// forDir is the jump target of that directory group; it returns an empty string (no range added) when there is no parsable pane number.
 func (j jumpTargets) forDir(dir string) string {
 	if n, ok := j.byDir[dir]; ok {
 		return strconv.FormatUint(n, 10)
@@ -157,7 +157,7 @@ func (j jumpTargets) global() string {
 	return ""
 }
 
-// paneNumber 解析 tmux pane id（%N）：必須是 % 加純十進位數字，不接受正負號、空白或其他字元。
+// paneNumber parses a tmux pane id (%N): it must be % followed by plain decimal digits, and signs, whitespace, or other characters are not accepted.
 func paneNumber(id string) (uint64, bool) {
 	digits, ok := strings.CutPrefix(id, "%")
 	if !ok || digits == "" {

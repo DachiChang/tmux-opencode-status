@@ -6,8 +6,9 @@ import (
 	"github.com/DachiChang/tmux-opencode-status/internal/cellwidth"
 )
 
-// 期望值來自 tmux next-3.9 在 attached client 上的實際繪製：以 19 格寬的側欄塞滿同一個
-// 字元（群集），數出真正畫得下幾份；不是由本套件的公式推出。
+// The expected values come from what tmux next-3.9 actually draws on an attached client:
+// fill a 19-cell-wide sidebar with the same character (cluster) and count how many copies
+// really fit. They are not derived from this package's formula.
 func TestWidthMatchesWhatTmuxActuallyDraws(t *testing.T) {
 	cases := []struct {
 		name, s string
@@ -15,40 +16,40 @@ func TestWidthMatchesWhatTmuxActuallyDraws(t *testing.T) {
 	}{
 		{"ASCII", "a", 1},
 		{"CJK", "中", 2},
-		{"預組字", "é", 1},
-		{"組合字元", "e\u0301", 1},
-		{"全形字母", "ａ", 2},
-		{"半形片假名", "ｱ", 1},
-		{"韓文音節", "한", 2},
+		{"precomposed character", "é", 1},
+		{"combining character", "e\u0301", 1},
+		{"fullwidth letter", "ａ", 2},
+		{"halfwidth katakana", "ｱ", 1},
+		{"Hangul syllable", "한", 2},
 		{"emoji", "😀", 2},
 		{"emoji + VS16", "❤️", 2},
-		{"文字符號 + VS16", "☀️", 2},
-		{"ZWJ 家族 emoji", "👨‍👩‍👧", 2},
-		{"膚色修飾", "👍🏽", 2},
-		{"國旗", "🇹🇼", 2},
-		{"零寬空格", "\u200b", 0},
-		{"介面符號 ◆", "◆", 1},
-		{"省略號", "…", 1},
-		{"框線 ─", "─", 1},
-		{"圈數字", "①", 1},
-		{"CJK 擴充 B", "𠀀", 2},
-		{"Hangul filler 不畫", "\u3164", 0},
-		{"分解的韓文 jamo", "\u1112\u1161\u11ab", 2},
-		{"兩個初聲各佔一格", "\u1100\u1100", 4},
-		{"多餘的終聲被 tmux 丟棄", "\u1112\u1161\u11ab\u11ab", 2},
-		{"行首的 ZWJ 不畫、之後的 emoji 照畫", "\u200d👨", 2},
-		{"組合字元在行首不畫", "\u0301a", 1},
-		{"三個國旗符號：兩個合併、第三個獨立", "🇹🇼🇯", 3},
-		{"ZWJ 後接 ASCII 不併入（tmux 單位元組不合併）", "a\u200db", 2},
-		{"ZWJ 後接非 ASCII 併入前一格", "a\u200d中", 1},
-		{"ZWJ 後接窄 emoji 併入但不變寬", "❤\u200d🔥", 1},
+		{"text symbol + VS16", "☀️", 2},
+		{"ZWJ family emoji", "👨‍👩‍👧", 2},
+		{"skin tone modifier", "👍🏽", 2},
+		{"flag", "🇹🇼", 2},
+		{"zero-width space", "\u200b", 0},
+		{"interface symbol ◆", "◆", 1},
+		{"ellipsis", "…", 1},
+		{"box-drawing line ─", "─", 1},
+		{"circled digit", "①", 1},
+		{"CJK Extension B", "𠀀", 2},
+		{"Hangul filler is not drawn", "\u3164", 0},
+		{"decomposed Hangul jamo", "\u1112\u1161\u11ab", 2},
+		{"two leading consonants take one cell each", "\u1100\u1100", 4},
+		{"extra trailing consonant is discarded by tmux", "\u1112\u1161\u11ab\u11ab", 2},
+		{"leading ZWJ is not drawn, the following emoji is", "\u200d👨", 2},
+		{"leading combining character is not drawn", "\u0301a", 1},
+		{"three flag symbols: two merge, the third stands alone", "🇹🇼🇯", 3},
+		{"ASCII after ZWJ is not merged (tmux does not merge single-byte characters)", "a\u200db", 2},
+		{"non-ASCII after ZWJ merges into the previous cell", "a\u200d中", 1},
+		{"narrow emoji after ZWJ merges without widening", "❤\u200d🔥", 1},
 		{"emoji ZWJ ASCII", "👨\u200db", 3},
-		{"非膚色基底後接修飾符獨立成格", "😀🏽", 4},
-		{"ASCII 後接修飾符獨立成格", "a🏽", 3},
+		{"modifier after a non-skin-tone base stands alone", "😀🏽", 4},
+		{"modifier after ASCII stands alone", "a🏽", 3},
 	}
 	for _, c := range cases {
 		if got := cellwidth.String(c.s); got != c.want {
-			t.Errorf("%s %q：寬度 %d，tmux 實際畫 %d", c.name, c.s, got, c.want)
+			t.Errorf("%s %q: width %d, tmux actually draws %d", c.name, c.s, got, c.want)
 		}
 	}
 }

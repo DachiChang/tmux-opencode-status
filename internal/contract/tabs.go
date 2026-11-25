@@ -6,7 +6,7 @@ import (
 	"fmt"
 )
 
-// Mode 是插件模式：由使用者明確選擇，不讀取各 TUI 的環境覆寫。
+// Mode is the plugin mode: explicitly chosen by the user, without reading each TUI's environment overrides.
 type Mode string
 
 const (
@@ -14,7 +14,7 @@ const (
 	ModeGlobal Mode = "global"
 )
 
-// Tab 是 TUI 保存的一個 tab。Title 只是備援；即時標題以 session API 為準。
+// Tab is one tab persisted by the TUI. Title is only a fallback; the live title comes from the session API.
 type Tab struct {
 	SessionID string `json:"sessionID"`
 	Title     string `json:"title"`
@@ -24,15 +24,15 @@ type tabList struct {
 	Tabs []Tab `json:"tabs"`
 }
 
-// TabsFile 是 `$XDG_STATE_HOME/opencode/latest/tui/tabs.json` 的內容。
-// 格式為 OpenCode 非公開持久化格式：{"global":{tabs,unread},"cwd":{"<目錄>":{tabs,unread}}}。
+// TabsFile is the content of `$XDG_STATE_HOME/opencode/latest/tui/tabs.json`.
+// The format is OpenCode's non-public persistence format: {"global":{tabs,unread},"cwd":{"<directory>":{tabs,unread}}}.
 type TabsFile struct {
 	Global tabList            `json:"global"`
 	Cwd    map[string]tabList `json:"cwd"`
 }
 
-// ParseTabs 解析並嚴格驗證結構；任何不相容都回報錯誤（呼叫端必須保留最後可用清單，
-// 並與「有 TUI 但無 tab」區分）。
+// ParseTabs parses and strictly validates the structure; any incompatibility is an error (callers must keep the last usable list,
+// and distinguish it from "a TUI exists but has no tabs").
 func ParseTabs(raw []byte) (*TabsFile, error) {
 	var probe struct {
 		Global *json.RawMessage `json:"global"`
@@ -67,8 +67,8 @@ func ParseTabs(raw []byte) (*TabsFile, error) {
 	return &f, nil
 }
 
-// Select 依插件模式取得 tab 清單。cwd 模式以 TUI 行程的實際工作目錄做字串精確比對
-// （目錄身分沿用 OpenCode，不正規化）；global 模式忽略 dir。
+// Select gets the tab list for the plugin mode. cwd mode does an exact string comparison with the TUI process's actual working directory
+// (directory identity follows OpenCode and is not normalized); global mode ignores dir.
 func (f *TabsFile) Select(mode Mode, dir string) []Tab {
 	if mode == ModeGlobal {
 		return f.Global.Tabs
@@ -76,5 +76,5 @@ func (f *TabsFile) Select(mode Mode, dir string) []Tab {
 	return f.Cwd[dir].Tabs
 }
 
-// EmptyTabs 是尚未有任何 TUI 保存過 tab 的清單（tabs.json 不存在的全新環境）。
+// EmptyTabs is the list for when no TUI has ever persisted tabs (a fresh environment where tabs.json does not exist).
 func EmptyTabs() *TabsFile { return &TabsFile{Cwd: map[string]tabList{}} }

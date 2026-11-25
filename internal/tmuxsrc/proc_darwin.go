@@ -12,7 +12,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// procArgv 以 KERN_PROCARGS2 取得精確 argv（ps args 會丟失含空白路徑的邊界）。
+// procArgv obtains the exact argv through KERN_PROCARGS2 (ps args loses the boundaries of paths that contain spaces).
 func procArgv(pid int) ([]string, error) {
 	raw, err := unix.SysctlRaw("kern.procargs2", pid)
 	if err != nil {
@@ -23,7 +23,7 @@ func procArgv(pid int) ([]string, error) {
 	}
 	argc := int(binary.LittleEndian.Uint32(raw[:4]))
 	rest := raw[4:]
-	if i := bytes.IndexByte(rest, 0); i >= 0 { // 跳過 exec path 與其後的 NUL 填充
+	if i := bytes.IndexByte(rest, 0); i >= 0 { // skip the exec path and the NUL padding after it
 		rest = rest[i:]
 	}
 	rest = bytes.TrimLeft(rest, "\x00")
@@ -37,8 +37,8 @@ func procArgv(pid int) ([]string, error) {
 	return argv, nil
 }
 
-// procCwd 以 lsof 取得行程目前工作目錄（cwd 模式的目錄身分是 TUI 行程 cwd）。
-// 讀不到或沒有輸出都是錯誤，絕不回傳空字串當成目錄。
+// procCwd obtains a process's current working directory with lsof (in cwd mode, a directory's identity is the TUI process's cwd).
+// Being unable to read it, or getting no output, is an error; an empty string is never returned as a directory.
 func procCwd(pid int) (string, error) {
 	out, err := exec.Command("lsof", "-a", "-p", strconv.Itoa(pid), "-d", "cwd", "-Fn").Output()
 	if err != nil {

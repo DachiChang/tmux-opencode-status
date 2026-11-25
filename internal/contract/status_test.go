@@ -19,8 +19,8 @@ type snapshotsFile struct {
 	} `json:"snapshots"`
 }
 
-// 以家族 R(ses_R) → C → G 與獨立 session 的實測快照，驗證 API 資料到 tab 狀態的對應。
-// 期望值取自父 spec 的狀態表，不是由實作反推。
+// Verifies the mapping from API data to tab status using recorded snapshots of the family R(ses_R) → C → G and an independent session.
+// Expected values come from the parent spec's status table, not reverse-engineered from the implementation.
 func TestTabStatusFromRecordedSnapshots(t *testing.T) {
 	var file snapshotsFile
 	if err := json.Unmarshal(fixture(t, "snapshots.json"), &file); err != nil {
@@ -45,7 +45,7 @@ func TestTabStatusFromRecordedSnapshots(t *testing.T) {
 	for _, snap := range file.Snapshots {
 		cases, ok := want[snap.Name]
 		if !ok {
-			t.Fatalf("快照 %q 沒有對應的期望值", snap.Name)
+			t.Fatalf("snapshot %q has no expected value", snap.Name)
 		}
 		in := contract.Snapshot{Sessions: snap.Sessions, Permissions: snap.Permissions, Forms: snap.Forms, Running: map[string]bool{}}
 		for id := range snap.Active {
@@ -61,8 +61,8 @@ func TestTabStatusFromRecordedSnapshots(t *testing.T) {
 	}
 }
 
-// 狀態優先序：待核准 > 待回答 > 執行中 > 失敗未讀 > 結束未讀 > 閒置；
-// 未讀只看 tab 本身，後代的未讀與失敗不污染 tab。
+// Status priority: waiting for approval > waiting for an answer > running > failed unread > finished unread > idle;
+// unread looks only at the tab itself, and a descendant's unread or failure does not pollute the tab.
 func TestTabStatusPriorityAndFamilyRules(t *testing.T) {
 	sess := func(id, parent string, outcome string, idle, viewed int64) contract.Session {
 		s := contract.Session{ID: id, ParentID: parent, Outcome: outcome}
@@ -73,19 +73,19 @@ func TestTabStatusPriorityAndFamilyRules(t *testing.T) {
 	form := func(id string) contract.Form { return contract.Form{SessionID: id} }
 	family := []contract.Session{sess("A", "", "succeeded", 10, 10), sess("B", "A", "failed", 20, 0), sess("C", "B", "", 0, 0)}
 
-	t.Run("後代執行中時，主 session 結束仍呈現執行中", func(t *testing.T) {
+	t.Run("when a descendant is running, the main session finishing still shows running", func(t *testing.T) {
 		s := contract.Snapshot{Sessions: family, Running: map[string]bool{"C": true}}
 		if got := s.TabStatus("A"); got != contract.Running {
 			t.Fatalf("got %v", got)
 		}
 	})
-	t.Run("後代的失敗未讀不污染 tab", func(t *testing.T) {
+	t.Run("a descendant's failed unread does not pollute the tab", func(t *testing.T) {
 		s := contract.Snapshot{Sessions: family}
 		if got := s.TabStatus("A"); got != contract.Idle {
 			t.Fatalf("got %v", got)
 		}
 	})
-	t.Run("核准優先於回答，兩者優先於執行中", func(t *testing.T) {
+	t.Run("approval outranks answer, and both outrank running", func(t *testing.T) {
 		s := contract.Snapshot{Sessions: family, Running: map[string]bool{"A": true},
 			Permissions: []contract.PermissionRequest{perm("C")}, Forms: []contract.Form{form("B")}}
 		if got := s.TabStatus("A"); got != contract.WaitingApproval {
@@ -100,17 +100,17 @@ func TestTabStatusPriorityAndFamilyRules(t *testing.T) {
 			t.Fatalf("got %v", got)
 		}
 	})
-	t.Run("未讀判定：idle 存在且 viewed 缺漏或較舊", func(t *testing.T) {
+	t.Run("unread rule: idle present and viewed missing or older", func(t *testing.T) {
 		for name, c := range map[string]struct {
 			s    contract.Session
 			want contract.Status
 		}{
-			"未曾 viewed":    {sess("X", "", "succeeded", 10, 0), contract.FinishedUnread},
-			"viewed 較舊":    {sess("X", "", "succeeded", 10, 9), contract.FinishedUnread},
-			"viewed 相等":    {sess("X", "", "succeeded", 10, 10), contract.Idle},
-			"失敗且未讀":        {sess("X", "", "failed", 10, 0), contract.FailedUnread},
-			"中斷不算失敗":       {sess("X", "", "interrupted", 10, 0), contract.FinishedUnread},
-			"從未執行（無 idle）": {sess("X", "", "", 0, 0), contract.Idle},
+			"never viewed":                 {sess("X", "", "succeeded", 10, 0), contract.FinishedUnread},
+			"viewed older":                 {sess("X", "", "succeeded", 10, 9), contract.FinishedUnread},
+			"viewed equal":                 {sess("X", "", "succeeded", 10, 10), contract.Idle},
+			"failed and unread":            {sess("X", "", "failed", 10, 0), contract.FailedUnread},
+			"interrupted is not a failure": {sess("X", "", "interrupted", 10, 0), contract.FinishedUnread},
+			"never ran (no idle)":          {sess("X", "", "", 0, 0), contract.Idle},
 		} {
 			t.Run(name, func(t *testing.T) {
 				in := contract.Snapshot{Sessions: []contract.Session{c.s}}
@@ -120,7 +120,7 @@ func TestTabStatusPriorityAndFamilyRules(t *testing.T) {
 			})
 		}
 	})
-	t.Run("viewed 的意義：time.idle 是 0 值（缺漏）時不算未讀", func(t *testing.T) {
+	t.Run("viewed semantics: not unread when time.idle is zero (missing)", func(t *testing.T) {
 		in := contract.Snapshot{Sessions: []contract.Session{sess("X", "", "succeeded", 0, 0)}}
 		if got := in.TabStatus("X"); got != contract.Idle {
 			t.Fatalf("got %v", got)

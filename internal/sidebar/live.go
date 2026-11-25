@@ -12,27 +12,27 @@ import (
 	"github.com/DachiChang/tmux-opencode-status/internal/render"
 )
 
-// DefaultRetry 是服務連線失敗（尚未開啟、重啟、斷線）後的重試間隔；不啟動或重啟服務。
+// DefaultRetry is the retry interval after a service connection fails (not yet started, restarting, or disconnected); it never starts or restarts the service.
 const DefaultRetry = 3 * time.Second
 
-// DefaultResync 是家族補漏重讀的週期。事件負責即時更新；這個低頻重讀只補「事件單獨無法
-// 歸屬」的缺口（例如 session.created 缺 parentID 的後代），不是輪詢，也不會讓畫面閃成未知。
+// DefaultResync is the period of the session family backstop re-read. Events handle live updates; this low-frequency re-read only fills gaps where
+// events alone cannot attribute a session (for example a descendant whose session.created lacks parentID). It is not polling and never flashes the screen to unknown.
 const DefaultResync = 60 * time.Second
 
 const (
 	familyPageSize = 50
-	maxParallel    = 4 // 同時進行中的 tab 讀取數；單一 tab 慢不會拖住其他 tab，也不會一次灌爆服務
+	maxParallel    = 4 // number of tab reads in flight at once; one slow tab does not hold up the others, and the service is not flooded all at once
 )
 
-// live 維護對本機共用服務的唯讀連線與狀態：連上 SSE → 以 server.connected 為界逐 tab
-// 重讀基準資料 → 由事件增量更新。沒有被追蹤的 tab 時不連線、不查詢 session。
+// live maintains the read-only connection and state for the local shared service: connect SSE → re-read the baseline tab by tab, with server.connected as the boundary,
+// → update incrementally from events. With no tracked tabs it neither connects nor queries sessions.
 //
-// 一致性規則：
-//   - 資料完整性逐 tab 判定：某 tab 的基準資料尚未讀到、讀取失敗或連線已中斷，只有該 tab
-//     是「未知」；整體服務失效才讓所有 tab 失效。
-//   - 每條連線有世代號；舊連線的事件、舊 tab 讀取結果都不會套用到新連線（結果經由該連線
-//     專屬的通道回到連線迴圈，連線結束後就沒有人接收）。
-//   - 讀取開始前先記下事件序號；序號之後收到的事件比該次讀取新，不被舊回應覆蓋。
+// Consistency rules:
+//   - Data completeness is judged per tab: if a tab's baseline has not been read, its read failed, or the connection dropped, only that tab
+//     is "unknown"; only a failure of the whole service invalidates every tab.
+//   - Each connection has a generation number; events and tab read results from an old connection are never applied to a new one (results return to the connection loop through a
+//     channel dedicated to that connection, and nobody receives them once it ends).
+//   - Before a read starts, the event sequence number is recorded; events received after that sequence are newer than the read and are not overwritten by the old response.
 type live struct {
 	dialer ocsrc.Dialer
 	retry  time.Duration
@@ -41,26 +41,26 @@ type live struct {
 
 	mu     sync.Mutex
 	tr     *contract.Tracker
-	tabs   []string // 被追蹤的 tab session（排序去重）
-	gen    uint64   // 連線世代；每次連線開始或狀態重置都遞增
-	ready  bool     // 本世代已收到 server.connected
+	tabs   []string // tracked tab sessions (sorted, deduplicated)
+	gen    uint64   // connection generation; incremented on every connection start or state reset
+	ready  bool     // server.connected received in this generation
 	loaded map[string]bool
 	jobs   map[string]*tabJob
 	tokens uint64
-	down   bool   // 最近一次連線嘗試失敗或已中斷
-	reason string // 最近一次失敗的固定描述（診斷用，不含原始錯誤文字）
+	down   bool   // latest connection attempt failed or dropped
+	reason string // fixed description of the latest failure (diagnostics; no raw error text)
 
 	parent context.Context
-	cancel context.CancelFunc // 非 nil 表示連線迴圈執行中
+	cancel context.CancelFunc // non-nil means the connection loop is running
 	kick   chan struct{}
 }
 
-// tabJob 是單一 tab 的讀取排程。
+// tabJob is the read schedule for a single tab.
 type tabJob struct {
-	token    uint64 // 進行中讀取的識別；與回來的結果不符就丟棄
+	token    uint64 // identifier of the read in flight; a returning result that does not match is discarded
 	inflight bool
-	force    bool // 已載入也要重讀（補漏）
-	missing  bool // 最近一次讀取明確回報 session 不存在
+	force    bool // re-read even if already loaded (backstop)
+	missing  bool // the latest read explicitly reported that the session does not exist
 	fails    int
 	retryAt  time.Time
 }
@@ -91,7 +91,7 @@ func (l *live) poke() {
 	}
 }
 
-// Track 設定要追蹤的 tab session。清單為空時關閉連線（不查詢任何 session 資料）。
+// Track sets the tab sessions to track. With an empty list it closes the connection (and queries no session data).
 func (l *live) Track(ctx context.Context, ids []string) {
 	set := map[string]bool{}
 	for _, id := range ids {
@@ -126,7 +126,7 @@ func (l *live) Track(ctx context.Context, ids []string) {
 	}
 }
 
-// reset 清掉事件推導的狀態並讓舊世代失效；持鎖呼叫。
+// reset clears event-derived state and invalidates the old generation; call it with the lock held.
 func (l *live) reset() {
 	l.gen++
 	l.ready = false
@@ -149,29 +149,29 @@ func (l *live) health(tab string) health {
 	return healthOK
 }
 
-// State 是 tab 目前可呈現的狀態；基準資料不完整時為資料異常，不猜測閒置。
+// State is the status currently presentable for a tab; when the baseline data is incomplete it is a data problem, and idle is never guessed.
 func (l *live) State(tab string) render.State {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return displayState(l.health(tab), l.tr.TabStatus(tab))
 }
 
-// Title 是 tab 的即時標題（API session.title）；尚未取得時 ok 為 false。
+// Title is the tab's live title (API session.title); ok is false until it is obtained.
 func (l *live) Title(tab string) (string, bool) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.tr.Title(tab)
 }
 
-// Down 表示服務目前不可連線（已嘗試且失敗，或連線已中斷）。
+// Down reports that the service is currently unreachable (a connection was attempted and failed, or the connection dropped).
 func (l *live) Down() bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.down
 }
 
-// Status 回報服務連線的固定描述：沒有追蹤項目時為 idle（刻意不連線），
-// 已完成基準讀取為 connected，其餘為 down 並附固定原因。
+// Status reports the fixed description of the service connection: idle when nothing is tracked (deliberately not connecting),
+// connected once the baseline read is complete, and down with a fixed reason otherwise.
 func (l *live) Status() (state, reason string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -190,7 +190,7 @@ func (l *live) loop(ctx context.Context) {
 	for ctx.Err() == nil {
 		err := l.runConnection(ctx)
 		if ctx.Err() != nil {
-			return // 追蹤已停止（Track 空清單已重置狀態）；不得動到之後可能啟動的新迴圈
+			return // tracking has stopped (Track with an empty list already reset the state); must not touch a new loop that may start later
 		}
 		l.mu.Lock()
 		l.reset()
@@ -206,7 +206,7 @@ func (l *live) loop(ctx context.Context) {
 	}
 }
 
-// runConnection 是一條連線的生命週期：每次都重新探索服務，直到串流結束或無聲逾時才返回。
+// runConnection is the lifecycle of one connection: it rediscovers the service every time and returns only when the stream ends or goes silent past the timeout.
 func (l *live) runConnection(ctx context.Context) error {
 	svc, err := l.dialer.Dial(ctx)
 	if err != nil {
@@ -267,24 +267,24 @@ func (l *live) onEvent(gen uint64, e contract.Event) {
 	l.mu.Lock()
 	if gen != l.gen {
 		l.mu.Unlock()
-		return // 舊連線的遲到事件
+		return // late event from an old connection
 	}
 	l.tr.Apply(e)
 	switch {
 	case e.Type == contract.EventServerConnected:
 		l.ready = true
 		l.loaded = map[string]bool{}
-		l.jobs = map[string]*tabJob{} // 進行中的讀取一律作廢，全部重讀
+		l.jobs = map[string]*tabJob{} // all reads in flight are invalidated and everything is re-read
 		l.down = false
 		l.poke()
 	case e.Type == "session.execution.interrupted" && e.Reason == "shutdown":
-		// 事件本身不當成結果（Tracker 忽略）；實際結局以重讀為準。
+		// the event itself is not treated as a result (Tracker ignores it); the actual outcome is decided by the re-read.
 		for _, j := range l.jobs {
 			j.force, j.retryAt = true, time.Time{}
 		}
 		l.poke()
 	case e.Type == "session.created":
-		// 原本不存在的 tab session 現在建立了：立即重讀，不等補漏週期。
+		// a tab session that did not exist before has now been created: re-read immediately without waiting for the backstop period.
 		if j := l.jobs[e.SessionID]; j != nil && !l.loaded[e.SessionID] && !j.inflight {
 			j.force, j.fails, j.retryAt = true, 0, time.Time{}
 			l.poke()
@@ -294,8 +294,8 @@ func (l *live) onEvent(gen uint64, e contract.Event) {
 	l.notify()
 }
 
-// schedule 依目前追蹤的 tab 啟動需要的讀取，回傳距離下一次需要喚醒的時間（-1 = 只等事件）。
-// 每個 tab 獨立排程：只重讀需要重讀的 tab，單一 tab 失敗不連帶其他 tab。
+// schedule starts the reads needed for the currently tracked tabs and returns the time until the next wake-up is needed (-1 = wait for events only).
+// Each tab is scheduled independently: only tabs that need a re-read are re-read, and one tab's failure does not affect the others.
 func (l *live) schedule(ctx context.Context, svc contract.API, results chan<- loadResult, resyncAt *time.Time) time.Duration {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -312,7 +312,7 @@ func (l *live) schedule(ctx context.Context, svc contract.API, results chan<- lo
 	}
 	for t := range l.jobs {
 		if !tracked[t] {
-			delete(l.jobs, t) // 已移除的 tab：進行中的讀取結果因找不到 job 而丟棄
+			delete(l.jobs, t) // removed tab: the result of a read in flight is discarded because its job cannot be found
 			delete(l.loaded, t)
 		}
 	}
@@ -351,7 +351,7 @@ func (l *live) schedule(ctx context.Context, svc contract.API, results chan<- lo
 			continue
 		}
 		if inflight >= maxParallel {
-			continue // 有 tab 讀完會再排程
+			continue // scheduling happens again when a tab finishes reading
 		}
 		inflight++
 		l.tokens++
@@ -368,7 +368,7 @@ func (l *live) schedule(ctx context.Context, svc contract.API, results chan<- lo
 	return wait
 }
 
-// apply 套用一個 tab 的讀取結果。找不到 job（tab 已移除）或識別不符（讀取已作廢）的結果丟棄。
+// apply applies one tab's read result. Results whose job cannot be found (tab removed) or whose identifier does not match (read invalidated) are discarded.
 func (l *live) apply(gen uint64, r loadResult) {
 	l.mu.Lock()
 	j := l.jobs[r.tab]
@@ -386,7 +386,7 @@ func (l *live) apply(gen uint64, r loadResult) {
 		l.loaded[r.tab] = false
 		j.fails, j.missing = 0, true
 	default:
-		// 暫時性失敗：只有這個 tab 變未知；退避重試（上限 4 倍重試間隔），不高頻重打。
+		// transient failure: only this tab becomes unknown; retry with backoff (capped at 4x the retry interval) rather than hammering at high frequency.
 		l.loaded[r.tab] = false
 		j.missing = false
 		j.fails++

@@ -12,15 +12,15 @@ import (
 	"github.com/DachiChang/tmux-opencode-status/internal/instance"
 )
 
-// 單實例與重載交接（每個 tmux socket 一個實例）：
+// Single instance and reload handoff (one instance per tmux socket):
 //
-//   - 實例存活期間持有 <socket 衍生>.lock 的 fcntl 鎖，鎖檔內容是該實例的有效設定指紋；
-//     行程結束（含 kill -9）鎖自動釋放，沒有過期鎖。
-//   - start 先取得 <socket 衍生>.start 序列化鎖，所以並行的 start 一次只有一個在判斷與啟動；
-//     後到者看見已有同指紋的實例就直接返回（冪等）。
-//   - 指紋不同（設定或執行檔改變）：以 SIGUSR1 要求舊實例交接——它只移除自己的 hook 就退出，
-//     畫面維持原樣（不閃爍、不強制開關側欄）——鎖釋放後才啟動新實例。新舊從不同時運作。
-//   - run 本身也會取鎖：即使有人繞過 start 直接執行 run，也只會有一個實例。
+//   - While alive, an instance holds an fcntl lock on <socket-derived>.lock; the lock file contains the instance's effective-settings fingerprint.
+//     The lock is released automatically when the process exits (including kill -9), so there are no stale locks.
+//   - start first acquires the <socket-derived>.start serialization lock, so only one concurrent start at a time decides and launches;
+//     a later arrival that sees an instance with the same fingerprint returns immediately (idempotent).
+//   - Different fingerprint (settings or executable changed): ask the old instance to hand off with SIGUSR1; it removes only its own hooks and exits,
+//     leaving the display as is (no flicker, no forced sidebar toggling). The new instance starts only after the lock is released, so old and new never run at the same time.
+//   - run also takes the lock: even if someone bypasses start and runs run directly, only one instance can exist.
 const (
 	startLockWait  = 20 * time.Second
 	handoffWait    = 10 * time.Second
@@ -31,7 +31,7 @@ const (
 )
 
 func startInstance(o *options) int {
-	// 先驗證再動任何東西：錯誤設定不得影響既有實例。
+	// Validate before touching anything: a bad configuration must not affect an existing instance.
 	if err := o.validate(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 2
@@ -65,7 +65,7 @@ func startInstance(o *options) int {
 	}
 	defer gate.Release()
 
-	// 其後的 run 一律以明確 socket 路徑啟動，不依賴 $TMUX。
+	// From here on, run is always started with an explicit socket path and does not depend on $TMUX.
 	o.socketName, o.socketPath = "", info.SocketPath
 	if o.socketPath == "" {
 		fmt.Fprintln(os.Stderr, "tmux did not report a socket path")
@@ -76,7 +76,7 @@ func startInstance(o *options) int {
 	if pid, held := instance.Holder(paths.Lock); held {
 		got := waitContent(paths.Lock)
 		if got == want {
-			return 0 // 已有同設定的實例：重複載入什麼都不做
+			return 0 // An instance with the same settings already exists: a repeated load does nothing
 		}
 		if err := handOff(pid, paths.Lock); err != nil {
 			fmt.Fprintln(os.Stderr, "Cannot hand off from the existing daemon:", err)
@@ -86,7 +86,7 @@ func startInstance(o *options) int {
 	return spawn(o, paths)
 }
 
-// waitContent 等待鎖檔內容寫好（實例取鎖與寫入指紋之間有極短空窗）。
+// waitContent waits for the lock file content to be written (there is a very short gap between an instance acquiring the lock and writing its fingerprint).
 func waitContent(path string) string {
 	deadline := time.Now().Add(contentWait)
 	for {
@@ -97,7 +97,7 @@ func waitContent(path string) string {
 	}
 }
 
-// handOff 要求持有鎖的舊實例交接並等它釋放鎖。舊實例不回應時才改用 SIGTERM。
+// handOff asks the old instance holding the lock to hand off and waits for it to release the lock. SIGTERM is used only if the old instance does not respond.
 func handOff(pid int, lockPath string) error {
 	if err := syscall.Kill(pid, syscall.SIGUSR1); err != nil && err != syscall.ESRCH {
 		return err
@@ -124,7 +124,7 @@ func waitReleased(lockPath string, within time.Duration) bool {
 	return !held
 }
 
-// spawn 以脫離終端的背景行程啟動 run，並等它真正持有鎖（或提早失敗）才返回。
+// spawn starts run as a background process detached from the terminal, and returns only once it actually holds the lock (or has failed early).
 func spawn(o *options, paths instance.Paths) int {
 	exe, err := os.Executable()
 	if err != nil {
@@ -152,7 +152,7 @@ func spawn(o *options, paths instance.Paths) int {
 	for time.Now().Before(deadline) {
 		select {
 		case <-exited:
-			// 常駐程式提早結束：能力不足、找不到 server 等。轉述它寫的固定訊息。
+			// The daemon exited early: insufficient capabilities, server not found, and so on. Relay the fixed message it wrote.
 			fmt.Fprintln(os.Stderr, "Daemon startup failed:")
 			fmt.Fprint(os.Stderr, logSince(paths.Log, offset))
 			return 1

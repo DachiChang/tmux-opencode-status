@@ -16,7 +16,7 @@ func TestValidColourAcceptsTheDocumentedFormats(t *testing.T) {
 		"default",
 	} {
 		if !render.ValidColour(v) {
-			t.Errorf("%q 應為合法色值", v)
+			t.Errorf("%q should be a valid colour value", v)
 		}
 	}
 }
@@ -31,7 +31,7 @@ func TestValidColourRejectsEverythingElseIncludingFormatCharacters(t *testing.T)
 		"red\"", "red'", "$HOME", "`red`", "\\red", "red\\", "#A78BFA]#[bg=red",
 	} {
 		if render.ValidColour(v) {
-			t.Errorf("%q 應為無效色值", v)
+			t.Errorf("%q should be an invalid colour value", v)
 		}
 	}
 }
@@ -40,7 +40,7 @@ func TestParseThemeWithNothingSetIsTheDefaultTheme(t *testing.T) {
 	for _, raw := range []map[string]string{nil, {}} {
 		th, invalid := render.ParseTheme(raw)
 		if th != render.DefaultTheme() || len(invalid) != 0 {
-			t.Fatalf("未設定應為預設主題且無無效項：%+v %v", th, invalid)
+			t.Fatalf("unset should give the default theme with no invalid entries: %+v %v", th, invalid)
 		}
 	}
 }
@@ -51,7 +51,7 @@ func TestParseThemeOverridesOnlyTheNamedSwatches(t *testing.T) {
 	want.StateRunning = "#00FF00"
 	th, invalid := render.ParseTheme(map[string]string{"project": "colour33", "state-running": "#00FF00"})
 	if th != want || len(invalid) != 0 {
-		t.Fatalf("只應改變 project 與 state-running：%+v %v", th, invalid)
+		t.Fatalf("only project and state-running should change: %+v %v", th, invalid)
 	}
 }
 
@@ -64,7 +64,7 @@ func TestParseThemeMapsEveryNameToItsOwnSwatch(t *testing.T) {
 	}
 	th, invalid := render.ParseTheme(raw)
 	if th != customTheme() || len(invalid) != 0 {
-		t.Fatalf("13 個色票應各對應自己的欄位：%+v %v", th, invalid)
+		t.Fatalf("each of the 13 swatches should map to its own field: %+v %v", th, invalid)
 	}
 }
 
@@ -75,16 +75,16 @@ func TestParseThemeFallsBackToDefaultOnlyForTheInvalidSwatchAndReportsIt(t *test
 		"title": "red", "notice": "#{pane_id}", "project": "", "split": "nope",
 	})
 	if th != want {
-		t.Fatalf("無效項應退回預設、其他照常套用：%+v", th)
+		t.Fatalf("invalid entries should fall back to the default and the others apply normally: %+v", th)
 	}
 	if !reflect.DeepEqual(invalid, []string{"split", "project", "notice"}) {
-		t.Fatalf("無效清單應依色票固定順序列出：%v", invalid)
+		t.Fatalf("the invalid list should follow the fixed swatch order: %v", invalid)
 	}
 }
 
 func TestParseThemeIgnoresUnknownSwatchNames(t *testing.T) {
 	th, invalid := render.ParseTheme(map[string]string{"nonexistent": "red"})
 	if th != render.DefaultTheme() || len(invalid) != 0 {
-		t.Fatalf("未知名稱不影響主題：%+v %v", th, invalid)
+		t.Fatalf("unknown names should not affect the theme: %+v %v", th, invalid)
 	}
 }

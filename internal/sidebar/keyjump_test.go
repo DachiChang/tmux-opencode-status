@@ -11,8 +11,8 @@ import (
 	"github.com/DachiChang/tmux-opencode-status/internal/render"
 )
 
-// 鍵盤跳轉：每次發布一般版面、跳轉版面與 @tos_jump_key_<字母>。測試從「寫到 tmux 的選項」觀察：
-// 選項名稱是對外承諾（ADR-0004、ADR-0005），所以直接寫字面值。
+// Keyboard jump: each publish emits the normal layout, the jump layout, and @tos_jump_key_<letter>. Tests observe the "options written to tmux":
+// the option names are a public commitment (ADR-0004, ADR-0005), so the literal values are written out.
 
 const (
 	mainOpt = "@tos_layout_main"
@@ -30,7 +30,7 @@ func (f *fakeOut) layout(opt string) []string {
 	return strings.Split(f.latest().Options[opt], "\n")
 }
 
-// jumpKeys 是最近一次發布中所有 @tos_jump_key_<字母> 的 字母→值。
+// jumpKeys maps letter → value for every @tos_jump_key_<letter> in the latest publish.
 func (f *fakeOut) jumpKeys() map[string]string {
 	keys := map[string]string{}
 	for name, v := range f.latest().Options {
@@ -91,28 +91,28 @@ func TestJumpLayoutReplacesTheBarOfLetteredGroupsWithATagAndKeepsEverythingElse(
 			want[i] = strings.TrimRight(want[i], " ")
 		}
 		if strings.Join(g, "\n") != strings.Join(want, "\n") {
-			t.Fatalf("版面不符\n got:\n%s\nwant:\n%s", strings.Join(g, "\n"), strings.Join(want, "\n"))
+			t.Fatalf("layout mismatch\n got:\n%s\nwant:\n%s", strings.Join(g, "\n"), strings.Join(want, "\n"))
 		}
 	}
 	assertRaw(w.out.layout(mainOpt), wantMain)
 	assertRaw(w.out.layout(jumpOpt), wantJump)
 
-	// 跳轉版面的標籤是 emphasis 底、title 字，後面接一般的空白；range 與一般版面逐列相同。
+	// In the jump layout the label has an emphasis background and title foreground, followed by ordinary spaces; ranges match the normal layout row for row.
 	jump := w.out.layout(jumpOpt)
 	if !strings.Contains(jump[2], "#[bg=#A78BFA,fg=#18181B] a #[default] ") {
-		t.Fatalf("標籤樣式不符：%q", jump[2])
+		t.Fatalf("label style mismatch: %q", jump[2])
 	}
 	mainRows := w.out.layout(mainOpt)
 	rangeStart := regexp.MustCompile(`^#\[range=user\|oc\d+\]`)
 	for i := range mainRows {
 		prefix := rangeStart.FindString
 		if prefix(mainRows[i]) != prefix(jump[i]) || strings.HasSuffix(mainRows[i], "#[norange]") != strings.HasSuffix(jump[i], "#[norange]") {
-			t.Fatalf("第 %d 列 range 不同\n main: %q\n jump: %q", i, mainRows[i], jump[i])
+			t.Fatalf("range differs at row %d\n main: %q\n jump: %q", i, mainRows[i], jump[i])
 		}
 	}
 	for _, i := range []int{0, 1, 3, 4, 5, 7} {
 		if mainRows[i] != jump[i] {
-			t.Fatalf("非群組列應逐字相同（第 %d 列）\n main: %q\n jump: %q", i, mainRows[i], jump[i])
+			t.Fatalf("non-group rows should be identical character for character (row %d)\n main: %q\n jump: %q", i, mainRows[i], jump[i])
 		}
 	}
 }
@@ -124,7 +124,7 @@ func TestMainLayoutStillStartsEveryGroupWithTheBarExactlyAsBefore(t *testing.T) 
 	w.sync(t)
 	want := "#[range=user|oc7] #[fg=#A78BFA]▎#[fg=#F2EEE3]api#[default]#[norange]"
 	if got := w.out.layout(mainOpt)[2]; got != want {
-		t.Fatalf("一般版面群組列 = %q，要 %q", got, want)
+		t.Fatalf("normal layout group row = %q, want %q", got, want)
 	}
 }
 
@@ -134,7 +134,7 @@ func TestKeysMapLettersToTheJumpTargetsInGroupOrder(t *testing.T) {
 	w.setTabs(t, `{"global":{"tabs":[]},"cwd":{}}`)
 	w.sync(t)
 	if got := keysString(w.out.jumpKeys()); got != "a=%3,b=%2" {
-		t.Fatalf("字母對應 = %s", got)
+		t.Fatalf("letter mapping = %s", got)
 	}
 }
 
@@ -144,12 +144,12 @@ func TestLettersSkipGroupsWithoutAJumpTarget(t *testing.T) {
 	w.setTabs(t, `{"global":{"tabs":[]},"cwd":{}}`)
 	w.sync(t)
 	if got := keysString(w.out.jumpKeys()); got != "a=%9,b=%4" {
-		t.Fatalf("字母對應 = %s", got)
+		t.Fatalf("letter mapping = %s", got)
 	}
 	rows := plainRows(w.out.layout(jumpOpt))
-	// 標題、分隔線 | a（無跳轉目標）、無 tab | 空白 | b、無 tab | 空白 | c、無 tab
+	// title, divider | a (no jump target), no tab | blank | b, no tab | blank | c, no tab
 	if rows[2] != " ▎a" || rows[5] != " a  b" || rows[8] != " b  c" {
-		t.Fatalf("標籤不符：%q", rows)
+		t.Fatalf("label mismatch: %q", rows)
 	}
 }
 
@@ -166,7 +166,7 @@ func TestOnlyTheFirst26GroupsGetALetterAndTheRestKeepTheBar(t *testing.T) {
 	w.sync(t)
 	keys := w.out.jumpKeys()
 	if len(keys) != 26 || keys["a"] != "%1" || keys["z"] != "%26" {
-		t.Fatalf("應剛好 26 個字母：%s", keysString(keys))
+		t.Fatalf("should be exactly 26 letters: %s", keysString(keys))
 	}
 	rows := plainRows(w.out.layout(jumpOpt))
 	var groups []string
@@ -176,7 +176,7 @@ func TestOnlyTheFirst26GroupsGetALetterAndTheRestKeepTheBar(t *testing.T) {
 		}
 	}
 	if len(groups) != 28 || groups[25] != " z  d25" || groups[26] != " ▎d26" || groups[27] != " ▎d27" {
-		t.Fatalf("群組列不符：%q", groups)
+		t.Fatalf("group rows mismatch: %q", groups)
 	}
 }
 
@@ -186,22 +186,22 @@ func TestKeysFollowTUIsOpeningClosingAndMovingAndExtraLettersDisappear(t *testin
 	w.panes.set(tui("%1", "/work/a"), tui("%2", "/work/b"), tui("%3", "/work/c"))
 	w.sync(t)
 	if got := keysString(w.out.jumpKeys()); got != "a=%1,b=%2,c=%3" {
-		t.Fatalf("初始 = %s", got)
+		t.Fatalf("initial = %s", got)
 	}
-	w.panes.set(tui("%1", "/work/a"), tui("%3", "/work/c")) // 中間的 TUI 關閉
+	w.panes.set(tui("%1", "/work/a"), tui("%3", "/work/c")) // the middle TUI was closed
 	w.sync(t)
 	if got := keysString(w.out.jumpKeys()); got != "a=%1,b=%3" {
-		t.Fatalf("關閉後 = %s", got)
+		t.Fatalf("after close = %s", got)
 	}
-	w.panes.set(tui("%8", "/work/a"), tui("%3", "/work/c")) // 第一個移到別的 pane
+	w.panes.set(tui("%8", "/work/a"), tui("%3", "/work/c")) // the first one moved to another pane
 	w.sync(t)
 	if got := keysString(w.out.jumpKeys()); got != "a=%8,b=%3" {
-		t.Fatalf("移動後 = %s", got)
+		t.Fatalf("after move = %s", got)
 	}
 	w.panes.set()
 	w.sync(t)
 	if got := keysString(w.out.jumpKeys()); got != "" {
-		t.Fatalf("沒有 TUI 時不應有任何字母：%s", got)
+		t.Fatalf("there should be no letters when there is no TUI: %s", got)
 	}
 }
 
@@ -212,10 +212,10 @@ func TestGlobalGroupGetsLetterA(t *testing.T) {
 	w.setTabs(t, bothScopes)
 	w.sync(t)
 	if got := keysString(w.out.jumpKeys()); got != "a=%9" {
-		t.Fatalf("字母對應 = %s", got)
+		t.Fatalf("letter mapping = %s", got)
 	}
 	if rows := plainRows(w.out.layout(jumpOpt)); !strings.HasPrefix(rows[2], " a  GLOBAL") {
-		t.Fatalf("群組列：%q", rows[2])
+		t.Fatalf("group row: %q", rows[2])
 	}
 }
 
@@ -228,18 +228,18 @@ func TestJumpLayoutRetruncatesLongNamesAndKeepsTheSummaryWithinTheWidth(t *testi
 	for _, opt := range []string{mainOpt, jumpOpt} {
 		row := plainRows(w.out.layout(opt))[2]
 		if cellwidth.String(row) > 34 {
-			t.Fatalf("%s 群組列寬 %d 超過 34：%q", opt, cellwidth.String(row), row)
+			t.Fatalf("%s group row width %d exceeds 34: %q", opt, cellwidth.String(row), row)
 		}
 		if !strings.HasSuffix(row, "!3") {
-			t.Fatalf("%s 群組列摘要被擠掉：%q", opt, row)
+			t.Fatalf("%s group row summary was squeezed out: %q", opt, row)
 		}
 	}
 	jump := plainRows(w.out.layout(jumpOpt))[2]
 	if !strings.HasPrefix(jump, " a  一個") || !strings.Contains(jump, "…") {
-		t.Fatalf("跳轉版名稱應重新截斷：%q", jump)
+		t.Fatalf("jump layout name should be truncated again: %q", jump)
 	}
 	if cellwidth.String(jump) != 34 {
-		t.Fatalf("摘要應貼齊右側：寬 %d：%q", cellwidth.String(jump), jump)
+		t.Fatalf("summary should be flush right: width %d: %q", cellwidth.String(jump), jump)
 	}
 }
 
@@ -252,11 +252,11 @@ func TestHostileTitlesAndNamesDoNotChangeLettersTargetsOrTheConditionalFormat(t 
 		`{"sessionID":"s2","title":"a\n#{client_key_table} ##[range=user|oc98]"}]}}}`)
 	w.sync(t)
 	if got := keysString(w.out.jumpKeys()); got != "a=%6,b=%7" {
-		t.Fatalf("字母對應 = %s", got)
+		t.Fatalf("letter mapping = %s", got)
 	}
 	raw := w.out.latest().Options[jumpOpt]
 	if n := strings.Count(strings.ReplaceAll(raw, "##", ""), "#[range="); n != 5 {
-		t.Fatalf("range 數量 = %d，要 5（群組列、兩個 tab 列、第二群組的列與無 tab 列）：%q", n, raw)
+		t.Fatalf("range count = %d, want 5 (group row, two tab rows, the second group's row and its no-tab row): %q", n, raw)
 	}
 	want := "#{?#{==:#{client_key_table},opencode-status-jump},#{@tos_layout_jump},#{@tos_layout_main}}"
 	if got := w.out.latest().Format(); got != want {
@@ -272,13 +272,13 @@ func TestEveryPublishedOptionIsInternalAndNamedByPurpose(t *testing.T) {
 	valid := regexp.MustCompile(`^@tos_(layout_(main|jump)|jump_key_[a-z])$`)
 	for name := range w.out.latest().Options {
 		if !valid.MatchString(name) {
-			t.Fatalf("發布了不符命名的選項 %q", name)
+			t.Fatalf("published an option with a non-conforming name %q", name)
 		}
 	}
 	w.panes.set()
 	w.sync(t)
 	opts := w.out.latest().Options
 	if len(opts) != 2 || opts[mainOpt] == "" || opts[jumpOpt] == "" {
-		t.Fatalf("沒有群組時只發布兩份版面：%v", opts)
+		t.Fatalf("with no groups only the two layouts are published: %v", opts)
 	}
 }

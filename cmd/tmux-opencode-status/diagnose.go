@@ -13,10 +13,10 @@ import (
 	"github.com/DachiChang/tmux-opencode-status/internal/tmuxsrc"
 )
 
-// diagnose 是嚴格唯讀的診斷：只查 tmux（show-options／list-sessions／display-message）與本機狀態檔，
-// 不連 OpenCode、不寫任何 tmux 選項、不啟動或停止任何程序。
-// 輸出只有計數、模式、固定描述與 tmux session id；不含憑證、prompt、對話、
-// OpenCode session／tab 標題、目錄路徑，也不含原始錯誤文字或 tmux session 名稱。
+// diagnose is strictly read-only diagnostics: it queries only tmux (show-options / list-sessions / display-message) and local state files,
+// does not connect to OpenCode, write any tmux option, or start or stop any process.
+// Output contains only counts, modes, fixed descriptions, and tmux session ids; it contains no credentials, prompts, conversations,
+// OpenCode session / tab titles, or directory paths, and no raw error text or tmux session names.
 func diagnose(o *options, w io.Writer) int {
 	tm, err := o.client(true)
 	if err != nil {
@@ -140,10 +140,10 @@ func diagnosticLine(s string) string {
 	return strings.NewReplacer("\r\n", " ", "\n", " ", "\r", " ").Replace(s)
 }
 
-// diagnoseJump 輸出「鍵盤跳轉」一行並回傳要計入的問題數（無效設定、綁定失敗、已被覆寫各算一項）。
-// 唯讀：只讀設定選項、@tos_jump_trigger 與 list-keys。不偵測觸發鍵在綁定前原本是什麼。
-// reported 與 startSetting 是常駐程式啟動時讀到的設定（haveState 為 false 時未知）：目前設定與它不同，
-// 表示使用者改了設定還沒重載，那是「設定尚未套用」，不是綁定失敗。
+// diagnoseJump prints the "Keyboard jump" line and returns the number of problems to count (an invalid setting, a failed binding, and an overridden binding each count as one).
+// Read-only: it reads only the setting option, @tos_jump_trigger, and list-keys. It does not detect what the trigger key was bound to before binding.
+// reported and startSetting are the settings the daemon read at startup (unknown when haveState is false): if the current setting differs from them,
+// the user changed the setting and has not reloaded yet; that is "setting not yet applied", not a binding failure.
 func diagnoseJump(tm *tmuxsrc.Client, running, haveState bool, startSetting string, p func(string, ...any)) int {
 	set := tm.JumpTriggerSetting()
 	if set.Unreadable {

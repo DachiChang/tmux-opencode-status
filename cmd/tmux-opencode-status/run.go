@@ -15,30 +15,30 @@ import (
 	"github.com/DachiChang/tmux-opencode-status/internal/tmuxsrc"
 )
 
-// defaultServerCheck 是確認 tmux server 行程仍在的間隔。以行程存活判斷，不以 tmux 指令成敗判斷：
-// 指令可能因暫時忙碌或環境問題失敗，行程不在才是確定的結束。
+// defaultServerCheck is the interval for confirming that the tmux server process is still alive. Liveness is judged by the process, not by whether a tmux command succeeds:
+// a command can fail because of transient load or environment problems, whereas a missing process is a definite exit.
 const defaultServerCheck = 2 * time.Second
 
-// 結束原因決定要清理什麼。
+// The exit reason determines what to clean up.
 type exitKind int
 
 const (
-	exitStop       exitKind = iota // 明確停止：清掉 hook、@tos_* 選項、side-status-format，unbind 觸發鍵並清空跳轉按鍵表，點擊跳轉綁定寫回 tmux 預設
-	exitHandoff                    // 交接給新實例：只移除 hook，畫面與跳轉綁定（含觸發鍵）保持不動等新實例接手
-	exitServerGone                 // server 已結束：tmux 內的資源已隨 server 消失，只清本機檔案
+	exitStop       exitKind = iota // explicit stop: remove hooks, @tos_* options, and side-status-format, unbind the trigger key and clear the jump key table, and restore the click-to-jump bindings to tmux defaults
+	exitHandoff                    // hand off to a new instance: remove only the hooks; leave the display and jump bindings (including the trigger key) untouched for the new instance to take over
+	exitServerGone                 // server is gone: resources inside tmux vanished with it, so clean up local files only
 )
 
-// fingerprint 描述一個實例的有效設定與執行檔；start 以它判斷「已有同設定的實例」或「需要交接」。
+// fingerprint describes an instance's effective settings and executable; start uses it to decide between "an instance with the same settings already exists" and "a handoff is needed".
 //
-// trigger 是 @opencode-status-jump-trigger 的設定（含未設定、空字串與讀取失敗的區別）：改了觸發鍵並重載
-// tmux.conf 時指紋改變，start 因此交接，新實例綁新鍵、unbind 舊鍵。只改選項值而不重載不會生效。
+// trigger is the @opencode-status-jump-trigger setting (distinguishing unset, empty string, and read failure): changing the trigger key and reloading
+// tmux.conf changes the fingerprint, so start hands off, and the new instance binds the new key and unbinds the old one. Changing only the option value without reloading has no effect.
 func (o *options) fingerprint(serverPID int, trigger tmuxsrc.JumpTrigger) string {
 	exe, _ := os.Executable()
 	var stamp string
 	if fi, err := os.Stat(exe); err == nil {
 		stamp = fmt.Sprintf("%d:%d", fi.Size(), fi.ModTime().UnixNano())
 	}
-	// 納入 tmux server 的 pid：同一個 socket 路徑上換了新的 server，舊實例（即使還沒偵測到 server 已結束）也必須交接。
+	// Include the tmux server pid: if a new server replaces the old one on the same socket path, the old instance (even if it has not yet noticed the server exited) must hand off.
 	return fmt.Sprintf("v2|%d|%s|%s|%s|%s|%d|%s|%s|%s|%s|%v|%s|%s|%q", serverPID, o.socketName, o.socketPath, o.config, o.tabs+"|"+o.service,
 		o.width, o.backstop, o.idle, o.resync, o.serverCheck, o.show, exe, stamp, trigger.String())
 }
@@ -53,7 +53,7 @@ func runDaemon(o *options) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 2
 	}
-	// 訊號處理先於取鎖安裝：start 一旦看到鎖被持有就可能送出交接訊號。
+	// Install signal handling before acquiring the lock: as soon as start sees the lock held, it may send a handoff signal.
 	term := make(chan os.Signal, 1)
 	signal.Notify(term, os.Interrupt, syscall.SIGTERM)
 	handoff := make(chan os.Signal, 1)
@@ -156,15 +156,15 @@ func runDaemon(o *options) int {
 	kind = <-exited
 	cancel()
 	<-done
-	<-events // 等 hook 清理完成再退出
+	<-events // wait for hook cleanup to finish before exiting
 	switch kind {
 	case exitStop:
-		tm.ClearJumpMode() // 先於 ClearDisplay：後者會清掉 @tos_jump_trigger
+		tm.ClearJumpMode() // before ClearDisplay: the latter clears @tos_jump_trigger
 		tm.ClearDisplay()
 		tm.ClearShownMarker()
 		tm.ResetJump()
 	case exitHandoff:
-		// 畫面維持原樣，由新實例第一次同步接手；hook 已由 WatchEvents 移除。
+		// The display stays as is, and the new instance takes over on its first sync; WatchEvents has already removed the hooks.
 	case exitServerGone:
 	}
 	return 0

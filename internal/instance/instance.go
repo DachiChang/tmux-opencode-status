@@ -1,7 +1,8 @@
-// Package instance 管理「每個 tmux socket 一個常駐實例」所需的本機資源：
-// 以 socket path 衍生的鎖檔（實例存活期間持有，行程結束即使 kill -9 也自動釋放，不會有過期鎖）、
-// 診斷用狀態檔，以及序列化 start 的啟動鎖。檔案放在使用者專屬的 runtime／temp 目錄（0700），
-// 不放進 tmux 或 OpenCode 的資料位置。
+// Package instance manages the local resources needed for "one resident instance per tmux socket":
+// a lock file derived from the socket path (held while the instance is alive and released
+// automatically when the process exits, even after kill -9, so there are no stale locks),
+// a diagnostic state file, and a startup lock that serializes start. The files live in a
+// per-user runtime/temp directory (0700), not in tmux's or OpenCode's data locations.
 package instance
 
 import (
@@ -19,16 +20,16 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// Paths 是某個 tmux socket 對應的本機檔案。
+// Paths are the local files that belong to a tmux socket.
 type Paths struct {
 	Dir   string
-	Lock  string // 實例鎖：常駐程式存活期間持有
-	State string // 診斷用狀態（只含計數與固定描述，不含憑證、prompt、對話或標題）
-	Start string // 啟動鎖：序列化同一 socket 的 start（決定是否啟動／交接）
-	Log   string // 常駐程式的 stderr
+	Lock  string // instance lock: held while the resident process is alive
+	State string // diagnostic state (counts and fixed descriptions only; no credentials, prompts, conversations, or titles)
+	Start string // startup lock: serializes start for the same socket (decides whether to start or hand over)
+	Log   string // stderr of the resident process
 }
 
-// RuntimeDir 優先使用 $XDG_RUNTIME_DIR，否則使用每位使用者專屬的 temp 目錄（macOS 的 $TMPDIR）。
+// RuntimeDir prefers $XDG_RUNTIME_DIR and otherwise uses the per-user temp directory ($TMPDIR on macOS).
 func RuntimeDir() (string, error) {
 	base := os.Getenv("XDG_RUNTIME_DIR")
 	name := "tmux-opencode-status"
@@ -50,8 +51,9 @@ func RuntimeDir() (string, error) {
 	return dir, nil
 }
 
-// PathsFor 以 tmux 回報的 socket path 衍生檔名：不同 socket 各自獨立，
-// 同一個 socket 不論以 -L 或 -S 指定都落在同一組檔案。
+// PathsFor derives file names from the socket path reported by tmux: different sockets are
+// independent, and the same socket maps to the same set of files whether it is specified
+// with -L or -S.
 func PathsFor(socketPath string) (Paths, error) {
 	dir, err := RuntimeDir()
 	if err != nil {
@@ -71,10 +73,11 @@ func PathsFor(socketPath string) (Paths, error) {
 	}, nil
 }
 
-// ErrHeld 表示鎖已被其他行程持有。
+// ErrHeld means the lock is already held by another process.
 var ErrHeld = errors.New("lock is already held")
 
-// Lock 是一把 fcntl 記錄鎖。fcntl 鎖不會被子行程繼承，因此常駐程式啟動的 tmux 子行程不會意外持有它。
+// Lock is an fcntl record lock. fcntl locks are not inherited by child processes, so tmux
+// child processes started by the resident process cannot accidentally hold it.
 type Lock struct {
 	f    *os.File
 	path string
@@ -85,11 +88,12 @@ func setlk(f *os.File, typ int16) error {
 	return unix.FcntlFlock(f.Fd(), unix.F_SETLK, &l)
 }
 
-// 注意：POSIX 記錄鎖在行程對「同一檔案的任何 fd」close 時就會釋放。
-// 因此同一行程內不得對自己持有的鎖檔再開檔查詢（Holder 只供其他行程使用）。
+// Note: a POSIX record lock is released when the process closes any fd of the same file.
+// So a process must not reopen a lock file it holds in order to query it (Holder is for
+// use by other processes only).
 
-// Acquire 取得獨占鎖；wait 為 0 時不等待，否則最多輪詢 wait。
-// 取得後確認路徑仍指向同一個檔案：持有者結束時會刪除鎖檔，晚到的等待者因此不會鎖在已被刪除的舊檔上。
+// Acquire takes the exclusive lock; with a wait of 0 it does not wait, otherwise it polls for at most wait.
+// After acquiring, it confirms the path still points to the same file: the holder deletes the lock file when it exits, so a late waiter does not end up locking an old, already-deleted file.
 func Acquire(path string, wait time.Duration) (*Lock, error) {
 	deadline := time.Now().Add(wait)
 	for {
@@ -104,7 +108,7 @@ func Acquire(path string, wait time.Duration) (*Lock, error) {
 			if aerr == nil && berr == nil && os.SameFile(a, b) {
 				return &Lock{f: f, path: path}, nil
 			}
-			_ = f.Close() // 檔案已被前任持有者刪除：重新開
+			_ = f.Close() // the file was deleted by the previous holder: reopen
 			continue
 		case errors.Is(err, unix.EAGAIN) || errors.Is(err, unix.EACCES):
 			_ = f.Close()
@@ -119,7 +123,7 @@ func Acquire(path string, wait time.Duration) (*Lock, error) {
 	}
 }
 
-// SetContent 把這個實例的描述（有效設定指紋與所屬 server）寫進鎖檔，供之後的 start 判斷是否需要交接。
+// SetContent writes this instance's description (effective configuration fingerprint and owning server) into the lock file so that a later start can decide whether a handover is needed.
 func (l *Lock) SetContent(v string) error {
 	if err := l.f.Truncate(0); err != nil {
 		return err
@@ -128,7 +132,7 @@ func (l *Lock) SetContent(v string) error {
 	return err
 }
 
-// ReadContent 讀鎖檔內容（不需持有鎖）。
+// ReadContent reads the lock file's content (the lock need not be held).
 func ReadContent(path string) string {
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -137,7 +141,7 @@ func ReadContent(path string) string {
 	return string(raw)
 }
 
-// Release 先刪除鎖檔再釋放鎖。
+// Release deletes the lock file and then releases the lock.
 func (l *Lock) Release() {
 	if l == nil || l.f == nil {
 		return
@@ -147,7 +151,7 @@ func (l *Lock) Release() {
 	l.f = nil
 }
 
-// Holder 以 F_GETLK 查詢持有者（不取得鎖，因此不會干擾正要啟動的實例）。
+// Holder queries the holder with F_GETLK (it does not take the lock, so it does not disturb an instance that is starting).
 func Holder(path string) (pid int, held bool) {
 	f, err := os.OpenFile(path, os.O_RDWR, 0)
 	if err != nil {
@@ -164,14 +168,14 @@ func Holder(path string) (pid int, held bool) {
 	return int(l.Pid), true
 }
 
-// ErrorRecord 是一筆最近發生的問題：只含來源與固定描述，絕不放原始錯誤文字。
+// ErrorRecord is a recent problem: it holds only the source and a fixed description, never raw error text.
 type ErrorRecord struct {
 	At      time.Time `json:"at"`
 	Source  string    `json:"source"`
 	Message string    `json:"message"`
 }
 
-// State 是常駐程式寫給診斷用的狀態。診斷只讀這份檔案與 tmux，不連 OpenCode。
+// State is the state the resident process writes for diagnostics. Diagnostics read only this file and tmux; they do not connect to OpenCode.
 type State struct {
 	PID           int       `json:"pid"`
 	ServerPID     int       `json:"serverPid"`
@@ -185,12 +189,12 @@ type State struct {
 	Service       string    `json:"service"`
 	ServiceReason string    `json:"serviceReason,omitempty"`
 	Issues        []string  `json:"issues,omitempty"`
-	// JumpTrigger 是常駐程式啟動時讀到的觸發鍵設定（tmuxsrc.JumpTrigger.String()）；diagnose 用來分辨「設定尚未套用」。
+	// JumpTrigger is the trigger key setting the resident process read at startup (tmuxsrc.JumpTrigger.String()); diagnose uses it to tell that the "setting has not been applied yet".
 	JumpTrigger string        `json:"jumpTrigger,omitempty"`
 	Recent      []ErrorRecord `json:"recent,omitempty"`
 }
 
-// WriteState 以暫存檔 + rename 原子寫入。
+// WriteState writes atomically using a temporary file plus rename.
 func WriteState(path string, s State) error {
 	raw, err := json.Marshal(s)
 	if err != nil {

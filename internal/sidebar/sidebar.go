@@ -1,6 +1,6 @@
-// Package sidebar 是常駐程式的核心：從 tmux（pane 事實）與 TUI 保存的 tab 清單
-// 彙整出側欄內容，只在可見輸出改變時寫到 tmux。外部資料來源與輸出都是介面，
-// 測試以受控實作替換，後續票（狀態、global 模式、排版、生命週期）在此擴充。
+// Package sidebar is the core of the daemon: it assembles sidebar content from tmux (pane facts) and the tab list saved by the TUI,
+// and writes to tmux only when the visible output changes. External data sources and the output are interfaces;
+// tests replace them with controlled implementations, and later tickets (status, global mode, layout, lifecycle) extend them here.
 package sidebar
 
 import (
@@ -16,24 +16,24 @@ import (
 	"github.com/DachiChang/tmux-opencode-status/internal/render"
 )
 
-// PaneFact 是一個 tmux pane 的辨識事實（PaneID 用於去除 linked window 的重複列出）。
+// PaneFact identifies a tmux pane (PaneID is used to drop panes listed twice through linked windows).
 type PaneFact struct {
 	PaneID string
 	contract.Pane
 }
 
-// PaneSource 列出同一 tmux server 所有 session 的 pane。失敗必須回報錯誤，
-// 不得回傳空清單代替。
+// PaneSource lists the panes of every session on the same tmux server. Failures must be reported as errors;
+// an empty list must not be returned instead.
 type PaneSource interface {
 	Panes() ([]PaneFact, error)
 }
 
-// TabSource 讀取 TUI 保存的 tab 清單；格式不相容時回報錯誤。
+// TabSource reads the tab list saved by the TUI and reports an error if the format is incompatible.
 type TabSource interface {
 	Read() (*contract.TabsFile, error)
 }
 
-// Output 把已排好版的側欄寫到 tmux。
+// Output writes the laid-out sidebar to tmux.
 type Output interface {
 	Publish(render.Published) error
 }
@@ -42,50 +42,50 @@ type Deps struct {
 	Panes PaneSource
 	Tabs  TabSource
 	Out   Output
-	// Mode 讀取插件模式選項；nil 等同未設定（預設 cwd）。
+	// Mode reads the plugin mode option; nil is treated as unset (default cwd).
 	Mode ModeSource
-	// Theme 讀取色票選項；nil 等同全部未設定（預設主題）。
+	// Theme reads the color options; nil is treated as all unset (default theme).
 	Theme ThemeSource
 
-	// Wake 是事件通知（tmux hook、tab 檔變動）；Ticks 是低頻補漏。兩者皆可為 nil，
-	// 時間由呼叫端注入，測試因此不需等待真實時間。
+	// Wake carries event notifications (tmux hooks, tab file changes); Ticks is a low-frequency backstop. Either may be nil;
+	// the caller injects time, so tests never wait for real time.
 	Wake  <-chan struct{}
 	Ticks <-chan time.Time
 
-	// Service 是 OpenCode 本機共用服務的唯讀連線來源；nil 表示不接服務，所有 tab 維持未知。
+	// Service is the read-only connection source for the local shared OpenCode service; nil means no service is connected and every tab stays unknown.
 	Service ocsrc.Dialer
 
-	// Report 在可觀察狀態改變時被呼叫（診斷用）。內容只有計數與固定描述，
-	// 不含憑證、prompt、對話、session 或 tab 標題，也不含原始錯誤文字。nil 表示不回報。
+	// Report is called when observable state changes (for diagnostics). It carries only counts and fixed descriptions,
+	// never credentials, prompts, conversations, sessions, or tab titles, and no raw error text. nil disables reporting.
 	Report func(Status)
 
-	// Startup 是啟動時（Daemon 之外）發生、要記入最近錯誤的問題（固定描述，例如觸發鍵無效）。
+	// Startup holds problems found at startup (outside the Daemon) that belong in the recent errors (fixed descriptions, for example an invalid trigger key).
 	Startup []ErrorRecord
 }
 
-// Service 連線狀態的固定描述值。
+// Fixed description values for the Service connection state.
 const (
-	ServiceIdle       = "idle"       // 沒有追蹤項目，刻意不連線、不查詢
-	ServiceConnected  = "connected"  // 已連上並完成基準讀取
-	ServiceConnecting = "connecting" // 正在連線或讀取基準資料
-	ServiceDown       = "down"       // 連線失敗或已中斷，自動重試中
-	ServiceNone       = "none"       // 未設定服務來源
+	ServiceIdle       = "idle"       // nothing tracked; deliberately not connecting or querying
+	ServiceConnected  = "connected"  // connected and baseline read complete
+	ServiceConnecting = "connecting" // connecting or reading baseline data
+	ServiceDown       = "down"       // connection failed or dropped; retrying automatically
+	ServiceNone       = "none"       // no service source configured
 )
 
-// Status 是診斷用的目前狀態快照。
+// Status is a snapshot of the current state for diagnostics.
 type Status struct {
-	Mode          string // 目前生效的模式（cwd／global）；尚未開始追蹤時為空
-	ModeIssue     string // 模式設定問題的固定描述
+	Mode          string // the mode currently in effect (cwd/global); empty until tracking starts
+	ModeIssue     string // fixed description of a mode setting problem
 	Tracking      bool
 	TUIs          int
 	Tabs          int
 	Service       string
 	ServiceReason string
-	Issues        []string // 目前持續存在的問題（固定描述）
+	Issues        []string // problems that currently persist (fixed descriptions)
 	Recent        []ErrorRecord
 }
 
-// ErrorRecord 是一筆最近發生的問題：只有來源與固定描述。
+// ErrorRecord is one recent problem: only a source and a fixed description.
 type ErrorRecord struct {
 	At      time.Time
 	Source  string // tmux／tabs／mode／theme／service／output／jump
@@ -95,13 +95,13 @@ type ErrorRecord struct {
 const maxRecent = 8
 
 type Config struct {
-	Width    int           // side-status-width，內容寬度為 Width-1（一格是分隔線）
-	Debounce time.Duration // 收到通知後等多久合併同時發生的變動
-	Retry    time.Duration // 服務連線失敗後的重試間隔（預設 DefaultRetry）
-	Resync   time.Duration // 家族補漏重讀週期（預設 DefaultResync）
+	Width    int           // side-status-width; the content width is Width-1 (one cell is the divider)
+	Debounce time.Duration // how long to wait after a notification to coalesce simultaneous changes
+	Retry    time.Duration // retry interval after a service connection failure (default DefaultRetry)
+	Resync   time.Duration // session family backstop re-read period (default DefaultResync)
 }
 
-// 時間預算（spec 驗收目標：一般變動 1 秒、漏通知／強制關閉 10 秒內修正）。
+// Time budgets (spec acceptance targets: ordinary changes within 1 second; missed notifications and forced closes corrected within 10 seconds).
 const (
 	DefaultDebounce = 100 * time.Millisecond
 	DefaultBackstop = 5 * time.Second
@@ -111,24 +111,24 @@ type Daemon struct {
 	cfg  Config
 	deps Deps
 
-	panes     []PaneFact // 最後一次成功讀到的資料；讀取失敗時沿用並提示
+	panes     []PaneFact // last successfully read data; reused with a notice when a read fails
 	tabs      *contract.TabsFile
-	theme     render.Theme  // 最後一次讀取成功的主題；從未成功時為預設
-	mode      contract.Mode // 最後一次生效的有效模式
+	theme     render.Theme  // last successfully read theme; the default if never successful
+	mode      contract.Mode // last valid mode that took effect
 	haveMode  bool
 	havePanes bool
-	last      string // 上次寫出內容的指紋
+	last      string // fingerprint of the last output written
 	havePub   bool
-	notice    string // 最近一次 Sync 的來源讀取提示
+	notice    string // source read notice from the latest Sync
 
 	live     *live
-	liveWake chan struct{} // 服務事件／狀態變化通知（只需重新排版，不必重讀 tmux）
+	liveWake chan struct{} // service event/state change notification (re-layout only; no need to re-read tmux)
 	ctx      context.Context
 
-	issues    []string // 最近一次 Sync 的來源問題（固定描述）
+	issues    []string // source problems from the latest Sync (fixed descriptions)
 	modeIssue string
 	recent    []ErrorRecord
-	lastRecv  map[string]bool // 目前仍在持續的問題來源，避免同一個持續問題每次同步都記一筆
+	lastRecv  map[string]bool // sources of problems that are still ongoing, so one persistent problem is not recorded on every sync
 	lastRep   string
 
 	lastService string
@@ -160,8 +160,8 @@ func New(cfg Config, deps Deps) *Daemon {
 	return d
 }
 
-// Sync 讀取一次外部資料並更新側欄；內容與上次寫出的相同時不寫入。
-// 任何來源讀取失敗都不會被當成空清單：沿用最後可用資料並顯示提示，同時回傳錯誤。
+// Sync reads the external data once and updates the sidebar; it does not write when the content matches the last output.
+// A failed read from any source is never treated as an empty list: the last available data is reused with a notice, and an error is returned.
 func (d *Daemon) Sync() error {
 	var errs []error
 	notice := ""
@@ -190,7 +190,7 @@ func (d *Daemon) Sync() error {
 		note("mode", modeNotice)
 	}
 	if !tracking {
-		// 首次就沒有有效模式：不開始追蹤（不讀 tmux／tab 清單、不顯示空狀態），只留提示。
+		// No valid mode on the first run: do not start tracking (no tmux/tab list reads, no empty state), only show the notice.
 		if err := d.publish(render.View{Notice: modeNotice}); err != nil {
 			errs = append(errs, err)
 		}
@@ -214,7 +214,7 @@ func (d *Daemon) Sync() error {
 	}
 	d.notice = notice
 	if modeNotice != "" {
-		d.notice = modeNotice // 設定錯誤比資料讀取提示更需要使用者處理
+		d.notice = modeNotice // a configuration error needs the user's attention more than a data read notice
 	}
 	if err := d.render(); err != nil {
 		errs = append(errs, err)
@@ -223,7 +223,7 @@ func (d *Daemon) Sync() error {
 	return errors.Join(errs...)
 }
 
-// report 把目前狀態交給 Report；只有內容改變才呼叫。
+// report hands the current state to Report; it is called only when the content changes.
 func (d *Daemon) report() {
 	if d.deps.Report == nil {
 		return
@@ -255,7 +255,7 @@ func (d *Daemon) report() {
 		if down {
 			st.Issues = append(st.Issues, "Cannot connect to OpenCode: "+st.ServiceReason)
 		}
-		// 服務失敗與其他來源一樣只在「剛發生」時記一筆最近錯誤，不因持續失敗而洗版。
+		// Like other sources, a service failure records a recent error only when it "just happened", so continuing failures do not flood the list.
 		if down && d.lastService != st.ServiceReason {
 			d.recent = append(d.recent, ErrorRecord{At: time.Now(), Source: "service", Message: st.ServiceReason})
 			if len(d.recent) > maxRecent {
@@ -277,10 +277,10 @@ func (d *Daemon) report() {
 	d.deps.Report(st)
 }
 
-// render 以最後可用資料與服務狀態重新排版並寫出（內容沒變就不寫）。
+// render re-lays out with the last available data and service state and writes it (skipped when the content is unchanged).
 func (d *Daemon) render() error {
 	if !d.haveMode {
-		return nil // 尚未開始追蹤（模式無效）：不連線服務、不顯示狀態
+		return nil // tracking has not started (invalid mode): do not connect to the service or show status
 	}
 	view := d.view(d.mode)
 	view.Notice = d.notice
@@ -292,8 +292,8 @@ func (d *Daemon) render() error {
 			}
 		}
 		d.live.Track(d.ctx, ids)
-		// 服務斷線與 tab 清單／tmux 讀取失敗是不同問題，各自提示一次（多行）；
-		// 服務斷線的提示不依 tab 數重複。
+		// A service disconnect and a tab list/tmux read failure are different problems, each noticed once (multiple lines);
+		// the service disconnect notice is not repeated per tab.
 		if len(ids) > 0 && d.live.Down() {
 			if view.Notice != "" {
 				view.Notice += "\n"
@@ -304,7 +304,7 @@ func (d *Daemon) render() error {
 	return d.publish(view)
 }
 
-// stateOf 是 tab 目前的狀態；未接服務或基準資料不完整時為資料異常，不猜測閒置。
+// stateOf is the tab's current status; when no service is connected or the baseline data is incomplete it is a data problem, and idle is never guessed.
 func (d *Daemon) stateOf(session string) render.State {
 	if d.live == nil {
 		return render.DataProblem
@@ -312,8 +312,8 @@ func (d *Daemon) stateOf(session string) render.State {
 	return d.live.State(session)
 }
 
-// titleOf 是 tab 顯示的標題：有 API session.title 時以它為準（TUI 同樣如此），
-// 否則退回 tabs.json 保存的標題。
+// titleOf is the title shown for a tab: the API session.title wins when present (as in the TUI),
+// otherwise it falls back to the title saved in tabs.json.
 func (d *Daemon) titleOf(t contract.Tab) string {
 	if d.live != nil {
 		if title, ok := d.live.Title(t.SessionID); ok {
@@ -323,8 +323,8 @@ func (d *Daemon) titleOf(t contract.Tab) string {
 	return t.Title
 }
 
-// view 由最後可用資料組出側欄內容。從未讀到成功資料的來源沒有任何內容可顯示，
-// 此時不輸出「沒有 TUI／無 tab」，只留提示。
+// view builds the sidebar content from the last available data. A source that has never been read successfully has nothing to show;
+// in that case it does not print "no TUI / no tab" and shows only the notice.
 func (d *Daemon) view(mode contract.Mode) render.View {
 	if !d.havePanes || d.tabs == nil {
 		return render.View{}
@@ -379,8 +379,8 @@ func fingerprint(p render.Published) string {
 	return b.String() + p.Format()
 }
 
-// Run 先同步一次，之後每次事件通知（合併 Debounce 內的連續通知）或補漏 tick 同步一次，
-// 直到 ctx 結束。同步失敗不會中止：已經顯示提示，下一次通知或 tick 會重試。
+// Run syncs once, then syncs on each event notification (consecutive notifications within Debounce are coalesced) or backstop tick,
+// until ctx ends. A failed sync does not stop it: a notice is already shown, and the next notification or tick retries.
 func (d *Daemon) Run(ctx context.Context) error {
 	d.ctx = ctx
 	_ = d.Sync()

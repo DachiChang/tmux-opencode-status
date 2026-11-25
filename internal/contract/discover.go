@@ -5,8 +5,8 @@ import (
 	"fmt"
 )
 
-// incomplete 包裝「讀不全家族」的錯誤。只有 tab 本身不存在才是 ErrSessionNotFound；
-// 後代在走訪途中消失只是資料暫時不完整（下次重讀就會一致），不得被當成 tab 不存在。
+// incomplete wraps an error for "could not read the whole family". Only a missing tab itself is ErrSessionNotFound;
+// a descendant disappearing mid-walk is merely temporarily incomplete data (the next reread will be consistent) and must not be treated as the tab being missing.
 func incomplete(err error, format string, args ...any) error {
 	if errors.Is(err, ErrSessionNotFound) {
 		return fmt.Errorf(format+"：%v", append(args, err)...)
@@ -14,11 +14,11 @@ func incomplete(err error, format string, args ...any) error {
 	return fmt.Errorf(format+"：%w", append(args, err)...)
 }
 
-// ErrSessionNotFound 對應 HTTP 404 `{"_tag":"SessionNotFoundError"}`：OpenCode 明確回報 session 不存在。
-// 與逾時、連線失敗、5xx 等暫時性錯誤必須區分（前者 = tab 保留並標資料異常）。
+// ErrSessionNotFound corresponds to HTTP 404 `{"_tag":"SessionNotFoundError"}`: OpenCode explicitly reports that the session does not exist.
+// It must be distinguished from transient errors such as timeouts, connection failures and 5xx (the former = keep the tab and mark a data problem).
 var ErrSessionNotFound = errors.New("session not found")
 
-// API 是發現家族所需的唯讀端點（皆為 GET）：
+// API is the set of read-only endpoints needed to discover a family (all GET):
 //
 //	Session     GET /api/session/{id}
 //	Children    GET /api/session?parentID={id}&limit={n}[&cursor={c}]   → (data, cursor.next)
@@ -33,10 +33,10 @@ type API interface {
 	Active() (map[string]bool, error)
 }
 
-// DiscoverFamily 取得 tab 的完整基準資料：tab 本身、所有層級後代、各成員的待核准／待回答，
-// 以及目前執行中的 session。任一步驟失敗都回傳錯誤（不得把部分資料當成完整資料）。
+// DiscoverFamily gets the complete baseline data for a tab: the tab itself, descendants at all levels, each member's pending approvals/answers,
+// and the sessions currently running. Any failing step returns an error (partial data must not be treated as complete).
 //
-// 分頁結束條件是「空頁」：實測 cursor.next 在最後一個非空頁仍然存在，不能用它判斷結束。
+// Pagination ends on an empty page: cursor.next was observed to still exist on the last non-empty page, so it cannot be used to detect the end.
 func DiscoverFamily(api API, tab string, pageSize int) (Snapshot, error) {
 	snap := Snapshot{Running: map[string]bool{}}
 	root, err := api.Session(tab)
@@ -83,7 +83,7 @@ func DiscoverFamily(api API, tab string, pageSize int) (Snapshot, error) {
 	if err != nil {
 		return Snapshot{}, fmt.Errorf("read running sessions: %w", err)
 	}
-	// 只保留家族成員：active 是整個服務的清單，其他 session 與這個 tab 無關。
+	// Keep only family members: active is the whole service's list, and other sessions are unrelated to this tab.
 	for _, x := range snap.Sessions {
 		if running[x.ID] {
 			snap.Running[x.ID] = true

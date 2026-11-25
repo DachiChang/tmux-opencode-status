@@ -1,5 +1,6 @@
-// Package render 把側欄的邏輯內容（群組、tab、狀態、提示）排成一份完整版面、
-// 依終端格寬渲染成 tmux 樣式字串，並發布為全域使用者選項與 side-status-format。
+// Package render lays out the sidebar's logical content (groups, tabs, states, notices) as
+// one complete layout, renders it into tmux-styled strings by terminal cell width, and
+// publishes it as global user options and side-status-format.
 
 package render
 
@@ -22,16 +23,17 @@ const (
 type Tab struct {
 	Title string
 	State State
-	// SessionID 是 tab 對應的 session；非空時摘要按 session 去重（同一 session
-	// 出現在多個 tab 清單也只計一次）。
+	// SessionID is the session the tab corresponds to; when non-empty, the summary
+	// deduplicates by session (a session that appears in several tab lists is counted once).
 	SessionID string
 }
 
 type Group struct {
 	Name string
 	Tabs []Tab
-	// JumpTarget 是點擊這個群組時要跳去的 pane 編號（`%N` 的 N，十進位數字）；
-	// 空字串表示沒有跳轉目標，該群組的列不加 range。
+	// JumpTarget is the pane number to jump to when this group is clicked (the N in `%N`,
+	// as decimal digits); an empty string means there is no jump target, and the group's
+	// rows get no range.
 	JumpTarget string
 }
 
@@ -43,7 +45,7 @@ const (
 	RowGroup
 	RowTab
 	RowBlank
-	RowNote   // dim informational line, e.g. 沒有 OpenCode TUI / 無 tab
+	RowNote   // dim informational line, e.g. No OpenCode TUI running / No tabs
 	RowNotice // read-error banner, drawn in warning colour
 )
 
@@ -52,10 +54,10 @@ type Row struct {
 	Text    string
 	Summary string
 	State   State
-	Indent  int // RowNote 額外縮排格數；RowNotice 為折行續行的縮排
-	// JumpTarget 是所屬群組的跳轉目標（群組列、tab 列與群組內的「無 tab」列才會有）；空字串表示不加 range。
+	Indent  int // extra indent cells for RowNote; for RowNotice, the indent of wrapped continuation lines
+	// JumpTarget is the jump target of the owning group (only group rows, tab rows, and a group's "No tabs" row have one); an empty string means no range is added.
 	JumpTarget string
-	// Letter 是群組列分到的跳轉字母（'a'–'z'），0 表示沒有；只有群組列會有。
+	// Letter is the jump letter ('a'–'z') assigned to a group row, or 0 for none; only group rows have one.
 	Letter byte
 }
 
@@ -69,8 +71,9 @@ type View struct {
 	Empty  string
 	Notice string
 
-	// noticeContinuation 標記 Notice 各行是否為前一行折行的續行（PublishView 折行時填入）；
-	// 續行不畫 ▲，縮排與文字對齊。
+	// noticeContinuation marks whether each Notice line is a continuation of the previous
+	// wrapped line (filled in by PublishView when wrapping); continuation lines do not draw
+	// ▲, and their indent aligns with the text.
 	noticeContinuation []bool
 }
 
@@ -82,7 +85,7 @@ func Fit(groups []Group) []Row {
 }
 
 // FitView is Fit for a full View. A group without tabs is kept and shows a
-// "無 tab" note.
+// "No tabs" note.
 func FitView(v View) []Row {
 	groups := v.Groups
 	rows := []Row{{Kind: RowTitle, Summary: Summary(groups)}, {Kind: RowRule}}
@@ -105,7 +108,7 @@ func FitView(v View) []Row {
 }
 
 // layout renders every group (in order) with group headers and blanks.
-// 跳轉字母依群組順序只分配給有跳轉目標的群組，分完 a–z 為止。
+// Jump letters are assigned in group order, only to groups that have a jump target, until a–z run out.
 func layout(groups []Group) []Row {
 	var rows []Row
 	next := 0

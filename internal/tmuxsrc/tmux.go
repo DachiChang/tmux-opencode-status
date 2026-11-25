@@ -1,5 +1,5 @@
-// Package tmuxsrc 是對單一 tmux server 的轉接：pane 事實、側欄輸出與變動通知。
-// 每個指令都明確指向建構時給定的 socket，絕不使用預設 server。
+// Package tmuxsrc is the adapter for a single tmux server: pane facts, sidebar output, and change notifications.
+// Every command explicitly targets the socket given at construction and never uses the default server.
 package tmuxsrc
 
 import (
@@ -19,24 +19,24 @@ import (
 	"github.com/DachiChang/tmux-opencode-status/internal/sidebar"
 )
 
-// Client 指向一個明確的 tmux server。SocketArgs 例如 ["-L","name"] 或 ["-S","/path"]。
+// Client points to one explicit tmux server. SocketArgs is, for example, ["-L","name"] or ["-S","/path"].
 type Client struct {
 	SocketArgs []string
-	// ConfigArgs 讓隔離測試可附帶 -f /dev/null；正式使用為空（server 已在執行）。
+	// ConfigArgs lets isolated tests pass -f /dev/null; it is empty in production (the server is already running).
 	ConfigArgs []string
-	// Width 是 side-status-width（含 1 格分隔線）。
+	// Width is side-status-width (including the 1-column separator line).
 	Width     int
 	published map[string]bool
-	// lastFormat 是本實例最後寫入的 side-status-format；停止時只有內容仍相同才移除，
-	// 不覆蓋使用者之後自己設定的值。
+	// lastFormat is the last side-status-format this instance wrote; on stop it is removed only if the content is still the same,
+	// so a value the user set later is not overwritten.
 	lastFormat string
-	// jumpTrigger 是本實例實際綁定成功的觸發鍵；空字串表示沒有綁（無效或失敗）。每次發布一起寫入 @tos_jump_trigger。
+	// jumpTrigger is the trigger key this instance actually bound successfully; an empty string means nothing is bound (invalid or failed). It is written to @tos_jump_trigger on every publish.
 	jumpTrigger string
-	// proc 是讀取前景行程事實的來源；nil 使用本機實作（測試以受控實作替換）。
+	// proc is the source of foreground-process facts; nil uses the local implementation (tests substitute a controlled one).
 	proc procReader
 }
 
-// procReader 讀取前景行程的 argv 與工作目錄；alive 回報行程是否仍存在。
+// procReader reads a foreground process's argv and working directory; alive reports whether the process still exists.
 type procReader interface {
 	Argv(pid int) ([]string, error)
 	Cwd(pid int) (string, error)
@@ -58,28 +58,28 @@ func (c *Client) procs() procReader {
 
 const (
 	wakeChannel = "tos_wake"
-	// titleChannel 專用於 pane title 變更：TUI 可能頻繁改標題，需要與結構事件分開節流。
+	// titleChannel is dedicated to pane title changes: a TUI may change its title frequently, so it must be throttled separately from structural events.
 	titleChannel = "tos_title"
-	// titleMinGap 是標題喚醒的最小間隔：靜止後的第一次變更立即喚醒（leading），
-	// 間隔內的連續變更由 tmux 合併為一次記住的 signal，間隔結束後補一次（trailing）。
+	// titleMinGap is the minimum interval between title wake-ups: the first change after a quiet period wakes immediately (leading),
+	// consecutive changes within the interval are merged by tmux into one remembered signal, and one more wake-up follows when the interval ends (trailing).
 	titleMinGap = 300 * time.Millisecond
-	// hookIndex 是本插件在 hook 陣列使用的專屬索引，避免覆蓋使用者自己的 hook。
+	// hookIndex is the dedicated index this plugin uses in hook arrays, so it does not overwrite the user's own hooks.
 	hookIndex = 41700
 )
 
-// 這些 hook 只用來「喚醒」同步；實際內容一律重新讀取，漏掉任何一個都由低頻補漏補上。
+// These hooks only "wake" the sync; the actual content is always re-read, and any hook that is missed is covered by the low-frequency catch-up.
 var wakeHooks = []string{
 	"pane-exited", "window-linked", "window-unlinked",
 	"after-new-window", "after-split-window", "after-kill-pane",
 	"session-created", "session-closed",
 }
 
-// optionHook 在模式選項或任何色票選項被設定（含 `set -gu` 與重載設定檔中的 set）時才喚醒，避免常駐程式自己
-// 寫入側欄選項造成回授。
+// optionHook wakes only when a mode option or any swatch option is set (including `set -gu` and a set in a reloaded config file), so the daemon's own
+// writes to sidebar options do not cause feedback.
 var optionHook = "after-set-option"
 
-// titleHook 只用來提早重新掃描（在既有 shell 啟動／結束 TUI 時 tmux 沒有結構事件）；
-// 不讀取標題內容，也不是辨識依據。終端標題關閉時不會觸發，由低頻補漏負責。
+// titleHook is used only to trigger an earlier rescan (tmux has no structural event when a TUI starts or exits in an existing shell);
+// it does not read the title content and is not a basis for identification. It does not fire when terminal titles are off; the low-frequency catch-up covers that.
 var titleHook = "pane-title-changed"
 
 func optionHookCmd() string {
@@ -102,7 +102,7 @@ func (c *Client) tmux(stdin string, args ...string) ([]byte, error) {
 	return out.Bytes(), nil
 }
 
-// Panes 列出同一 server 所有 pane 的前景行程事實；同一 pane 經 linked window 重複列出時只取一次。
+// Panes lists the foreground-process facts of every pane on the same server; a pane listed repeatedly through a linked window is taken only once.
 func (c *Client) Panes() ([]sidebar.PaneFact, error) {
 	out, err := c.tmux("", "list-panes", "-a", "-F", "#{pane_id}\t#{pane_tty}\t#{pane_current_path}\t#{pane_current_command}\t#{alternate_on}")
 	if err != nil {
@@ -138,11 +138,11 @@ func (c *Client) Panes() ([]sidebar.PaneFact, error) {
 	return facts, nil
 }
 
-// readForeground 讀取前景行程的 argv 與（TUI 候選的）工作目錄。
-//   - 行程已結束：正常消失，不是錯誤；pane 此刻沒有可辨識的前景行程，下一次掃描就是新的事實。
-//   - 行程仍在卻讀不到：只有 tmux 自己報告前景指令為 opencode 的 pane 才是無法判定的候選，
-//     回報錯誤（呼叫端保留最後可用資料並提示）；其他 pane（例如屬於其他使用者的行程）
-//     不可能是使用者的 OpenCode TUI，不因此讓整個側欄失效。
+// readForeground reads the foreground process's argv and (for TUI candidates) its working directory.
+//   - Process has exited: a normal disappearance, not an error; the pane currently has no identifiable foreground process, and the next scan will see the new facts.
+//   - Process is alive but unreadable: only a pane whose foreground command tmux itself reports as opencode is an undeterminable candidate,
+//     so report an error (the caller keeps the last usable data and shows a notice); other panes (for example processes owned by other users)
+//     cannot be the user's OpenCode TUI and must not invalidate the whole sidebar.
 func (c *Client) readForeground(fact *sidebar.PaneFact, pid int) error {
 	pr := c.procs()
 	candidate := fact.PaneCurrentCommand == "opencode"
@@ -169,7 +169,7 @@ func (c *Client) readForeground(fact *sidebar.PaneFact, pid int) error {
 	return nil
 }
 
-// foregroundProcs 回傳 tty 名稱 → 前景行程組組長（pgid == tpgid）。pane_pid 通常是 shell，不能用。
+// foregroundProcs returns tty name → foreground process group leader (pgid == tpgid). pane_pid is usually the shell and cannot be used.
 func foregroundProcs() (map[string]int, error) {
 	out, err := exec.Command("ps", "-axo", "pid=,pgid=,tpgid=,tty=").Output()
 	if err != nil {
@@ -191,8 +191,8 @@ func foregroundProcs() (map[string]int, error) {
 	return res, nil
 }
 
-// Publish 以單一 source-file（同一 command queue）寫入版面選項與 side-status-format，
-// 並清掉同前綴下不再使用的選項（前一個實例或崩潰留下的）。client 永遠不會看到半更新。
+// Publish writes the layout options and side-status-format in a single source-file (the same command queue),
+// and clears unused options under the same prefix (left by a previous instance or a crash). Clients never see a half update.
 func (c *Client) Publish(p render.Published) error {
 	var s strings.Builder
 	s.WriteString("set-option -g side-status-width " + strconv.Itoa(c.Width) + "\n")
@@ -201,7 +201,7 @@ func (c *Client) Publish(p render.Published) error {
 		opts[n] = v
 	}
 	if c.jumpTrigger != "" {
-		// 實際綁定的觸發鍵與版面一起寫入：交接的新實例與 stop 都從這裡知道要 unbind 哪個鍵。
+		// The actually bound trigger key is written together with the layout: a handed-over new instance and stop both learn from here which key to unbind.
 		opts[render.BoundTriggerOption] = c.jumpTrigger
 	}
 	names := make([]string, 0, len(opts))
@@ -210,7 +210,7 @@ func (c *Client) Publish(p render.Published) error {
 	}
 	sort.Strings(names)
 	if c.published == nil {
-		// 第一次寫入：本插件專屬前綴下既有的選項（前一個實例或崩潰留下的）一併由這次寫入清掉。
+		// First write: existing options under this plugin's own prefix (left by a previous instance or a crash) are cleared by this write as well.
 		c.published = c.existingPluginOptions()
 	}
 	next := map[string]bool{}
@@ -232,7 +232,7 @@ func (c *Client) Publish(p render.Published) error {
 	return nil
 }
 
-// existingPluginOptions 列出目前全域中屬於本插件前綴（@tos_）的內部選項。讀取失敗視為沒有（之後的寫入會補上新內容）。
+// existingPluginOptions lists the internal options in the global scope that belong to this plugin's prefix (@tos_). A read failure is treated as none (a later write adds the new content).
 func (c *Client) existingPluginOptions() map[string]bool {
 	out, err := c.tmux("", "show-options", "-g")
 	found := map[string]bool{}
@@ -247,9 +247,9 @@ func (c *Client) existingPluginOptions() map[string]bool {
 	return found
 }
 
-// ClearDisplay 在常駐程式因明確停止而退出（server 仍在）時，移除本插件發布的內部選項（@tos_*），
-// 並在 side-status-format 仍是本實例寫入的內容時把它與 width 重設為 tmux 預設，避免留下不再更新的過期內容。
-// 只動本插件前綴的選項與它自己寫入的全域選項；不碰其他使用者選項。
+// ClearDisplay, when the daemon exits because of an explicit stop (the server is still alive), removes the internal options (@tos_*) this plugin published,
+// and, if side-status-format is still the content this instance wrote, resets it and width to the tmux defaults so no stale content is left that is no longer updated.
+// It touches only options under this plugin's prefix and the global options it wrote itself; it does not touch other user options.
 func (c *Client) ClearDisplay() {
 	var b strings.Builder
 	if cur, err := c.tmux("", "show-options", "-gqv", "side-status-format"); err == nil && c.lastFormat != "" &&
@@ -262,12 +262,12 @@ func (c *Client) ClearDisplay() {
 	_, _ = c.tmux(b.String(), "source-file", "-")
 }
 
-// JumpKey 是側欄點擊跳轉接管的 root 鍵表按鍵（tmux 對 side-status 的滑鼠左鍵按下事件）。
+// JumpKey is the root key-table key taken over for sidebar click-to-jump (tmux's left mouse button press event on side-status).
 const JumpKey = "MouseDown1SideStatus"
 
-// jumpBinding 只在 tmux 內執行（不開 shell、不呼叫插件執行檔）：range 字串符合 oc<N>（前綴見 render.JumpRangePrefix）時切到 pane %N
-// （session、window、pane 一次到位，可跨 session），否則維持 tmux 預設的 switch-client -t =。
-// 不用 range=pane：見 ADR-0002。
+// jumpBinding runs only inside tmux (no shell, no call to the plugin executable): when the range string matches oc<N> (prefix: see render.JumpRangePrefix), it switches to pane %N
+// (session, window, and pane in one step, across sessions); otherwise it keeps tmux's default switch-client -t =.
+// It does not use range=pane: see ADR-0002.
 const jumpBinding = `bind -T root ` + JumpKey + ` {
   if -F "#{m/r:^` + render.JumpRangePrefix + `[0-9]+$,#{mouse_status_range}}" {
     run-shell -C "switch-client -t '%#{s/^` + render.JumpRangePrefix + `//:mouse_status_range}'"
@@ -277,27 +277,27 @@ const jumpBinding = `bind -T root ` + JumpKey + ` {
 }
 `
 
-// BindJump 接管 MouseDown1SideStatus。與 Publish 相同以 source-file 寫入，避免引號跳脫問題；
-// 重複寫入同一內容是冪等的（交接時由新實例再寫一次）。
+// BindJump takes over MouseDown1SideStatus. Like Publish it writes through source-file to avoid quote-escaping problems;
+// writing the same content repeatedly is idempotent (the new instance writes it once more on handover).
 func (c *Client) BindJump() error {
 	_, err := c.tmux(jumpBinding, "source-file", "-")
 	return err
 }
 
-// ResetJump 在明確停止時把 MouseDown1SideStatus 寫回 tmux 預設。不 unbind：停止後
-// side-status-format 回到 tmux 預設，預設格式的 session／window 點擊切換依賴這條預設綁定。
-// 不保存或還原使用者原有的自訂綁定。
+// ResetJump writes MouseDown1SideStatus back to the tmux default on explicit stop. It does not unbind: after stop,
+// side-status-format returns to the tmux default, and clicking to switch session/window in the default format depends on this default binding.
+// It does not save or restore any custom binding the user had.
 func (c *Client) ResetJump() {
 	_, _ = c.tmux("", "bind-key", "-T", "root", JumpKey, "switch-client", "-t", "=")
 }
 
-// quote 轉成 tmux 設定檔的雙引號字串。
+// quote converts to a double-quoted string for a tmux config file.
 func quote(v string) string {
 	return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`, "$", `\$`, "\n", `\n`).Replace(v) + `"`
 }
 
-// Setting 唯讀取得全域模式選項。選項不存在（輸出為空）與存在但值為空字串（輸出為單一換行）
-// 是兩種狀態；值本身只去掉 tmux 加上的一個結尾換行，不做任何修剪。
+// Setting reads a global mode option read-only. An option that does not exist (empty output) and one that exists with an empty string (output of a single newline)
+// are two different states; the value itself has only the one trailing newline added by tmux removed, with no other trimming.
 func (c *Client) Setting() (sidebar.ModeSetting, error) {
 	out, err := c.tmux("", "show-options", "-gqv", sidebar.ModeOption)
 	if err != nil {
@@ -314,9 +314,9 @@ const (
 	swatchEnd     = "\x1e"
 )
 
-// Swatches 以一次 `show-options -g` 唯讀取得所有色票選項的原始值，鍵為去掉前綴的色票名稱。
-// 值原樣回傳（含空字串與格式字元），是否有效由呼叫端判斷；用控制字元分隔而不解析 tmux 的跳脫輸出，
-// 因此含換行或引號的值也不會被誤讀。讀取失敗回報錯誤，不當成全部未設定。
+// Swatches reads the raw values of all swatch options read-only with a single `show-options -g`; keys are the swatch names with the prefix removed.
+// Values are returned as-is (including empty strings and format characters) and validity is decided by the caller; control characters are used as separators instead of parsing tmux's escaped output,
+// so values containing newlines or quotes are not misread. A read failure is reported as an error and is not treated as everything being unset.
 func (c *Client) Swatches() (map[string]string, error) {
 	out, err := c.tmux("", "show-options", "-g", "-F", "#{option_name}"+swatchNameSep+"#{option_value}"+swatchEnd)
 	if err != nil {
@@ -335,8 +335,8 @@ func (c *Client) Swatches() (map[string]string, error) {
 	return res, nil
 }
 
-// MissingCapabilities 列出此 tmux 缺少的必要能力（3.9 的 side-status 相關選項）。
-// 選項不存在（invalid option）才算缺少；其他錯誤（server 暫時不可用）原樣回報，不誤判成缺少能力。
+// MissingCapabilities lists the required capabilities this tmux lacks (the side-status options of 3.9).
+// Only a missing option (invalid option) counts as a missing capability; other errors (the server temporarily unavailable) are reported as-is and are not misjudged as missing capabilities.
 func (c *Client) MissingCapabilities() ([]string, error) {
 	var missing []string
 	for _, opt := range []string{"side-status", "side-status-width", "side-status-format"} {
@@ -351,8 +351,8 @@ func (c *Client) MissingCapabilities() ([]string, error) {
 	return missing, nil
 }
 
-// SessionOverrides 列出在 session 層級覆寫了 side-status 相關選項的 tmux session（只回 session id 與選項名稱，
-// 不回 session 名稱）。這些 session 不會跟隨全域設定，插件也絕不清除它們。
+// SessionOverrides lists the tmux sessions that override side-status options at session level (returning only the session id and option name,
+// not the session name). These sessions do not follow the global settings, and the plugin never clears them.
 func (c *Client) SessionOverrides() ([]SessionOverride, error) {
 	out, err := c.tmux("", "list-sessions", "-F", "#{session_id}")
 	if err != nil {
@@ -362,7 +362,7 @@ func (c *Client) SessionOverrides() ([]SessionOverride, error) {
 	for _, id := range strings.Fields(string(out)) {
 		opts, err := c.tmux("", "show-options", "-t", id)
 		if err != nil {
-			continue // session 在查詢之間消失
+			continue // the session disappeared between queries
 		}
 		o := SessionOverride{TmuxSession: id}
 		for _, line := range strings.Split(string(opts), "\n") {
@@ -381,23 +381,23 @@ func (c *Client) SessionOverrides() ([]SessionOverride, error) {
 	return res, nil
 }
 
-// SessionOverride 是一個 session 的 side-status 覆寫。
+// SessionOverride is one session's side-status override.
 type SessionOverride struct {
 	TmuxSession string
 	Options     []string
 }
 
-// GlobalValue 唯讀取得全域選項的值。
+// GlobalValue reads the value of a global option read-only.
 func (c *Client) GlobalValue(name string) (string, error) {
 	out, err := c.tmux("", "show-options", "-gqv", name)
 	return strings.TrimSuffix(string(out), "\n"), err
 }
 
-// ShownMarker 記錄「本 server 已由插件顯示過側欄」；之後的重載、交接或重啟都不再替使用者打開，
-// 以免把使用者已經隱藏的側欄重新打開。選項隨 tmux server 結束而消失。
+// ShownMarker records "this server has already had the sidebar shown by the plugin"; later reloads, handovers, or restarts no longer turn it on for the user,
+// so a sidebar the user has hidden is not reopened. The option disappears when the tmux server ends.
 const ShownMarker = "@opencode-status-shown"
 
-// Show 把 side-status 設為 left，且每個 tmux server 生命週期只做一次（僅在使用者明確要求時由呼叫端使用）。
+// Show sets side-status to left, and does so only once per tmux server lifetime (used by the caller only when the user explicitly asks).
 func (c *Client) Show() error {
 	out, err := c.tmux("", "show-options", "-gqv", ShownMarker)
 	if err != nil {
@@ -410,19 +410,19 @@ func (c *Client) Show() error {
 	return err
 }
 
-// ClearShownMarker 供明確停止時移除（讓之後重新啟動可再次顯示）。
+// ClearShownMarker is for explicit stop (so a later restart can show the sidebar again).
 func (c *Client) ClearShownMarker() {
 	_, _ = c.tmux("", "set-option", "-gu", ShownMarker)
 }
 
-// ServerInfo 是這個 socket 上 tmux server 的身分。
+// ServerInfo is the identity of the tmux server on this socket.
 type ServerInfo struct {
 	SocketPath string
 	PID        int
 	Version    string
 }
 
-// Server 詢問 server 的 socket 路徑、行程與版本；server 不在時回報錯誤。
+// Server asks for the server's socket path, process, and version; reports an error when the server is not there.
 func (c *Client) Server() (ServerInfo, error) {
 	out, err := c.tmux("", "display-message", "-p", "#{socket_path}\t#{pid}\t#{version}")
 	if err != nil {
@@ -439,15 +439,15 @@ func (c *Client) Server() (ServerInfo, error) {
 	return ServerInfo{SocketPath: f[0], PID: pid, Version: f[2]}, nil
 }
 
-// ProcessAlive 回報行程是否仍存在。tmux server 結束與否以它的行程為準，
-// 而不是以單次指令失敗判斷：指令可能因一時忙碌或環境問題失敗，行程不在才是確定的結束。
+// ProcessAlive reports whether the process still exists. Whether the tmux server has ended is decided by its process,
+// not by a single command failure: a command can fail from momentary busyness or environment problems, and only the process being absent is a definite end.
 func ProcessAlive(pid int) bool {
 	err := syscall.Kill(pid, 0)
 	return err == nil || err == syscall.EPERM
 }
 
-// WatchEvents 安裝喚醒用 hook，並以 `tmux wait-for` 阻塞等待；每次被喚醒送出一次通知。
-// tmux 會記住沒有等待者時的 signal，因此兩次 wait-for 之間的變動不會遺失。結束時移除 hook。
+// WatchEvents installs the wake-up hooks and blocks on `tmux wait-for`; it sends one notification for each wake-up.
+// tmux remembers a signal sent while nobody is waiting, so changes between two wait-for calls are not lost. The hooks are removed on exit.
 func (c *Client) WatchEvents(ctx context.Context, wake chan<- struct{}) error {
 	for _, h := range wakeHooks {
 		if _, err := c.tmux("", "set-hook", "-g", h+"["+strconv.Itoa(hookIndex)+"]", "wait-for -S "+wakeChannel); err != nil {
@@ -471,7 +471,7 @@ func (c *Client) WatchEvents(ctx context.Context, wake chan<- struct{}) error {
 	}()
 	defer titleLoop.Wait()
 	defer c.RemoveHooks()
-	// hook 裝好之前發生的變動不會有通知；裝好後補一次喚醒，讓啟動空窗內的變動不必等低頻補漏。
+	// Changes that happen before the hooks are installed produce no notification; after installing, wake once more so changes in the startup gap need not wait for the low-frequency catch-up.
 	select {
 	case wake <- struct{}{}:
 	default:
@@ -480,8 +480,8 @@ func (c *Client) WatchEvents(ctx context.Context, wake chan<- struct{}) error {
 	return nil
 }
 
-// waitLoop 以 `tmux wait-for <channel>` 阻塞等待，每次被喚醒送出一次通知，之後至少間隔 minGap
-// 才再次等待（0 表示不節流）。節流期間的 signal 由 tmux 記住並合併，不會遺失也不會累積。
+// waitLoop blocks on `tmux wait-for <channel>` and sends one notification for each wake-up, then waits at least minGap
+// before waiting again (0 means no throttling). Signals during the throttled period are remembered and merged by tmux, so they are neither lost nor accumulated.
 func (c *Client) waitLoop(ctx context.Context, channel string, minGap time.Duration, wake chan<- struct{}) {
 	for ctx.Err() == nil {
 		args := append(append(append([]string{}, c.SocketArgs...), c.ConfigArgs...), "wait-for", channel)
@@ -490,7 +490,7 @@ func (c *Client) waitLoop(ctx context.Context, channel string, minGap time.Durat
 			if ctx.Err() != nil {
 				return
 			}
-			select { // server 暫時不可用：稍後重試，同步由低頻補漏負責
+			select { // server temporarily unavailable: retry later; the low-frequency catch-up handles syncing
 			case <-ctx.Done():
 				return
 			case <-time.After(time.Second):
@@ -511,7 +511,7 @@ func (c *Client) waitLoop(ctx context.Context, channel string, minGap time.Durat
 	}
 }
 
-// RemoveHooks 只移除本插件安裝的 hook 索引，不動使用者自己的 hook。
+// RemoveHooks removes only the hook indexes this plugin installed and leaves the user's own hooks alone.
 func (c *Client) RemoveHooks() {
 	_, _ = c.tmux("", "set-hook", "-gu", optionHook+"["+strconv.Itoa(hookIndex)+"]")
 	_, _ = c.tmux("", "set-hook", "-gu", titleHook+"["+strconv.Itoa(hookIndex)+"]")

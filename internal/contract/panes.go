@@ -1,11 +1,11 @@
-// Package contract 以 OpenCode v2.3.0／tmux next-3.9 的實測契約為準，
-// 提供後續實作可直接沿用的判斷函式；同時是契約回歸的驗證入口。
+// Package contract follows the observed contract of OpenCode v2.3.0 / tmux next-3.9 and
+// provides decision functions that later implementation can reuse directly; it is also the entry point for contract regression tests.
 package contract
 
 import "path/filepath"
 
-// Pane 是一個 tmux pane 的辨識事實。ForegroundArgv／ForegroundCwd 來自該 pane tty
-// 的前景行程組（pgid == tpgid），不是 pane_pid（那通常是 shell）。
+// Pane holds the identifying facts of a tmux pane. ForegroundArgv/ForegroundCwd come from the foreground process group
+// of the pane's tty (pgid == tpgid), not from pane_pid (which is usually the shell).
 type Pane struct {
 	Name               string   `json:"name"`
 	PaneCurrentCommand string   `json:"paneCurrentCommand"`
@@ -15,8 +15,8 @@ type Pane struct {
 	ForegroundCwd      string   `json:"foregroundCwd"`
 }
 
-// opencodeSubcommands 是 `opencode --help` 列出的子命令；出現在位置參數的第一個
-// 非旗標值時代表非互動 TUI（mini 雖然互動，但不使用 TUI 的 tab 清單）。
+// opencodeSubcommands are the subcommands listed by `opencode --help`; one appearing as the first
+// non-flag positional value means a non-interactive TUI (mini is interactive, but does not use the TUI's tab list).
 var opencodeSubcommands = map[string]bool{
 	"upgrade": true, "update": true, "uninstall": true, "acp": true, "api": true,
 	"debug": true, "auth": true, "mcp": true, "plugin": true, "models": true,
@@ -24,16 +24,16 @@ var opencodeSubcommands = map[string]bool{
 	"reload": true, "pair": true, "serve": true,
 }
 
-// 會吃下一個 argv 作為值的旗標（`opencode --help` 的 FLAGS）。
+// Flags that consume the next argv as their value (the FLAGS of `opencode --help`).
 var valueFlags = map[string]bool{
 	"--server": true, "--session": true, "-s": true, "--prompt": true,
 	"--log-level": true, "--completions": true,
 }
 
-// IsTUICandidate 判斷 pane 的前景行程是否為 OpenCode 互動 TUI 候選：
-// 可執行檔 basename 為 opencode，且 argv 沒有指向子命令，也沒有 --help／--version。
-// 不使用 pane title、不掃畫面、也不以 alternate screen 當必要條件
-// （`opencode session list` 的 pager 也會進 alternate screen）。
+// IsTUICandidate decides whether a pane's foreground process is a candidate for the interactive OpenCode TUI:
+// the executable basename is opencode, and argv neither points to a subcommand nor contains --help/--version.
+// It does not use the pane title, scan the screen, or require the alternate screen
+// (the pager of `opencode session list` also enters the alternate screen).
 func IsTUICandidate(p Pane) bool {
 	if len(p.ForegroundArgv) == 0 || filepath.Base(p.ForegroundArgv[0]) != "opencode" {
 		return false
@@ -47,7 +47,7 @@ func IsTUICandidate(p Pane) bool {
 		case valueFlags[a]:
 			i++
 		case len(a) > 0 && a[0] == '-':
-			// 其餘旗標（--standalone、--auto、--continue、--print-logs…）不帶值。
+			// The remaining flags (--standalone, --auto, --continue, --print-logs, ...) take no value.
 		default:
 			return !opencodeSubcommands[a]
 		}
